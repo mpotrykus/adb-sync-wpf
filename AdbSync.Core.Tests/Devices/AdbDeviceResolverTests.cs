@@ -1,0 +1,115 @@
+using System.Net;
+using AdbSync.Core.Config;
+using AdbSync.Core.Devices;
+using AdvancedSharpAdbClient;
+using AdvancedSharpAdbClient.Models;
+using NSubstitute;
+
+namespace AdbSync.Core.Tests.Devices;
+
+public class AdbDeviceResolverTests
+{
+    private readonly IAdbClient _adbClient = Substitute.For<IAdbClient>();
+    private readonly IMdnsBrowser _mdns = Substitute.For<IMdnsBrowser>();
+    private readonly AdbDeviceResolver _resolver;
+
+    public AdbDeviceResolverTests()
+    {
+        _resolver = new AdbDeviceResolver(_adbClient, _mdns);
+    }
+
+    private static Task<IEnumerable<DeviceData>> Devices(params DeviceData[] devices) =>
+        Task.FromResult<IEnumerable<DeviceData>>(devices);
+
+    [Fact]
+    public async Task EnsureConnectedAsync_UsbSerialDevice_ReturnsSerialWithoutAnyDiscovery()
+    {
+        var device = new DeviceConfig { Name = "BlueStacks", Serial = "emulator-5554" };
+
+        var result = await _resolver.EnsureConnectedAsync(device);
+
+        Assert.Equal("emulator-5554", result);
+        await _adbClient.DidNotReceiveWithAnyArgs().GetDevicesAsync(default);
+        await _mdns.DidNotReceiveWithAnyArgs().BrowseAsync(default!, default, default);
+    }
+
+    [Fact]
+    public async Task EnsureConnectedAsync_CachedHostPortStillOnline_ReturnsCachedWithoutMdns()
+    {
+        var device = new DeviceConfig { Name = "S23+", Ip = "192.168.0.40", CachedHostPort = "192.168.0.40:41000" };
+        _adbClient.GetDevicesAsync(Arg.Any<CancellationToken>())
+            .Returns(Devices(new DeviceData { Serial = "192.168.0.40:41000", State = DeviceState.Online }));
+
+        var result = await _resolver.EnsureConnectedAsync(device);
+
+        Assert.Equal("192.168.0.40:41000", result);
+        await _mdns.DidNotReceiveWithAnyArgs().BrowseAsync(default!, default, default);
+    }
+
+    [Fact]
+    public async Task EnsureConnectedAsync_AlreadyConnectedViaAdbDevices_CachesAndReturnsWithoutMdns()
+    {
+        var device = new DeviceConfig { Name = "S23+", Ip = "192.168.0.40" };
+        _adbClient.GetDevicesAsync(Arg.Any<CancellationToken>())
+            .Returns(Devices(new DeviceData { Serial = "192.168.0.40:41000", State = DeviceState.Online }));
+
+        var result = await _resolver.EnsureConnectedAsync(device);
+
+        Assert.Equal("192.168.0.40:41000", result);
+        Assert.Equal("192.168.0.40:41000", device.CachedHostPort);
+        Assert.NotNull(device.CachedAt);
+        await _mdns.DidNotReceiveWithAnyArgs().BrowseAsync(default!, default, default);
+    }
+
+    [Fact]
+    public async Task EnsureConnectedAsync_NotConnected_DiscoversViaMdnsAndConnects()
+    {
+        var device = new DeviceConfig { Name = "S23+", Ip = "192.168.0.40" };
+        _adbClient.GetDevicesAsync(Arg.Any<CancellationToken>())
+            .Returns(
+                Devices(), // no devices connected yet
+                Devices(new DeviceData { Serial = "192.168.0.40:41000", State = DeviceState.Online })); // online after connect
+        _mdns.BrowseAsync(Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns(new List<MdnsAnnouncement>
+            {
+                new("instance", "host.local", 41000, [IPAddress.Parse("192.168.0.40")]),
+            });
+
+        var result = await _resolver.EnsureConnectedAsync(device);
+
+        Assert.Equal("192.168.0.40:41000", result);
+        Assert.Equal("192.168.0.40:41000", device.CachedHostPort);
+        await _adbClient.Received(1).ConnectAsync("192.168.0.40", 41000, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task EnsureConnectedAsync_MdnsFindsNoMatchingAddress_ThrowsDeviceConnectException()
+    {
+        var device = new DeviceConfig { Name = "S23+", Ip = "192.168.0.40" };
+        _adbClient.GetDevicesAsync(Arg.Any<CancellationToken>()).Returns(Devices());
+        _mdns.BrowseAsync(Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns(new List<MdnsAnnouncement>
+            {
+                new("instance", "other.local", 41000, [IPAddress.Parse("192.168.0.99")]),
+            });
+
+        var ex = await Assert.ThrowsAsync<DeviceConnectException>(() => _resolver.EnsureConnectedAsync(device));
+
+        Assert.Equal("S23+", ex.DeviceName);
+        await _adbClient.DidNotReceiveWithAnyArgs().ConnectAsync(default!, default, default);
+    }
+
+    [Fact]
+    public async Task EnsureConnectedAsync_ConnectDoesNotComeOnline_ThrowsDeviceConnectException()
+    {
+        var device = new DeviceConfig { Name = "S23+", Ip = "192.168.0.40" };
+        _adbClient.GetDevicesAsync(Arg.Any<CancellationToken>()).Returns(Devices()); // never comes online
+        _mdns.BrowseAsync(Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns(new List<MdnsAnnouncement>
+            {
+                new("instance", "host.local", 41000, [IPAddress.Parse("192.168.0.40")]),
+            });
+
+        await Assert.ThrowsAsync<DeviceConnectException>(() => _resolver.EnsureConnectedAsync(device));
+    }
+}

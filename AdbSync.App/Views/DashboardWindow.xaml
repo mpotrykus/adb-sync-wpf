@@ -1,0 +1,69 @@
+<Window x:Class="AdbSync.App.Views.DashboardWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        xmlns:interop="clr-namespace:AdbSync.App.Interop"
+        xmlns:controls="clr-namespace:AdbSync.App.Controls"
+        interop:AcrylicEffect.Enabled="True"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        Title="AdbSync" Height="460" Width="1080" MinHeight="320" MinWidth="640" WindowStartupLocation="CenterScreen">
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="36" ResizeBorderThickness="6" GlassFrameThickness="0" CornerRadius="8" UseAeroCaptionButtons="False"/>
+    </shell:WindowChrome.WindowChrome>
+    <Border Style="{StaticResource WindowRootBorder}">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <controls:TitleBar Grid.Row="0"/>
+
+            <DockPanel Grid.Row="1" Margin="20">
+                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,16">
+                    <Button Content="Add Job" Style="{StaticResource PrimaryButton}" Margin="0,0,8,0" Click="AddJob_Click"/>
+                    <Button Content="Manage Devices" Margin="0,0,8,0" Click="ManageDevices_Click"/>
+                    <Button Content="Settings" Click="Settings_Click"/>
+                </StackPanel>
+
+                <Grid>
+                    <DataGrid x:Name="JobsGrid" ItemsSource="{Binding Jobs}" AutoGenerateColumns="False" IsReadOnly="True"
+                              CanUserAddRows="False" HeadersVisibility="Column" GridLinesVisibility="Horizontal">
+                        <DataGrid.Columns>
+                            <DataGridCheckBoxColumn Header="Enabled" Binding="{Binding Enabled}" Width="70"/>
+                            <DataGridTextColumn Header="Job" Binding="{Binding Name}" Width="150"/>
+                            <DataGridTextColumn Header="Status" Binding="{Binding PhaseText}" Width="160"/>
+                            <DataGridTextColumn Header="Last Result" Binding="{Binding LastOutcome}" Width="*"/>
+                            <DataGridTextColumn Header="Last Run" Binding="{Binding LastRunText}" Width="140"/>
+                            <DataGridTextColumn Header="Next Run" Binding="{Binding NextRunText}" Width="140"/>
+                            <DataGridTemplateColumn Header="" Width="240">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal">
+                                            <Button Content="Run Now" Padding="10,4" Margin="0,0,6,0" Click="RunNow_Click"/>
+                                            <Button Content="Edit" Padding="10,4" Margin="0,0,6,0" Click="EditJob_Click"/>
+                                            <Button Content="Remove" Padding="10,4" Style="{StaticResource DangerButton}" Click="RemoveJob_Click"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+
+                    <TextBlock Text="No jobs yet. Click &quot;Add Job&quot; to schedule your first sync."
+                               HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock" BasedOn="{StaticResource EmptyStateText}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasItems, ElementName=JobsGrid}" Value="False">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </Grid>
+            </DockPanel>
+        </Grid>
+    </Border>
+</Window>

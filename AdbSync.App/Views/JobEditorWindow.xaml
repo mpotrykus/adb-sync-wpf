@@ -1,0 +1,86 @@
+<Window x:Class="AdbSync.App.Views.JobEditorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        xmlns:interop="clr-namespace:AdbSync.App.Interop"
+        xmlns:controls="clr-namespace:AdbSync.App.Controls"
+        interop:AcrylicEffect.Enabled="True"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        Title="Job" Height="680" Width="540" WindowStartupLocation="CenterOwner" ResizeMode="NoResize">
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="36" ResizeBorderThickness="0" GlassFrameThickness="0" CornerRadius="8" UseAeroCaptionButtons="False"/>
+    </shell:WindowChrome.WindowChrome>
+    <Border Style="{StaticResource WindowRootBorder}">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <controls:TitleBar Grid.Row="0" ShowMinMax="False"/>
+
+            <ScrollViewer Grid.Row="1" Margin="20" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel>
+                    <Border Style="{StaticResource CardBorder}">
+                        <StackPanel>
+                            <TextBlock Text="Name" Style="{StaticResource SectionLabel}"/>
+                            <TextBox x:Name="NameBox" Margin="0,0,0,14"/>
+
+                            <TextBlock Text="App package" Style="{StaticResource SectionLabel}"/>
+                            <TextBlock Text="Optional. The job is skipped while this app is running on any device." Style="{StaticResource CaptionText}"/>
+                            <TextBox x:Name="AppPackageBox"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource CardBorder}">
+                        <StackPanel>
+                            <TextBlock Text="Exclude patterns" Style="{StaticResource SectionLabel}"/>
+                            <TextBlock Text="One glob pattern per line." Style="{StaticResource CaptionText}"/>
+                            <TextBox x:Name="ExcludeBox" AcceptsReturn="True" Height="80" FontFamily="Consolas"
+                                     TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" AcceptsTab="True"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource CardBorder}">
+                        <StackPanel>
+                            <TextBlock Text="Devices" Style="{StaticResource SectionLabel}"/>
+                            <ListBox x:Name="DeviceBindingsList" Height="90" Margin="0,0,0,8"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="130"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <ComboBox x:Name="DevicePicker" Grid.Column="0" Margin="0,0,8,0"/>
+                                <TextBox x:Name="RemotePathBox" Grid.Column="1" Margin="0,0,8,0"/>
+                                <Button Grid.Column="2" Content="Add" Margin="0,0,8,0" Click="AddBinding_Click"/>
+                                <Button Grid.Column="3" Content="Remove" Click="RemoveBinding_Click"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource CardBorder}">
+                        <StackPanel>
+                            <TextBlock Text="Schedule" Style="{StaticResource SectionLabel}"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,4,0,12">
+                                <RadioButton x:Name="ScheduleManual" Content="Manual" GroupName="Schedule" Margin="0,0,20,0" VerticalAlignment="Center"/>
+                                <RadioButton x:Name="ScheduleInterval" Content="Every" GroupName="Schedule" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                <TextBox x:Name="IntervalHoursBox" Width="44" Margin="0,0,6,0"/>
+                                <TextBlock Text="hours" VerticalAlignment="Center" Margin="0,0,20,0" Foreground="{StaticResource Brush.Text.Secondary}"/>
+                                <RadioButton x:Name="ScheduleDailyAt" Content="Daily at" GroupName="Schedule" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                <TextBox x:Name="DailyTimesBox" Width="150" ToolTip="Comma-separated 24h times, e.g. 06:00, 18:30"/>
+                            </StackPanel>
+                            <CheckBox x:Name="EnabledCheckBox" Content="Enabled"/>
+                        </StackPanel>
+                    </Border>
+
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                        <Button Content="Cancel" Width="90" Margin="0,0,8,0" Click="Cancel_Click" IsCancel="True"/>
+                        <Button Content="Save" Width="90" Style="{StaticResource PrimaryButton}" Click="Save_Click" IsDefault="True"/>
+                    </StackPanel>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+    </Border>
+</Window>

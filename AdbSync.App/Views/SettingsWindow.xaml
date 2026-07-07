@@ -1,0 +1,77 @@
+<Window x:Class="AdbSync.App.Views.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        xmlns:interop="clr-namespace:AdbSync.App.Interop"
+        xmlns:controls="clr-namespace:AdbSync.App.Controls"
+        interop:AcrylicEffect.Enabled="True"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        Title="Settings" Height="480" Width="520" WindowStartupLocation="CenterOwner" ResizeMode="NoResize">
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="36" ResizeBorderThickness="0" GlassFrameThickness="0" CornerRadius="8" UseAeroCaptionButtons="False"/>
+    </shell:WindowChrome.WindowChrome>
+    <Border Style="{StaticResource WindowRootBorder}">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <controls:TitleBar Grid.Row="0" ShowMinMax="False"/>
+
+            <StackPanel Grid.Row="1" Margin="20">
+                <Border Style="{StaticResource CardBorder}">
+                    <StackPanel>
+                        <TextBlock Text="Projects Directory" Style="{StaticResource SectionLabel}"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="ProjectsDirectoryBox" Grid.Column="0" Margin="0,0,8,0"/>
+                            <Button Grid.Column="1" Content="Browse..." Click="Browse_Click"/>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource CardBorder}">
+                    <StackPanel>
+                        <TextBlock Text="Notifications" Style="{StaticResource SectionLabel}"/>
+                        <CheckBox x:Name="StartAtLoginBox" Content="Start AdbSync when I log in" Margin="0,0,0,10"/>
+                        <CheckBox x:Name="ShowInfoNotificationsBox" Content="Show notifications for successful syncs" Margin="0,0,0,10"/>
+                        <CheckBox x:Name="ShowErrorNotificationsBox" Content="Show notifications for sync errors"/>
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource CardBorder}">
+                    <StackPanel>
+                        <TextBlock Text="Advanced" Style="{StaticResource SectionLabel}"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="90"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition/>
+                                <RowDefinition/>
+                                <RowDefinition/>
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Stale lock timeout (hours)" VerticalAlignment="Center"/>
+                            <TextBox Grid.Row="0" Grid.Column="1" x:Name="StaleLockHoursBox"/>
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Log retention (days)" VerticalAlignment="Center" Margin="0,10,0,0"/>
+                            <TextBox Grid.Row="1" Grid.Column="1" x:Name="LogRetentionDaysBox" Margin="0,10,0,0"/>
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Max concurrent jobs" VerticalAlignment="Center" Margin="0,10,0,0"/>
+                            <TextBox Grid.Row="2" Grid.Column="1" x:Name="MaxConcurrentJobsBox" Margin="0,10,0,0" IsEnabled="False"
+                                     ToolTip="Fixed at 1 until a same-device concurrency guard is implemented."/>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button Content="Cancel" Width="90" Margin="0,0,8,0" Click="Cancel_Click" IsCancel="True"/>
+                    <Button Content="Save" Width="90" Style="{StaticResource PrimaryButton}" Click="Save_Click" IsDefault="True"/>
+                </StackPanel>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>

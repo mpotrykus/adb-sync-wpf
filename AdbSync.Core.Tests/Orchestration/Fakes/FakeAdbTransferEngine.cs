@@ -1,0 +1,30 @@
+using AdbSync.Core.Transfer;
+
+namespace AdbSync.Core.Tests.Orchestration.Fakes;
+
+/// <summary>
+/// Simulates "the device" as an ordinary local folder (keyed by serial) and reuses the real, already-tested
+/// Transfer components to mirror between it and staging/master. Lets orchestration tests exercise the full
+/// pull/merge/push pipeline end-to-end without touching adb.exe.
+/// </summary>
+public sealed class FakeAdbTransferEngine(IReadOnlyDictionary<string, string> deviceFolders) : IAdbTransferEngine
+{
+    private readonly MirrorDiffer _differ = new();
+
+    public Task<TransferResult> PullMirrorAsync(string serial, string remotePath, string localPath, IExcludeMatcher exclude, CancellationToken ct = default) =>
+        Task.FromResult(Mirror(deviceFolders[serial], localPath, exclude));
+
+    public Task<TransferResult> PushMirrorAsync(string serial, string localPath, string remotePath, IExcludeMatcher exclude, CancellationToken ct = default) =>
+        Task.FromResult(Mirror(localPath, deviceFolders[serial], exclude));
+
+    private TransferResult Mirror(string sourceRoot, string destRoot, IExcludeMatcher exclude)
+    {
+        Directory.CreateDirectory(sourceRoot);
+        Directory.CreateDirectory(destRoot);
+        var source = LocalFileTreeScanner.Scan(sourceRoot, exclude);
+        var destination = LocalFileTreeScanner.Scan(destRoot, exclude);
+        var plan = _differ.Diff(source, destination);
+        var (copied, deleted) = MirrorPlanApplier.Apply(plan, sourceRoot, destRoot);
+        return new TransferResult(copied, deleted, []);
+    }
+}

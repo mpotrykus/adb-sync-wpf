@@ -1,0 +1,15 @@
+## .NET / Visual Studio
+bin/
+obj/
+*.user
+.vs/
+
+## Rider
+.idea/
+
+## Test results
+[Tt]est[Rr]esult*/
+*.trx
+
+## Local user config (never commit real device IPs/paths)
+**/appsettings.local.json
