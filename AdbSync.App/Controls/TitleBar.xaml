@@ -20,7 +20,7 @@
                 </Border.Background>
             </Border>
             <TextBlock Text="{Binding Title, RelativeSource={RelativeSource AncestorType=Window}}"
-                       FontSize="12" Foreground="{StaticResource Brush.Text.Secondary}" VerticalAlignment="Center"/>
+                       FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text.Primary}" VerticalAlignment="Center"/>
         </StackPanel>
 
         <StackPanel x:Name="ButtonsPanel" Grid.Column="2" Orientation="Horizontal" shell:WindowChrome.IsHitTestVisibleInChrome="True">

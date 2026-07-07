@@ -2,10 +2,10 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
     <!-- ===================== Palette (dark / acrylic) ===================== -->
-    <SolidColorBrush x:Key="Brush.Window.Background" Color="#60000000"/>
-    <SolidColorBrush x:Key="Brush.Surface" Color="#F0201B2E"/>
+    <SolidColorBrush x:Key="Brush.Window.Background" Color="#99000000"/>
+    <SolidColorBrush x:Key="Brush.Surface" Color="#11FFFFFF"/>
     <SolidColorBrush x:Key="Brush.Surface.Alt" Color="#F0271F38"/>
-    <SolidColorBrush x:Key="Brush.Border" Color="#000"/>
+    <SolidColorBrush x:Key="Brush.Border" Color="#00FFFFFF"/>
     <SolidColorBrush x:Key="Brush.Border.Hover" Color="#40FFFFFF"/>
 
     <SolidColorBrush x:Key="Brush.Accent" Color="#6C63FF"/>
@@ -20,22 +20,22 @@
 
     <SolidColorBrush x:Key="Brush.Disabled.Foreground" Color="#5C5870"/>
 
-    <LinearGradientBrush x:Key="Brush.Header.Gradient" StartPoint="0,0" EndPoint="0,1">
-        <GradientStop Color="#2E2740" Offset="0"/>
-        <GradientStop Color="#241D33" Offset="1"/>
-    </LinearGradientBrush>
+    <SolidColorBrush x:Key="Brush.Divider" Color="#16FFFFFF"/>
+    <SolidColorBrush x:Key="Brush.Header.Background" Color="#4D6C63FF"/>
+    <SolidColorBrush x:Key="Brush.Text.Header" Color="#E4E0F7"/>
 
     <!-- ===================== Shared ===================== -->
     <Style x:Key="SectionLabel" TargetType="TextBlock">
         <Setter Property="Foreground" Value="{StaticResource Brush.Text.Primary}"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
-        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="FontSize" Value="14"/>
         <Setter Property="Margin" Value="0,0,0,6"/>
     </Style>
 
     <Style x:Key="CaptionText" TargetType="TextBlock">
         <Setter Property="Foreground" Value="{StaticResource Brush.Text.Secondary}"/>
-        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="FontFamily" Value="Segoe UI Variable Small, Segoe UI"/>
+        <Setter Property="FontSize" Value="11"/>
         <Setter Property="TextWrapping" Value="Wrap"/>
         <Setter Property="Margin" Value="0,2,0,10"/>
     </Style>
@@ -54,10 +54,18 @@
         </Setter>
     </Style>
 
+    <Style x:Key="EmptyStateHeadline" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{StaticResource Brush.Text.Primary}"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="FontSize" Value="15"/>
+        <Setter Property="HorizontalAlignment" Value="Center"/>
+        <Setter Property="Margin" Value="0,0,0,4"/>
+    </Style>
+
     <Style x:Key="EmptyStateText" TargetType="TextBlock">
         <Setter Property="Foreground" Value="{StaticResource Brush.Text.Secondary}"/>
         <Setter Property="FontSize" Value="13"/>
-        <Setter Property="Visibility" Value="Collapsed"/>
+        <Setter Property="HorizontalAlignment" Value="Center"/>
     </Style>
 
     <!-- Root chrome for borderless windows: carries the acrylic tint + outline, square off
@@ -153,7 +161,7 @@
         <Setter Property="Foreground" Value="{StaticResource Brush.Text.Primary}"/>
         <Setter Property="AllowsTransparency" Value="True"/>
         <Setter Property="WindowStyle" Value="None"/>
-        <Setter Property="FontFamily" Value="Segoe UI"/>
+        <Setter Property="FontFamily" Value="Segoe UI Variable Text, Segoe UI"/>
         <Setter Property="FontSize" Value="13"/>
         <Setter Property="TextOptions.TextFormattingMode" Value="Display"/>
         <Setter Property="TextOptions.TextRenderingMode" Value="ClearType"/>
@@ -224,7 +232,7 @@
 
     <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource BaseButton}">
         <Setter Property="Foreground" Value="{StaticResource Brush.Text.OnAccent}"/>
-        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="FontWeight" Value="Medium"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
@@ -288,7 +296,7 @@
                 <ControlTemplate TargetType="Button">
                     <Border x:Name="Chrome" CornerRadius="6" BorderThickness="1" SnapsToDevicePixels="True">
                         <Border.Background>
-                            <SolidColorBrush x:Name="Fill" Color="#00FF6B6B"/>
+                            <SolidColorBrush x:Name="Fill" Color="#33FF6B6B"/>
                         </Border.Background>
                         <Border.BorderBrush>
                             <SolidColorBrush x:Name="Stroke" Color="#66FF6B6B"/>
@@ -301,7 +309,7 @@
                             <Trigger.EnterActions>
                                 <BeginStoryboard>
                                     <Storyboard>
-                                        <ColorAnimation Storyboard.TargetName="Fill" Storyboard.TargetProperty="Color" To="#33FF6B6B" Duration="0:0:0.12"/>
+                                        <ColorAnimation Storyboard.TargetName="Fill" Storyboard.TargetProperty="Color" To="#59FF6B6B" Duration="0:0:0.12"/>
                                         <ColorAnimation Storyboard.TargetName="Stroke" Storyboard.TargetProperty="Color" To="#FF6B6B" Duration="0:0:0.12"/>
                                     </Storyboard>
                                 </BeginStoryboard>
@@ -309,7 +317,7 @@
                             <Trigger.ExitActions>
                                 <BeginStoryboard>
                                     <Storyboard>
-                                        <ColorAnimation Storyboard.TargetName="Fill" Storyboard.TargetProperty="Color" To="#00FF6B6B" Duration="0:0:0.16"/>
+                                        <ColorAnimation Storyboard.TargetName="Fill" Storyboard.TargetProperty="Color" To="#33FF6B6B" Duration="0:0:0.16"/>
                                         <ColorAnimation Storyboard.TargetName="Stroke" Storyboard.TargetProperty="Color" To="#66FF6B6B" Duration="0:0:0.16"/>
                                     </Storyboard>
                                 </BeginStoryboard>
@@ -319,7 +327,7 @@
                             <Trigger.EnterActions>
                                 <BeginStoryboard>
                                     <Storyboard>
-                                        <ColorAnimation Storyboard.TargetName="Fill" Storyboard.TargetProperty="Color" To="#59FF6B6B" Duration="0:0:0.08"/>
+                                        <ColorAnimation Storyboard.TargetName="Fill" Storyboard.TargetProperty="Color" To="#80FF6B6B" Duration="0:0:0.08"/>
                                     </Storyboard>
                                 </BeginStoryboard>
                             </Trigger.EnterActions>
@@ -337,7 +345,7 @@
     <!-- ===================== TextBox ===================== -->
     <Style TargetType="TextBox">
         <Setter Property="Foreground" Value="{StaticResource Brush.Text.Primary}"/>
-        <Setter Property="Padding" Value="9,7"/>
+        <Setter Property="Padding" Value="6,4"/>
         <Setter Property="FontSize" Value="13"/>
         <Setter Property="CaretBrush" Value="{StaticResource Brush.Text.Primary}"/>
         <Setter Property="SelectionBrush" Value="{StaticResource Brush.Accent.Subtle}"/>
@@ -681,14 +689,84 @@
         </Setter>
     </Style>
 
+    <!-- ===================== ScrollBar ===================== -->
+    <Style x:Key="ScrollBarThumb" TargetType="Thumb">
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Thumb">
+                    <Border x:Name="Rect" Background="#33FFFFFF" CornerRadius="3" Margin="2" SnapsToDevicePixels="True"/>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Rect" Property="Background" Value="#59FFFFFF"/>
+                        </Trigger>
+                        <Trigger Property="IsDragging" Value="True">
+                            <Setter TargetName="Rect" Property="Background" Value="{StaticResource Brush.Accent}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="ScrollBarRepeatButton" TargetType="RepeatButton">
+        <Setter Property="IsTabStop" Value="False"/>
+        <Setter Property="Focusable" Value="False"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RepeatButton">
+                    <Border Background="Transparent"/>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="ScrollBar">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Width" Value="10"/>
+        <Setter Property="MinWidth" Value="10"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ScrollBar">
+                    <Border Background="{TemplateBinding Background}">
+                        <Track x:Name="PART_Track" IsDirectionReversed="True">
+                            <Track.DecreaseRepeatButton>
+                                <RepeatButton Style="{StaticResource ScrollBarRepeatButton}" Command="ScrollBar.PageUpCommand"/>
+                            </Track.DecreaseRepeatButton>
+                            <Track.IncreaseRepeatButton>
+                                <RepeatButton Style="{StaticResource ScrollBarRepeatButton}" Command="ScrollBar.PageDownCommand"/>
+                            </Track.IncreaseRepeatButton>
+                            <Track.Thumb>
+                                <Thumb Style="{StaticResource ScrollBarThumb}"/>
+                            </Track.Thumb>
+                        </Track>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="Orientation" Value="Horizontal">
+                            <Setter TargetName="PART_Track" Property="IsDirectionReversed" Value="False"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+        <Style.Triggers>
+            <Trigger Property="Orientation" Value="Horizontal">
+                <Setter Property="Width" Value="Auto"/>
+                <Setter Property="MinWidth" Value="0"/>
+                <Setter Property="Height" Value="10"/>
+                <Setter Property="MinHeight" Value="10"/>
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
     <!-- ===================== DataGrid ===================== -->
     <Style TargetType="DataGridColumnHeader">
-        <Setter Property="Background" Value="{StaticResource Brush.Header.Gradient}"/>
-        <Setter Property="Foreground" Value="{StaticResource Brush.Text.Secondary}"/>
+        <Setter Property="Background" Value="{StaticResource Brush.Header.Background}"/>
+        <Setter Property="Foreground" Value="{StaticResource Brush.Text.Header}"/>
+        <Setter Property="FontFamily" Value="Segoe UI Variable Small, Segoe UI"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
-        <Setter Property="FontSize" Value="12"/>
-        <Setter Property="Padding" Value="10,10"/>
-        <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}"/>
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="Padding" Value="14,0"/>
+        <Setter Property="BorderBrush" Value="{StaticResource Brush.Accent}"/>
         <Setter Property="BorderThickness" Value="0,0,0,1"/>
         <Setter Property="HorizontalContentAlignment" Value="Left"/>
         <Setter Property="Template">
@@ -725,7 +803,7 @@
 
     <Style TargetType="DataGridRow">
         <Setter Property="Background" Value="Transparent"/>
-        <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource Brush.Divider}"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="DataGridRow">
@@ -765,7 +843,103 @@
         <Setter Property="HorizontalGridLinesBrush" Value="{StaticResource Brush.Border}"/>
         <Setter Property="VerticalGridLinesBrush" Value="{StaticResource Brush.Border}"/>
         <Setter Property="FontSize" Value="13"/>
-        <Setter Property="ColumnHeaderHeight" Value="38"/>
+        <Setter Property="ColumnHeaderHeight" Value="40"/>
+    </Style>
+
+    <!-- ===================== ContextMenu (tray icon) =====================
+         Unstyled ContextMenu/MenuItem fall back to the default WHITE system popup,
+         while the global TextBlock style above still paints header text near-white -
+         white-on-white, i.e. an apparently blank menu. These styles give the tray
+         menu the same dark surface + accent language as the rest of the app. -->
+    <Style TargetType="Separator">
+        <Setter Property="Background" Value="{StaticResource Brush.Border.Hover}"/>
+        <Setter Property="Margin" Value="6,4"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Separator">
+                    <Border Height="1" Background="{TemplateBinding Background}"/>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="ContextMenu">
+        <Setter Property="Background" Value="{StaticResource Brush.Surface.Alt}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource Brush.Border.Hover}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Padding" Value="4"/>
+        <Setter Property="Foreground" Value="{StaticResource Brush.Text.Primary}"/>
+        <Setter Property="FontFamily" Value="Segoe UI Variable Text, Segoe UI"/>
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="HasDropShadow" Value="False"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ContextMenu">
+                    <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8"
+                            Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
+                        <Border.Effect>
+                            <DropShadowEffect BlurRadius="24" ShadowDepth="6" Opacity="0.4" Color="Black"/>
+                        </Border.Effect>
+                        <ScrollViewer CanContentScroll="True" VerticalScrollBarVisibility="Auto">
+                            <ItemsPresenter/>
+                        </ScrollViewer>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="MenuItem">
+        <Setter Property="Foreground" Value="{StaticResource Brush.Text.Primary}"/>
+        <Setter Property="Padding" Value="10,7"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="MenuItem">
+                    <Grid>
+                        <Border x:Name="Chrome" Background="Transparent" CornerRadius="5" SnapsToDevicePixels="True">
+                            <Grid Margin="{TemplateBinding Padding}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <ContentPresenter Grid.Column="0" ContentSource="Header" VerticalAlignment="Center"
+                                                  RecognizesAccessKey="True"/>
+                                <Path x:Name="Arrow" Grid.Column="1" Data="M0,0 L4,4 L0,8" Stroke="{StaticResource Brush.Text.Secondary}"
+                                      StrokeThickness="1.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                                      Margin="10,0,2,0" VerticalAlignment="Center" Visibility="Collapsed"/>
+                            </Grid>
+                        </Border>
+                        <Popup x:Name="SubmenuPopup" Placement="Right" HorizontalOffset="2" VerticalOffset="-5"
+                               IsOpen="{TemplateBinding IsSubmenuOpen}" AllowsTransparency="True"
+                               Focusable="False" PopupAnimation="Fade">
+                            <Border Background="{StaticResource Brush.Surface.Alt}" BorderBrush="{StaticResource Brush.Border.Hover}"
+                                    BorderThickness="1" CornerRadius="8" Padding="4" SnapsToDevicePixels="True">
+                                <Border.Effect>
+                                    <DropShadowEffect BlurRadius="24" ShadowDepth="6" Opacity="0.4" Color="Black"/>
+                                </Border.Effect>
+                                <ScrollViewer CanContentScroll="True" VerticalScrollBarVisibility="Auto">
+                                    <ItemsPresenter/>
+                                </ScrollViewer>
+                            </Border>
+                        </Popup>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="Role" Value="SubmenuHeader">
+                            <Setter TargetName="Arrow" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                        <Trigger Property="IsHighlighted" Value="True">
+                            <Setter TargetName="Chrome" Property="Background" Value="{StaticResource Brush.Accent.Subtle}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Foreground" Value="{StaticResource Brush.Disabled.Foreground}"/>
+                            <Setter TargetName="Chrome" Property="Opacity" Value="0.55"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
 </ResourceDictionary>

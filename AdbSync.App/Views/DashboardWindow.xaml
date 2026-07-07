@@ -6,7 +6,7 @@
         xmlns:controls="clr-namespace:AdbSync.App.Controls"
         interop:AcrylicEffect.Enabled="True"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
-        Title="AdbSync" Height="460" Width="1080" MinHeight="320" MinWidth="640" WindowStartupLocation="CenterScreen">
+        Title="Adb_Sync" Icon="/Assets/app.ico" Height="460" Width="1080" MinHeight="320" MinWidth="640" WindowStartupLocation="CenterScreen">
     <shell:WindowChrome.WindowChrome>
         <shell:WindowChrome CaptionHeight="36" ResizeBorderThickness="6" GlassFrameThickness="0" CornerRadius="8" UseAeroCaptionButtons="False"/>
     </shell:WindowChrome.WindowChrome>
@@ -26,16 +26,17 @@
                     <Button Content="Settings" Click="Settings_Click"/>
                 </StackPanel>
 
-                <Grid>
+                <Border x:Name="JobsGridBorder" CornerRadius="8" SizeChanged="JobsGridBorder_SizeChanged">
+                    <Grid Background="#0AFFFFFF">
                     <DataGrid x:Name="JobsGrid" ItemsSource="{Binding Jobs}" AutoGenerateColumns="False" IsReadOnly="True"
                               CanUserAddRows="False" HeadersVisibility="Column" GridLinesVisibility="Horizontal">
                         <DataGrid.Columns>
-                            <DataGridCheckBoxColumn Header="Enabled" Binding="{Binding Enabled}" Width="70"/>
-                            <DataGridTextColumn Header="Job" Binding="{Binding Name}" Width="150"/>
-                            <DataGridTextColumn Header="Status" Binding="{Binding PhaseText}" Width="160"/>
-                            <DataGridTextColumn Header="Last Result" Binding="{Binding LastOutcome}" Width="*"/>
-                            <DataGridTextColumn Header="Last Run" Binding="{Binding LastRunText}" Width="140"/>
-                            <DataGridTextColumn Header="Next Run" Binding="{Binding NextRunText}" Width="140"/>
+                            <DataGridCheckBoxColumn Header="ENABLED" Binding="{Binding Enabled}" Width="75"/>
+                            <DataGridTextColumn Header="JOB" Binding="{Binding Name}" Width="150"/>
+                            <DataGridTextColumn Header="STATUS" Binding="{Binding PhaseText}" Width="160"/>
+                            <DataGridTextColumn Header="LAST RESULT" Binding="{Binding LastOutcome}" Width="*"/>
+                            <DataGridTextColumn Header="LAST RUN" Binding="{Binding LastRunText}" Width="140"/>
+                            <DataGridTextColumn Header="NEXT RUN" Binding="{Binding NextRunText}" Width="140"/>
                             <DataGridTemplateColumn Header="" Width="240">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
@@ -50,19 +51,21 @@
                         </DataGrid.Columns>
                     </DataGrid>
 
-                    <TextBlock Text="No jobs yet. Click &quot;Add Job&quot; to schedule your first sync."
-                               HorizontalAlignment="Center" VerticalAlignment="Center">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock" BasedOn="{StaticResource EmptyStateText}">
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed">
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding HasItems, ElementName=JobsGrid}" Value="False">
                                         <Setter Property="Visibility" Value="Visible"/>
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
+                        </StackPanel.Style>
+                        <TextBlock Text="No jobs yet" Style="{StaticResource EmptyStateHeadline}"/>
+                        <TextBlock Text="Click &quot;Add Job&quot; to schedule your first sync." Style="{StaticResource EmptyStateText}"/>
+                    </StackPanel>
                 </Grid>
+                </Border>
             </DockPanel>
         </Grid>
     </Border>

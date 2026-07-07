@@ -1,5 +1,7 @@
 using System.ComponentModel;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
 using AdbSync.App.Services;
 using AdbSync.App.ViewModels;
 
@@ -24,6 +26,13 @@ public partial class DashboardWindow : Window
     }
 
     private async Task RefreshAsync() => _viewModel.SyncFrom(await _configService.GetAsync());
+
+    private void JobsGridBorder_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        var border = (Border)sender;
+        var radius = border.CornerRadius.TopLeft;
+        border.Clip = new RectangleGeometry(new Rect(e.NewSize), radius, radius);
+    }
 
     protected override void OnClosing(CancelEventArgs e)
     {

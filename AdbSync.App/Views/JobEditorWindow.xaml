@@ -6,7 +6,7 @@
         xmlns:controls="clr-namespace:AdbSync.App.Controls"
         interop:AcrylicEffect.Enabled="True"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
-        Title="Job" Height="680" Width="540" WindowStartupLocation="CenterOwner" ResizeMode="NoResize">
+        Title="Job" Icon="/Assets/app.ico" Height="680" Width="540" WindowStartupLocation="CenterOwner" ResizeMode="NoResize">
     <shell:WindowChrome.WindowChrome>
         <shell:WindowChrome CaptionHeight="36" ResizeBorderThickness="0" GlassFrameThickness="0" CornerRadius="8" UseAeroCaptionButtons="False"/>
     </shell:WindowChrome.WindowChrome>
@@ -36,7 +36,7 @@
                         <StackPanel>
                             <TextBlock Text="Exclude patterns" Style="{StaticResource SectionLabel}"/>
                             <TextBlock Text="One glob pattern per line." Style="{StaticResource CaptionText}"/>
-                            <TextBox x:Name="ExcludeBox" AcceptsReturn="True" Height="80" FontFamily="Consolas"
+                            <TextBox x:Name="ExcludeBox" AcceptsReturn="True" Height="80" FontFamily="Cascadia Mono, Consolas"
                                      TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" AcceptsTab="True"/>
                         </StackPanel>
                     </Border>

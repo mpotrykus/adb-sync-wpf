@@ -51,6 +51,37 @@ public static class AcrylicEffect
         {
             // Best-effort visual flourish only; never let this break window creation.
         }
+
+        try
+        {
+            // SetWindowCompositionAttribute's blur paints the whole rectangular HWND surface,
+            // not just the pixels our own WPF Border renders inside its rounded clip - a GDI
+            // SetWindowRgn has no effect here because this is a per-pixel-alpha layered window
+            // (region clipping is ignored for those). Telling DWM itself to round the window's
+            // physical composition surface is the only thing that also clips the blur, so the
+            // sharp corner doesn't poke out past our rounded Border. Windows 10 and older simply
+            // fail this call (unsupported attribute) and keep the square corner as before.
+            var preference = (int)DwmWindowCornerPreference.Round;
+            DwmSetWindowAttribute(hwnd, DwmWindowAttribute.WindowCornerPreference, ref preference, sizeof(int));
+        }
+        catch
+        {
+            // Best-effort visual flourish only; never let this break window creation.
+        }
+
+        try
+        {
+            // Once DWM treats the window as a normal rounded top-level window, it also paints
+            // its own default ~1px accent border around it. Our own WindowRootBorder already
+            // carries a (deliberately transparent) outline for this borderless design, so turn
+            // DWM's off rather than stacking a second, visible one on top.
+            var noBorder = DwmwaColorNone;
+            DwmSetWindowAttribute(hwnd, DwmWindowAttribute.BorderColor, ref noBorder, sizeof(int));
+        }
+        catch
+        {
+            // Best-effort visual flourish only; never let this break window creation.
+        }
     }
 
     private static void EnableAcrylicBlur(IntPtr hwnd)
@@ -116,8 +147,22 @@ public static class AcrylicEffect
         public int SizeOfData;
     }
 
+    private enum DwmWindowAttribute
+    {
+        WindowCornerPreference = 33,
+        BorderColor = 34,
+    }
+
+    private enum DwmWindowCornerPreference
+    {
+        Round = 2,
+    }
+
+    // Sentinel COLORREF value documented for DWMWA_BORDER_COLOR meaning "no border".
+    private const int DwmwaColorNone = unchecked((int)0xFFFFFFFE);
+
     [DllImport("dwmapi.dll")]
-    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, DwmWindowAttribute attribute, ref int value, int size);
 
     [DllImport("user32.dll")]
     private static extern int SetWindowCompositionAttribute(IntPtr hwnd, ref WindowCompositionAttributeData data);

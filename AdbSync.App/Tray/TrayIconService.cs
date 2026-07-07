@@ -30,7 +30,7 @@ public sealed class TrayIconService(
     {
         _icon = new TaskbarIcon
         {
-            Icon = System.Drawing.SystemIcons.Application,
+            Icon = LoadAppIcon(),
             ToolTipText = "AdbSync: idle",
         };
         // Without an owning XAML tree, TaskbarIcon never gets its normal Loaded-triggered auto-create -
@@ -172,6 +172,13 @@ public sealed class TrayIconService(
             return;
         Directory.CreateDirectory(path);
         Process.Start(new ProcessStartInfo("explorer.exe", $"\"{path}\"") { UseShellExecute = true });
+    }
+
+    private static System.Drawing.Icon LoadAppIcon()
+    {
+        var resourceInfo = Application.GetResourceStream(new Uri("Assets/app.ico", UriKind.Relative));
+        using var stream = resourceInfo!.Stream;
+        return new System.Drawing.Icon(stream);
     }
 
     public void Dispose() => _icon?.Dispose();

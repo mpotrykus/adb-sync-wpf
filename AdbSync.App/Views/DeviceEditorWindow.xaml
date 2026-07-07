@@ -6,7 +6,7 @@
         xmlns:controls="clr-namespace:AdbSync.App.Controls"
         interop:AcrylicEffect.Enabled="True"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
-        Title="Devices" Height="460" Width="600" MinHeight="360" MinWidth="480" WindowStartupLocation="CenterOwner">
+        Title="Devices" Icon="/Assets/app.ico" Height="460" Width="600" MinHeight="360" MinWidth="480" WindowStartupLocation="CenterOwner">
     <shell:WindowChrome.WindowChrome>
         <shell:WindowChrome CaptionHeight="36" ResizeBorderThickness="6" GlassFrameThickness="0" CornerRadius="8" UseAeroCaptionButtons="False"/>
     </shell:WindowChrome.WindowChrome>
