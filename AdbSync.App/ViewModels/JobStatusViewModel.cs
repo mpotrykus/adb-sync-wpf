@@ -16,6 +16,17 @@ public sealed partial class JobStatusViewModel(string name) : ObservableObject
     [ObservableProperty]
     private string? _lastOutcome;
 
+    /// <summary>True when the last run failed and hasn't been superseded by a later success - drives the row's attention badge.</summary>
+    [ObservableProperty]
+    private bool _needsAttention;
+
+    /// <summary>True when the failure was a <see cref="AdbSync.Core.Orchestration.PushSafetyException"/>, which can be resolved via the Force Push action.</summary>
+    [ObservableProperty]
+    private bool _canForcePush;
+
+    [ObservableProperty]
+    private string? _watchStatusText;
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(LastRunText))]
     private DateTimeOffset? _lastRunAt;

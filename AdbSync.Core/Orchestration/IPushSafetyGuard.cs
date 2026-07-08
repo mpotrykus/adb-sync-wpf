@@ -7,4 +7,10 @@ public interface IPushSafetyGuard
 
     /// <summary>Throws <see cref="PushSafetyException"/> if master is empty, or far below the best historical per-device file count.</summary>
     Task AssertSafeToPushAsync(string jobName, string masterPath, CancellationToken ct = default);
+
+    /// <summary>
+    /// Manual override for a blocked push: never throws, and rebases every device's historical baseline to the
+    /// current master file count so the new (lower) count is treated as the accepted normal going forward.
+    /// </summary>
+    Task ForcePushAsync(string jobName, string masterPath, CancellationToken ct = default);
 }

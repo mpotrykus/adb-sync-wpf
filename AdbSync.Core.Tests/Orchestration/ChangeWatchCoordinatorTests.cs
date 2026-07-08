@@ -1,0 +1,145 @@
+using System.Collections.Concurrent;
+using AdbSync.Core.Config;
+using AdbSync.Core.Devices;
+using AdbSync.Core.Orchestration;
+using AdbSync.Core.Tests.Orchestration.Fakes;
+using NSubstitute;
+
+namespace AdbSync.Core.Tests.Orchestration;
+
+public class ChangeWatchCoordinatorTests
+{
+    private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(30);
+    private static readonly TimeSpan ReconnectBackoff = TimeSpan.FromMilliseconds(30);
+    private static readonly DeviceConfig Device = new() { Name = "Phone", Serial = "abc123" };
+
+    [Fact]
+    public async Task RapidSignals_CoalesceIntoOneTrigger()
+    {
+        var watcher = new FakeDeviceChangeWatcher();
+        var events = new RecordingSyncEventSink();
+        var triggerCount = 0;
+
+        await using var coordinator = new ChangeWatchCoordinator(
+            "Job", [new ChangeWatchBinding(Device, "/sdcard/DCIM")], watcher, new FakeDeviceResolver(), events,
+            debounceWindow: TimeSpan.FromMilliseconds(60), rescanInterval: TimeSpan.FromSeconds(30),
+            onTriggered: () => { Interlocked.Increment(ref triggerCount); return Task.CompletedTask; },
+            pollInterval: PollInterval, reconnectBackoff: ReconnectBackoff);
+
+        coordinator.Start();
+        await WaitUntilAsync(() => watcher.WatchAsyncCallCount >= 1);
+
+        for (var i = 0; i < 5; i++)
+        {
+            watcher.EmitSignal();
+            await Task.Delay(10);
+        }
+
+        await WaitUntilAsync(() => triggerCount >= 1, timeout: TimeSpan.FromSeconds(2));
+        await Task.Delay(150); // give any errant extra trigger a chance to land before asserting
+
+        Assert.Equal(1, triggerCount);
+        Assert.Contains(events.WatchStartedCalls, c => c is ("Job", "Phone", true));
+    }
+
+    [Fact]
+    public async Task ChangeCausedByOwnTrigger_DoesNotReTrigger()
+    {
+        var watcher = new FakeDeviceChangeWatcher();
+        var events = new RecordingSyncEventSink();
+        var triggerCount = 0;
+
+        await using var coordinator = new ChangeWatchCoordinator(
+            "Job", [new ChangeWatchBinding(Device, "/sdcard/DCIM")], watcher, new FakeDeviceResolver(), events,
+            debounceWindow: TimeSpan.FromMilliseconds(20), rescanInterval: TimeSpan.FromSeconds(30),
+            onTriggered: () =>
+            {
+                Interlocked.Increment(ref triggerCount);
+                watcher.EmitSignal(); // simulates the triggered push writing into the watched path
+                return Task.CompletedTask;
+            },
+            pollInterval: PollInterval, reconnectBackoff: ReconnectBackoff,
+            postTriggerSuppression: TimeSpan.FromMilliseconds(80));
+
+        coordinator.Start();
+        await WaitUntilAsync(() => watcher.WatchAsyncCallCount >= 1, timeout: TimeSpan.FromSeconds(2));
+
+        watcher.EmitSignal();
+
+        await WaitUntilAsync(() => triggerCount >= 1, timeout: TimeSpan.FromSeconds(2));
+        await Task.Delay(200); // give the self-caused signal a chance to wrongly re-trigger before asserting
+
+        Assert.Equal(1, triggerCount);
+    }
+
+    [Fact]
+    public async Task UnavailableInotifyd_FallsBackToPolling_AndDetectsChange()
+    {
+        var watcher = new FakeDeviceChangeWatcher
+        {
+            Availability = new(false, "inotifyd not present on this device's shell"),
+            SnapshotSequence = call => call == 0 ? "v1" : "v2", // first snapshot vs. every poll after
+        };
+        var events = new RecordingSyncEventSink();
+        var triggerCount = 0;
+
+        await using var coordinator = new ChangeWatchCoordinator(
+            "Job", [new ChangeWatchBinding(Device, "/sdcard/Android/data/com.foo")], watcher, new FakeDeviceResolver(), events,
+            debounceWindow: TimeSpan.FromMilliseconds(20), rescanInterval: TimeSpan.FromSeconds(30),
+            onTriggered: () => { Interlocked.Increment(ref triggerCount); return Task.CompletedTask; },
+            pollInterval: PollInterval, reconnectBackoff: ReconnectBackoff);
+
+        coordinator.Start();
+
+        await WaitUntilAsync(() => events.WatchDegradedCalls.Count >= 1, timeout: TimeSpan.FromSeconds(2));
+        Assert.Contains(events.WatchDegradedCalls, c => c.JobName == "Job" && c.Reason.Contains("inotifyd"));
+
+        await WaitUntilAsync(() => triggerCount >= 1, timeout: TimeSpan.FromSeconds(2));
+        Assert.Contains(events.ChangeDetectedCalls, c => c is ("Job", "Phone"));
+    }
+
+    [Fact]
+    public async Task StreamFailure_ReconnectsInsteadOfDying()
+    {
+        var watcher = new FakeDeviceChangeWatcher
+        {
+            ThrowOnWatchCall = callIndex => callIndex == 0, // first connection drops, second succeeds
+        };
+        var events = new RecordingSyncEventSink();
+        var resolveCalls = new ConcurrentBag<DateTime>();
+        var resolver = Substitute.For<IAdbDeviceResolver>();
+        resolver.EnsureConnectedAsync(Arg.Any<DeviceConfig>(), Arg.Any<CancellationToken>())
+            .Returns(_ => { resolveCalls.Add(DateTime.UtcNow); return Task.FromResult("abc123"); });
+
+        var triggerCount = 0;
+        await using var coordinator = new ChangeWatchCoordinator(
+            "Job", [new ChangeWatchBinding(Device, "/sdcard/DCIM")], watcher, resolver, events,
+            debounceWindow: TimeSpan.FromMilliseconds(20), rescanInterval: TimeSpan.FromSeconds(30),
+            onTriggered: () => { Interlocked.Increment(ref triggerCount); return Task.CompletedTask; },
+            pollInterval: PollInterval, reconnectBackoff: ReconnectBackoff);
+
+        coordinator.Start();
+
+        // First attempt fails (WatchAsyncCallCount becomes 1 immediately since the fake throws synchronously
+        // from inside the iterator on first MoveNextAsync); the coordinator should reconnect and retry rather
+        // than exiting the binding loop.
+        await WaitUntilAsync(() => watcher.WatchAsyncCallCount >= 2, timeout: TimeSpan.FromSeconds(2));
+        Assert.True(resolveCalls.Count >= 2, "expected the coordinator to re-resolve the device after the stream failure");
+
+        await WaitUntilAsync(() => watcher.WatchAsyncCallCount >= 2 && watcher.CheckAvailabilityCallCount >= 2);
+        watcher.EmitSignal();
+
+        await WaitUntilAsync(() => triggerCount >= 1, timeout: TimeSpan.FromSeconds(2));
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition, TimeSpan? timeout = null)
+    {
+        var deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(1));
+        while (!condition())
+        {
+            if (DateTime.UtcNow > deadline)
+                throw new TimeoutException("Condition was not met in time.");
+            await Task.Delay(10);
+        }
+    }
+}

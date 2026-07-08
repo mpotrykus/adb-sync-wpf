@@ -183,6 +183,30 @@ public class SyncJobRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task RunAsync_ForcePushWithSafetyTripped_CompletesAndRebasesBaseline()
+    {
+        var pushSafety = new PushSafetyGuard(_appPaths);
+        await pushSafety.RecordDeviceSnapshotAsync("JobSeven", "DeviceA", 100); // seed a much higher historical baseline
+
+        WriteDeviceFile("DeviceA", "only-one-file.txt", "content");
+        var device = new DeviceConfig { Name = "DeviceA", Serial = "DeviceA" };
+        var job = new SyncJobConfig
+        {
+            Name = "JobSeven",
+            Devices = [new JobDeviceBinding { DeviceName = "DeviceA", RemotePath = "/sdcard/app" }],
+        };
+        var runner = CreateRunner(new Dictionary<string, string> { ["DeviceA"] = DeviceFolder("DeviceA") }, pushSafety: pushSafety);
+
+        var result = await runner.RunAsync(job, 0, [device], _settings, resumeFrom: null, forcePush: true);
+        Assert.Equal(JobRunOutcome.Completed, result.Outcome);
+
+        // Baseline is now rebased to the 1-file master, so a normal (non-forced) run at the same level no longer trips the guard.
+        WriteDeviceFile("DeviceA", "only-one-file.txt", "content edited");
+        var secondResult = await runner.RunAsync(job, 0, [device], _settings, resumeFrom: null);
+        Assert.Equal(JobRunOutcome.Completed, secondResult.Outcome);
+    }
+
+    [Fact]
     public async Task RunAsync_ProjectsDirectoryNotConfigured_ReturnsFailedAndFiresJobFailedEvent()
     {
         WriteDeviceFile("DeviceA", "a.txt", "content");

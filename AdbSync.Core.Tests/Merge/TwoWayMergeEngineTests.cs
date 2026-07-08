@@ -106,6 +106,23 @@ public class TwoWayMergeEngineTests : IDisposable
         Assert.Equal("staging-version", File.ReadAllText(result.Conflicts[0].BackupPath!));
     }
 
+    // Row: S, M, ¬K, but both sides already agree -> not a real conflict, just seed the manifest.
+    [Fact]
+    public async Task PresentOnBothSidesWithNoBaseline_ButAlreadyIdentical_NoConflictAndManifestSeeded()
+    {
+        Write(_masterPath, "a.txt", "same-version", T0);
+        Write(_stagingPath, "a.txt", "same-version", T0);
+
+        var result = await _engine.MergeAsync(_stagingPath, _masterPath, EmptyManifest(), new MergeOptions());
+
+        Assert.Empty(result.Conflicts);
+        Assert.False(result.AnyChange);
+        Assert.Equal("same-version", Read(_masterPath, "a.txt"));
+        Assert.Equal("same-version", Read(_stagingPath, "a.txt"));
+        Assert.True(result.UpdatedManifest.Entries.TryGetValue("a.txt", out var entry));
+        Assert.Equal(SizeOf(_stagingPath, "a.txt"), entry!.Size);
+    }
+
     // Row: S, ¬M, K, staging unchanged vs baseline -> master's delete propagates to staging.
     [Fact]
     public async Task DeletedFromMaster_StagingUnchanged_PropagatesDeleteToStaging()

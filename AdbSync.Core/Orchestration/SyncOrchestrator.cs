@@ -20,7 +20,7 @@ public sealed class SyncOrchestrator(SyncJobRunner runner)
                 continue;
 
             var resume = resumeFrom is not null && resumeFrom.ProjectIndex == index ? resumeFrom : null;
-            results.Add(await runner.RunAsync(job, index, config.Devices, config.Settings, resume, ct));
+            results.Add(await runner.RunAsync(job, index, config.Devices, config.Settings, resume, forcePush: false, ct));
         }
         return results;
     }

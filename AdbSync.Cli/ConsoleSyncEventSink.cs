@@ -15,4 +15,16 @@ public sealed class ConsoleSyncEventSink : ISyncEventSink
 
     public void MergeConflictsDetected(string jobName, string deviceName, int conflictCount) =>
         Console.WriteLine($"[{jobName}] {conflictCount} conflict(s) with '{deviceName}' resolved (newer-wins; losers backed up)");
+
+    public void WatchStarted(string jobName, string deviceName, bool liveWatch) =>
+        Console.WriteLine($"[{jobName}] watching '{deviceName}' ({(liveWatch ? "live" : "polling")})");
+
+    public void WatchDegraded(string jobName, string deviceName, string reason) =>
+        Console.WriteLine($"[{jobName}] watch on '{deviceName}' fell back to polling: {reason}");
+
+    public void WatchStopped(string jobName, string deviceName) =>
+        Console.WriteLine($"[{jobName}] stopped watching '{deviceName}'");
+
+    public void ChangeDetected(string jobName, string deviceName) =>
+        Console.WriteLine($"[{jobName}] change detected on '{deviceName}'");
 }

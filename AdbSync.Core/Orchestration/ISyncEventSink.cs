@@ -10,4 +10,16 @@ public interface ISyncEventSink
 
     /// <summary>Reported once per device after a merge that found conflicts - conflict losers are always backed up to disk, never silently discarded.</summary>
     void MergeConflictsDetected(string jobName, string deviceName, int conflictCount);
+
+    /// <summary>An OnChange watcher started for this device binding; <paramref name="liveWatch"/> is false if it's polling instead.</summary>
+    void WatchStarted(string jobName, string deviceName, bool liveWatch);
+
+    /// <summary>A live watch fell back to polling (device disconnected, inotifyd unavailable, path unreadable, etc).</summary>
+    void WatchDegraded(string jobName, string deviceName, string reason);
+
+    /// <summary>An OnChange watcher stopped (job disabled, schedule changed, binding removed).</summary>
+    void WatchStopped(string jobName, string deviceName);
+
+    /// <summary>A change was observed on a device; the job run it triggers (after the debounce window) is reported separately via the usual PhaseChanged/JobCompleted calls.</summary>
+    void ChangeDetected(string jobName, string deviceName);
 }

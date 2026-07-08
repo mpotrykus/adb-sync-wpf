@@ -121,6 +121,7 @@ public partial class App : Application
         services.AddSingleton<IAdbServer>(_ => new AdbServer());
         services.AddSingleton<IMdnsBrowser, MdnsBrowser>();
         services.AddSingleton<IAdbDeviceResolver, AdbDeviceResolver>();
+        services.AddSingleton<IDeviceChangeWatcher, DeviceChangeWatcher>();
         services.AddSingleton<IAppRunningGuard, AppRunningGuard>();
         services.AddSingleton<ISyncLockManager, SyncLockManager>();
         services.AddSingleton<IAdbProcessRunner>(_ => new AdbProcessRunner());
@@ -140,6 +141,9 @@ public partial class App : Application
 
         services.AddSingleton<SchedulerHostedService>();
         services.AddHostedService(sp => sp.GetRequiredService<SchedulerHostedService>());
+
+        services.AddSingleton<ChangeWatchHostedService>();
+        services.AddHostedService(sp => sp.GetRequiredService<ChangeWatchHostedService>());
 
         services.AddSingleton<TrayIconService>();
         services.AddTransient<DashboardWindow>();

@@ -27,7 +27,7 @@ public sealed class SyncJobRunner(
 
     public async Task<JobRunResult> RunAsync(
         SyncJobConfig job, int jobIndex, IReadOnlyList<DeviceConfig> devices, GlobalSettings settings,
-        SyncCheckpoint? resumeFrom, CancellationToken ct = default)
+        SyncCheckpoint? resumeFrom, bool forcePush = false, CancellationToken ct = default)
     {
         var runId = Guid.NewGuid();
         var startedAt = DateTimeOffset.UtcNow;
@@ -99,7 +99,16 @@ public sealed class SyncJobRunner(
                 return await FinishAsync(JobRunOutcome.CompletedNoChanges);
             }
 
-            await pushSafety.AssertSafeToPushAsync(job.Name, masterPath, ct);
+            if (forcePush)
+            {
+                _logger.LogWarning("Job '{Job}' push-safety check bypassed by manual override", job.Name);
+                await pushSafety.ForcePushAsync(job.Name, masterPath, ct);
+            }
+            else
+            {
+                await pushSafety.AssertSafeToPushAsync(job.Name, masterPath, ct);
+            }
+
             var pushStopwatch = Stopwatch.StartNew();
             var pushStats = await RunPushPhaseAsync(job, jobIndex, masterPath, serials, exclude, resumeFrom, ct);
             pushDuration = pushStopwatch.Elapsed;

@@ -45,19 +45,61 @@
                     <Border Style="{StaticResource CardBorder}">
                         <StackPanel>
                             <TextBlock Text="Devices" Style="{StaticResource SectionLabel}"/>
-                            <ListBox x:Name="DeviceBindingsList" Height="90" Margin="0,0,0,8"/>
-                            <Grid>
+
+                            <ItemsControl x:Name="DeviceBindingsList">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="#0AFFFFFF" CornerRadius="6" Padding="10,7" Margin="0,0,0,6">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" VerticalAlignment="Center" TextWrapping="Wrap">
+                                                    <Run Text="{Binding DeviceName, Mode=OneWay}" FontWeight="SemiBold"/>
+                                                    <Run Text=" &#8594; "/>
+                                                    <Run Text="{Binding RemotePath, Mode=OneWay}" Foreground="{StaticResource Brush.Text.Secondary}"/>
+                                                </TextBlock>
+                                                <Button Grid.Column="1" Style="{StaticResource RowDangerButton}" Margin="8,0,0,0"
+                                                        Tag="{Binding}" Click="RemoveBinding_Click" ToolTip="Remove">
+                                                    <TextBlock Text="&#xE74D;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="12"/>
+                                                </Button>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <TextBlock x:Name="NoDevicesText" Text="No devices added yet." Style="{StaticResource CaptionText}" Margin="0,0,0,6"/>
+
+                            <Border Height="1" Background="{StaticResource Brush.Divider}" Margin="0,2,0,12"/>
+
+                            <Grid Margin="0,0,0,12">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="130"/>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
                                 <ComboBox x:Name="DevicePicker" Grid.Column="0" Margin="0,0,8,0"/>
                                 <TextBox x:Name="RemotePathBox" Grid.Column="1" Margin="0,0,8,0" controls:TextBoxHelper.Placeholder="/sdcard/DCIM"/>
-                                <Button Grid.Column="2" Content="Add" Margin="0,0,8,0" Click="AddBinding_Click"/>
-                                <Button Grid.Column="3" Content="Remove" Click="RemoveBinding_Click"/>
+                                <Button Grid.Column="2" Content="Add" Click="AddBinding_Click"/>
                             </Grid>
+
+                            <Button x:Name="TestWatchButton" Content="Test Watch Availability" HorizontalAlignment="Left" Click="TestWatch_Click"/>
+                            <ItemsControl x:Name="TestResultsList" Margin="0,10,0,0">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="#0AFFFFFF" CornerRadius="6" Padding="10,8" Margin="0,0,0,6">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Ellipse Style="{StaticResource StatusDot}" Fill="{Binding StatusBrush}" VerticalAlignment="Top" Margin="0,5,8,0"/>
+                                                <StackPanel>
+                                                    <TextBlock Text="{Binding Header}" FontWeight="SemiBold"/>
+                                                    <TextBlock Text="{Binding Detail}" Foreground="{StaticResource Brush.Text.Secondary}" FontSize="12" TextWrapping="Wrap"/>
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
                         </StackPanel>
                     </Border>
 
@@ -71,6 +113,12 @@
                                 <TextBlock Text="hours" VerticalAlignment="Center" Margin="0,0,20,0" Foreground="{StaticResource Brush.Text.Secondary}"/>
                                 <RadioButton x:Name="ScheduleDailyAt" Content="Daily at" GroupName="Schedule" Margin="0,0,8,0" VerticalAlignment="Center"/>
                                 <TextBox x:Name="DailyTimesBox" Width="120" controls:TextBoxHelper.Placeholder="06:00, 18:30"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                <RadioButton x:Name="ScheduleOnChange" Content="On device change" GroupName="Schedule" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="debounce" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="{StaticResource Brush.Text.Secondary}"/>
+                                <TextBox x:Name="DebounceSecondsBox" Width="44" Margin="0,0,6,0" controls:TextBoxHelper.Placeholder="10"/>
+                                <TextBlock Text="sec - use Test Watch Availability above first" VerticalAlignment="Center" Foreground="{StaticResource Brush.Text.Secondary}"/>
                             </StackPanel>
                             <CheckBox x:Name="EnabledCheckBox" Content="Enabled"/>
                         </StackPanel>

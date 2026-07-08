@@ -45,6 +45,9 @@ public sealed class TwoWayMergeEngine : ITwoWayMergeEngine
                 case DecisionKind.NoOp:
                     if (k is not null)
                         newEntries[path] = k;
+                    else if (s is not null)
+                        // no baseline yet, but both sides already agree - seed the manifest without flagging a conflict
+                        newEntries[path] = new ManifestEntry(s.Size, s.ModifiedUtc);
                     break;
 
                 case DecisionKind.RemoveFromManifest:
@@ -127,8 +130,14 @@ public sealed class TwoWayMergeEngine : ITwoWayMergeEngine
             return DecisionKind.CopyToStaging; // new in master
 
         if (sPresent && mPresent && !kPresent)
-            // created independently on both sides with no shared baseline - newer wins
+        {
+            // no shared baseline yet, but if both sides already agree there's nothing to resolve - just seed the manifest
+            if (AreEqual(s!, m!))
+                return DecisionKind.NoOp;
+
+            // created independently on both sides with genuinely different content - newer wins
             return s!.ModifiedUtc >= m!.ModifiedUtc ? DecisionKind.ConflictStagingWins : DecisionKind.ConflictMasterWins;
+        }
 
         if (sPresent && !mPresent && kPresent)
             // master no longer has it; staging unchanged since baseline -> propagate delete, else staging wins
@@ -153,6 +162,9 @@ public sealed class TwoWayMergeEngine : ITwoWayMergeEngine
 
     private static bool IsUnchanged(FileEntry entry, ManifestEntry baseline) =>
         entry.Size == baseline.Size && (entry.ModifiedUtc - baseline.ModifiedUtc).Duration() <= ModifiedTolerance;
+
+    private static bool AreEqual(FileEntry a, FileEntry b) =>
+        a.Size == b.Size && (a.ModifiedUtc - b.ModifiedUtc).Duration() <= ModifiedTolerance;
 
     private static void CopyFile(string sourceRoot, string destRoot, string relativePath, FileEntry sourceEntry)
     {

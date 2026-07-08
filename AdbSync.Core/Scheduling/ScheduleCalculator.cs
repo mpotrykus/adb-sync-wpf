@@ -14,6 +14,7 @@ public static class ScheduleCalculator
         ScheduleKind.Manual => null,
         ScheduleKind.Interval => (schedule.LastRunAt ?? DateTimeOffset.MinValue) + schedule.Interval,
         ScheduleKind.DailyAt => NextDailyOccurrence(schedule.DailyTimes, now),
+        ScheduleKind.OnChange => null, // never "due" via polling - the change watcher triggers runs directly
         _ => null,
     };
 

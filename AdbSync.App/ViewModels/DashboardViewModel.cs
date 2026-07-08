@@ -71,6 +71,8 @@ public sealed class DashboardViewModel : ISyncEventSink
             var outcome = pushed ? "Success" : "No changes";
             vm.LastOutcome = vm.ConflictCountThisRun > 0 ? $"{outcome} ({vm.ConflictCountThisRun} conflict(s) resolved)" : outcome;
             vm.LastRunAt = DateTimeOffset.Now;
+            vm.NeedsAttention = false;
+            vm.CanForcePush = false;
         });
 
     public void JobFailed(string jobName, Exception exception) =>
@@ -79,10 +81,24 @@ public sealed class DashboardViewModel : ISyncEventSink
             vm.PhaseText = "Idle";
             vm.LastOutcome = $"Error: {exception.Message}";
             vm.LastRunAt = DateTimeOffset.Now;
+            vm.NeedsAttention = true;
+            vm.CanForcePush = exception is PushSafetyException;
         });
 
     public void MergeConflictsDetected(string jobName, string deviceName, int conflictCount) =>
         UpdateJob(jobName, vm => vm.ConflictCountThisRun += conflictCount);
+
+    public void WatchStarted(string jobName, string deviceName, bool liveWatch) =>
+        UpdateJob(jobName, vm => vm.WatchStatusText = liveWatch ? "Watching (live)" : "Watching (polling)");
+
+    public void WatchDegraded(string jobName, string deviceName, string reason) =>
+        UpdateJob(jobName, vm => vm.WatchStatusText = $"Watching (polling) - {reason}");
+
+    public void WatchStopped(string jobName, string deviceName) =>
+        UpdateJob(jobName, vm => vm.WatchStatusText = null);
+
+    // Surfaced to the user via the run it triggers (PhaseChanged/JobCompleted), not its own status text.
+    public void ChangeDetected(string jobName, string deviceName) { }
 
     private void UpdateJob(string jobName, Action<JobStatusViewModel> apply) =>
         RunOnUi(() =>

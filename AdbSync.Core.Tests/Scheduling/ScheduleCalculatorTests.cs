@@ -87,4 +87,12 @@ public class ScheduleCalculatorTests
 
         Assert.Equal(Now, due);
     }
+
+    [Fact]
+    public void OnChange_IsNeverDueViaPolling()
+    {
+        var schedule = new JobSchedule { Kind = ScheduleKind.OnChange };
+
+        Assert.Null(ScheduleCalculator.NextDueUtc(schedule, Now));
+    }
 }

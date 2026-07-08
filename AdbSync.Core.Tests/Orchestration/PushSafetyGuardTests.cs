@@ -81,6 +81,27 @@ public class PushSafetyGuardTests : IDisposable
     }
 
     [Fact]
+    public async Task ForcePushAsync_RebasesBaselineToCurrentMasterCount_WithoutThrowing()
+    {
+        await _guard.RecordDeviceSnapshotAsync("Job1", "DeviceA", 100);
+        WriteMasterFiles(2); // far below 25% of 100 - would normally trip the guard
+
+        await _guard.ForcePushAsync("Job1", _masterPath); // should not throw
+
+        // The rebased baseline (2) makes a normal check at the same level pass from now on.
+        await _guard.AssertSafeToPushAsync("Job1", _masterPath); // should not throw
+    }
+
+    [Fact]
+    public async Task ForcePushAsync_NoHistory_IsANoOp()
+    {
+        WriteMasterFiles(1);
+
+        await _guard.ForcePushAsync("Job1", _masterPath); // should not throw
+        await _guard.AssertSafeToPushAsync("Job1", _masterPath); // still no history -> allowed
+    }
+
+    [Fact]
     public async Task DifferentJobs_HaveIndependentHistories()
     {
         await _guard.RecordDeviceSnapshotAsync("JobA", "DeviceA", 100);

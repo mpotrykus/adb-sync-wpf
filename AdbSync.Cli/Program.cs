@@ -23,6 +23,7 @@ return args switch
     ["run"] => await RunAllAsync(useNativeTransfer: true),
     ["run", var jobName, "--legacy-transfer"] => await RunOneAsync(jobName, useNativeTransfer: false),
     ["run", var jobName] => await RunOneAsync(jobName, useNativeTransfer: true),
+    ["run", var jobName, "--force-push"] => await RunOneAsync(jobName, useNativeTransfer: true, forcePush: true),
     _ => PrintUsage(),
 };
 
@@ -97,7 +98,7 @@ async Task<int> RunAllAsync(bool useNativeTransfer)
     return PrintResultsAndExitCode(config, results);
 }
 
-async Task<int> RunOneAsync(string jobName, bool useNativeTransfer)
+async Task<int> RunOneAsync(string jobName, bool useNativeTransfer, bool forcePush = false)
 {
     var config = await configStore.LoadAsync();
     var index = config.Jobs.FindIndex(j => j.Name.Equals(jobName, StringComparison.OrdinalIgnoreCase));
@@ -108,7 +109,7 @@ async Task<int> RunOneAsync(string jobName, bool useNativeTransfer)
     }
 
     var runner = BuildRunner(useNativeTransfer);
-    var result = await runner.RunAsync(config.Jobs[index], index, config.Devices, config.Settings, resumeFrom: null);
+    var result = await runner.RunAsync(config.Jobs[index], index, config.Devices, config.Settings, resumeFrom: null, forcePush);
 
     await configStore.SaveAsync(config);
     return PrintResultsAndExitCode(config, [result], [jobName]);
@@ -163,6 +164,7 @@ int PrintUsage()
           adbsync run --legacy-transfer  # same, but via the v1 adb.exe-shelling transfer engine
           adbsync run <jobName>          # run a single job by name (ignores any pending checkpoint)
           adbsync run <jobName> --legacy-transfer
+          adbsync run <jobName> --force-push  # bypass the push-safety check and rebase its baseline to the current file count
         """);
     return 1;
 }

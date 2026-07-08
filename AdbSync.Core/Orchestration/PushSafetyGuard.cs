@@ -35,6 +35,18 @@ public sealed class PushSafetyGuard(AppPaths paths) : IPushSafetyGuard
         }
     }
 
+    public async Task ForcePushAsync(string jobName, string masterPath, CancellationToken ct = default)
+    {
+        var history = await LoadHistoryAsync(jobName, ct);
+        if (history.MaxFileCounts.Count == 0)
+            return;
+
+        var masterCount = CountFiles(masterPath);
+        foreach (var device in history.MaxFileCounts.Keys.ToList())
+            history.MaxFileCounts[device] = masterCount;
+        await SaveHistoryAsync(jobName, history, ct);
+    }
+
     private static int CountFiles(string path) =>
         Directory.Exists(path) ? Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories).Count() : 0;
 

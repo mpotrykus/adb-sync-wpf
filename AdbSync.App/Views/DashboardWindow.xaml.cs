@@ -5,6 +5,7 @@ using System.Windows.Media;
 using AdbSync.App.Services;
 using AdbSync.App.ViewModels;
 using AdbSync.Core.Config;
+using AdbSync.Core.Devices;
 using AdbSync.Core.Orchestration;
 using AdbSync.Core.Orchestration.RunHistory;
 
@@ -16,18 +17,25 @@ public partial class DashboardWindow : Window
     private readonly JobRunService _jobRunService;
     private readonly DashboardViewModel _viewModel;
     private readonly IRunHistoryStore _historyStore;
+    private readonly IAdbDeviceResolver _deviceResolver;
+    private readonly IDeviceChangeWatcher _changeWatcher;
 
-    public DashboardWindow(AppConfigService configService, JobRunService jobRunService, DashboardViewModel viewModel, IRunHistoryStore historyStore)
+    public DashboardWindow(
+        AppConfigService configService, JobRunService jobRunService, DashboardViewModel viewModel, IRunHistoryStore historyStore,
+        IAdbDeviceResolver deviceResolver, IDeviceChangeWatcher changeWatcher)
     {
         InitializeComponent();
         _configService = configService;
         _jobRunService = jobRunService;
         _viewModel = viewModel;
         _historyStore = historyStore;
+        _deviceResolver = deviceResolver;
+        _changeWatcher = changeWatcher;
         DataContext = viewModel;
 
         Loaded += async (_, _) => await RefreshAsync();
         _configService.ConfigChanged += async (_, _) => await Dispatcher.InvokeAsync(RefreshAsync);
+        PreviewKeyDown += (_, e) => { if (e.Key == System.Windows.Input.Key.F12) Application.Current.Shutdown(); };
     }
 
     private async Task RefreshAsync()
@@ -49,8 +57,16 @@ public partial class DashboardWindow : Window
                 continue;
 
             var runs = await _historyStore.ListRunsAsync(job.Name);
-            if (runs.Count > 0)
-                vm.LastOutcome = FormatOutcome(runs[0]);
+            if (runs.Count == 0)
+                continue;
+
+            var lastRun = runs[0];
+            vm.LastOutcome = FormatOutcome(lastRun);
+            if (lastRun.Outcome == JobRunOutcome.Failed)
+            {
+                vm.NeedsAttention = true;
+                vm.CanForcePush = lastRun.ErrorMessage?.Contains("Safety check blocked push", StringComparison.Ordinal) == true;
+            }
         }
     }
 
@@ -81,7 +97,7 @@ public partial class DashboardWindow : Window
     private async void AddJob_Click(object sender, RoutedEventArgs e)
     {
         var config = await _configService.GetAsync();
-        var editor = new JobEditorWindow(config, job: null) { Owner = this };
+        var editor = new JobEditorWindow(config, job: null, _deviceResolver, _changeWatcher) { Owner = this };
         if (editor.ShowDialog() == true)
         {
             config.Jobs.Add(editor.Result!);
@@ -100,7 +116,7 @@ public partial class DashboardWindow : Window
         if (job is null)
             return;
 
-        var editor = new JobEditorWindow(config, job) { Owner = this };
+        var editor = new JobEditorWindow(config, job, _deviceResolver, _changeWatcher) { Owner = this };
         if (editor.ShowDialog() == true)
         {
             var index = config.Jobs.IndexOf(job);
@@ -149,6 +165,24 @@ public partial class DashboardWindow : Window
         var index = config.Jobs.FindIndex(j => j.Name == vm.Name);
         if (index >= 0)
             _ = _jobRunService.RunJobAsync(index); // fire-and-forget; live status flows back via ISyncEventSink
+    }
+
+    private async void ForcePush_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: JobStatusViewModel vm })
+            return;
+
+        var confirmed = ConfirmDialog.Show(this, "Force Push",
+            $"This bypasses the push-safety check for '{vm.Name}' and pushes its current local contents to all devices now, " +
+            "deleting any device files that aren't present locally. The new file count also becomes the accepted baseline going forward.",
+            confirmText: "Force Push");
+        if (!confirmed)
+            return;
+
+        var config = await _configService.GetAsync();
+        var index = config.Jobs.FindIndex(j => j.Name == vm.Name);
+        if (index >= 0)
+            _ = _jobRunService.RunJobAsync(index, forcePush: true); // fire-and-forget; live status flows back via ISyncEventSink
     }
 
     private void ViewLogs_Click(object sender, RoutedEventArgs e)

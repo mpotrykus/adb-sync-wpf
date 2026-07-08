@@ -12,7 +12,7 @@ public sealed class JobRunService(AppConfigService configService, SyncJobRunner 
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
 
-    public async Task<JobRunResult> RunJobAsync(int jobIndex, CancellationToken ct = default)
+    public async Task<JobRunResult> RunJobAsync(int jobIndex, bool forcePush = false, CancellationToken ct = default)
     {
         await _gate.WaitAsync(ct);
         try
@@ -22,7 +22,7 @@ public sealed class JobRunService(AppConfigService configService, SyncJobRunner 
             job.Schedule.LastRunAt = DateTimeOffset.Now;
             await configService.SaveAsync();
 
-            var result = await runner.RunAsync(job, jobIndex, config.Devices, config.Settings, resumeFrom: null, ct);
+            var result = await runner.RunAsync(job, jobIndex, config.Devices, config.Settings, resumeFrom: null, forcePush, ct);
 
             if (result.Outcome is JobRunOutcome.Completed or JobRunOutcome.CompletedNoChanges)
                 job.Schedule.LastSuccessAt = DateTimeOffset.Now;
@@ -42,7 +42,7 @@ public sealed class JobRunService(AppConfigService configService, SyncJobRunner 
         for (var i = 0; i < config.Jobs.Count; i++)
         {
             if (config.Jobs[i].Enabled)
-                await RunJobAsync(i, ct);
+                await RunJobAsync(i, ct: ct);
         }
     }
 
@@ -58,7 +58,7 @@ public sealed class JobRunService(AppConfigService configService, SyncJobRunner 
 
             var due = ScheduleCalculator.NextDueUtc(job.Schedule, now);
             if (due is not null && due <= now)
-                await RunJobAsync(i, ct);
+                await RunJobAsync(i, ct: ct);
         }
     }
 }
