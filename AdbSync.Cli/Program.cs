@@ -5,6 +5,7 @@ using AdbSync.Core.Devices;
 using AdbSync.Core.Logging;
 using AdbSync.Core.Merge;
 using AdbSync.Core.Orchestration;
+using AdbSync.Core.Orchestration.RunHistory;
 using AdbSync.Core.Transfer;
 using AdvancedSharpAdbClient;
 using Microsoft.Extensions.Logging;
@@ -17,6 +18,7 @@ return args switch
 {
     ["config", "import", var devicesPath, var projectsPath] => await ImportConfigAsync(devicesPath, projectsPath),
     ["device", "test", var deviceName] => await TestDeviceAsync(deviceName),
+    ["device", "pair", var deviceName, var code] => await PairDeviceAsync(deviceName, code),
     ["run", "--legacy-transfer"] => await RunAllAsync(useNativeTransfer: false),
     ["run"] => await RunAllAsync(useNativeTransfer: true),
     ["run", var jobName, "--legacy-transfer"] => await RunOneAsync(jobName, useNativeTransfer: false),
@@ -43,7 +45,7 @@ async Task<int> TestDeviceAsync(string deviceName)
         return 1;
     }
 
-    var resolver = new AdbDeviceResolver(new AdbClient(), new MdnsBrowser());
+    var resolver = new AdbDeviceResolver(new AdbClient(), new MdnsBrowser(), new AdbServer());
     try
     {
         var hostPort = await resolver.EnsureConnectedAsync(device);
@@ -54,6 +56,30 @@ async Task<int> TestDeviceAsync(string deviceName)
     catch (Exception ex)
     {
         Console.Error.WriteLine($"Failed to connect to '{deviceName}': {ex.Message}");
+        return 1;
+    }
+}
+
+async Task<int> PairDeviceAsync(string deviceName, string code)
+{
+    var config = await configStore.LoadAsync();
+    var device = config.Devices.FirstOrDefault(d => d.Name.Equals(deviceName, StringComparison.OrdinalIgnoreCase));
+    if (device is null)
+    {
+        Console.Error.WriteLine($"No device named '{deviceName}' in {paths.DevicesFile}");
+        return 1;
+    }
+
+    var resolver = new AdbDeviceResolver(new AdbClient(), new MdnsBrowser(), new AdbServer());
+    try
+    {
+        var hostPort = await resolver.PairAsync(device, code);
+        Console.WriteLine($"Paired: {deviceName} -> {hostPort}");
+        return 0;
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"Failed to pair with '{deviceName}': {ex.Message}");
         return 1;
     }
 }
@@ -99,7 +125,7 @@ SyncJobRunner BuildRunner(bool useNativeTransfer)
     var loggerFactory = LoggerFactory.Create(b => b.AddSerilog(AdbSyncLogging.CreateFileLogger(paths, retentionDays: 30), dispose: true));
 
     return new SyncJobRunner(
-        new AdbDeviceResolver(adbClient, new MdnsBrowser()),
+        new AdbDeviceResolver(adbClient, new MdnsBrowser(), new AdbServer()),
         new AppRunningGuard(adbClient),
         new SyncLockManager(),
         transfer,
@@ -108,6 +134,7 @@ SyncJobRunner BuildRunner(bool useNativeTransfer)
         new PushSafetyGuard(paths),
         new CheckpointManager(paths),
         new ConsoleSyncEventSink(),
+        new RunHistoryStore(paths),
         loggerFactory.CreateLogger<SyncJobRunner>());
 }
 
@@ -131,6 +158,7 @@ int PrintUsage()
         Usage:
           adbsync config import <legacyDevices.json> <legacyProjects.json>
           adbsync device test <deviceName>
+          adbsync device pair <deviceName> <code>  # one-time wireless-debugging pairing; device must have 'Pair device with pairing code' open
           adbsync run                    # run every enabled job (native ADB sync protocol), resuming an interrupted run if one exists
           adbsync run --legacy-transfer  # same, but via the v1 adb.exe-shelling transfer engine
           adbsync run <jobName>          # run a single job by name (ignores any pending checkpoint)

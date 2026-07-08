@@ -22,6 +22,7 @@ public sealed class NativeAdbTransferEngine(IRemoteFileSystemFactory remoteFacto
             Directory.CreateDirectory(Path.Combine(localPath, dirEntry.RelativePath));
 
         var copied = 0;
+        var bytesCopied = 0L;
         foreach (var entry in plan.ToCopy.Where(e => !e.IsDirectory))
         {
             try
@@ -36,6 +37,7 @@ public sealed class NativeAdbTransferEngine(IRemoteFileSystemFactory remoteFacto
                 File.SetLastWriteTimeUtc(tempPath, entry.ModifiedUtc.UtcDateTime);
                 File.Move(tempPath, destPath, overwrite: true);
                 copied++;
+                bytesCopied += entry.Size;
             }
             catch (Exception ex)
             {
@@ -59,7 +61,7 @@ public sealed class NativeAdbTransferEngine(IRemoteFileSystemFactory remoteFacto
             deleted++;
         }
 
-        return new TransferResult(copied, deleted, errors);
+        return new TransferResult(copied, deleted, bytesCopied, errors);
     }
 
     public async Task<TransferResult> PushMirrorAsync(string serial, string localPath, string remotePath, IExcludeMatcher exclude, CancellationToken ct = default)
@@ -88,12 +90,14 @@ public sealed class NativeAdbTransferEngine(IRemoteFileSystemFactory remoteFacto
         }
 
         var copied = 0;
+        var bytesCopied = 0L;
         foreach (var entry in plan.ToCopy.Where(e => !e.IsDirectory))
         {
             try
             {
                 await remote.PushFileAsync(Path.Combine(localPath, entry.RelativePath), $"{remotePath}/{entry.RelativePath}", entry.ModifiedUtc, ct);
                 copied++;
+                bytesCopied += entry.Size;
             }
             catch (Exception ex)
             {
@@ -118,6 +122,6 @@ public sealed class NativeAdbTransferEngine(IRemoteFileSystemFactory remoteFacto
             }
         }
 
-        return new TransferResult(copied, deleted, errors);
+        return new TransferResult(copied, deleted, bytesCopied, errors);
     }
 }

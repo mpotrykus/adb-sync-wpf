@@ -35,16 +35,32 @@
                 <Border Grid.Row="0" Grid.Column="2" Style="{StaticResource CardBorder}" Margin="0">
                     <StackPanel>
                         <TextBlock Text="Name" Style="{StaticResource SectionLabel}"/>
-                        <TextBox x:Name="NameBox" Margin="0,0,0,14"/>
+                        <TextBox x:Name="NameBox" Margin="0,0,0,14" controls:TextBoxHelper.Placeholder="e.g. Pixel 8"/>
 
                         <TextBlock Text="Connection" Style="{StaticResource SectionLabel}"/>
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                             <RadioButton x:Name="WifiRadio" Content="WiFi (IP)" GroupName="ConnType" Margin="0,0,20,0" IsChecked="True"/>
                             <RadioButton x:Name="UsbRadio" Content="USB (serial)" GroupName="ConnType"/>
                         </StackPanel>
-                        <TextBox x:Name="IpOrSerialBox" Margin="0,0,0,14"/>
+                        <TextBox x:Name="IpOrSerialBox" Margin="0,0,0,14">
+                            <TextBox.Style>
+                                <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+                                    <Setter Property="controls:TextBoxHelper.Placeholder" Value="192.168.1.50"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsChecked, ElementName=UsbRadio}" Value="True">
+                                            <Setter Property="controls:TextBoxHelper.Placeholder" Value="emulator-5554"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBox.Style>
+                        </TextBox>
 
-                        <Button Content="Test Connection" Click="TestConnection_Click" HorizontalAlignment="Left"/>
+                        <StackPanel Orientation="Horizontal">
+                            <Button Content="Test Connection" Click="TestConnection_Click" HorizontalAlignment="Left"/>
+                            <Button x:Name="PairButton" Content="Pair" Click="Pair_Click" HorizontalAlignment="Left" Margin="8,0,0,0"
+                                    IsEnabled="{Binding IsChecked, ElementName=WifiRadio}"
+                                    ToolTip="One-time wireless-debugging pairing handshake (needed before this device can be connected to)"/>
+                        </StackPanel>
                         <TextBlock x:Name="TestResultText" Margin="0,10,0,0" TextWrapping="Wrap" Style="{StaticResource CaptionText}"/>
                     </StackPanel>
                 </Border>

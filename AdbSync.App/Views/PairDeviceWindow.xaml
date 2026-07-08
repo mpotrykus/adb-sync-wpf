@@ -1,0 +1,40 @@
+<Window x:Class="AdbSync.App.Views.PairDeviceWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        xmlns:interop="clr-namespace:AdbSync.App.Interop"
+        xmlns:controls="clr-namespace:AdbSync.App.Controls"
+        interop:AcrylicEffect.Enabled="True"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        Title="Pair Device" Icon="/Assets/app.ico" SizeToContent="Height" Width="420" WindowStartupLocation="CenterOwner" ResizeMode="NoResize">
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="36" ResizeBorderThickness="0" GlassFrameThickness="0" CornerRadius="8" UseAeroCaptionButtons="False"/>
+    </shell:WindowChrome.WindowChrome>
+    <Border Style="{StaticResource WindowRootBorder}">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <controls:TitleBar Grid.Row="0" ShowMinMax="False"/>
+
+            <StackPanel Grid.Row="1" Margin="20">
+                <Border Style="{StaticResource CardBorder}">
+                    <StackPanel>
+                        <TextBlock TextWrapping="Wrap" Margin="0,0,0,14"
+                                   Text="On the device, open Settings &gt; Developer options &gt; Wireless debugging &gt; 'Pair device with pairing code', then enter the 6-digit code shown there. Leave that screen open until pairing completes."/>
+                        <TextBlock Text="Pairing Code" Style="{StaticResource SectionLabel}"/>
+                        <TextBox x:Name="CodeBox" Margin="0,0,0,4" controls:TextBoxHelper.Placeholder="123456"/>
+                        <TextBlock x:Name="ResultText" Margin="0,10,0,0" TextWrapping="Wrap" Style="{StaticResource CaptionText}"/>
+                    </StackPanel>
+                </Border>
+
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button x:Name="CancelButton" Content="Cancel" Width="90" Margin="0,0,8,0" Click="Cancel_Click" IsCancel="True"/>
+                    <Button x:Name="PairButton" Content="Pair" Width="90" Style="{StaticResource PrimaryButton}" Click="Pair_Click" IsDefault="True"/>
+                </StackPanel>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>

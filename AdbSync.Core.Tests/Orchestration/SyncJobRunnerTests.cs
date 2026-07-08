@@ -1,6 +1,7 @@
 using AdbSync.Core.Config;
 using AdbSync.Core.Merge;
 using AdbSync.Core.Orchestration;
+using AdbSync.Core.Orchestration.RunHistory;
 using AdbSync.Core.Tests.Orchestration.Fakes;
 
 namespace AdbSync.Core.Tests.Orchestration;
@@ -43,7 +44,8 @@ public class SyncJobRunnerTests : IDisposable
             new ManifestStore(_appPaths),
             pushSafety ?? new PushSafetyGuard(_appPaths),
             new CheckpointManager(_appPaths),
-            events ?? NullSyncEventSink.Instance);
+            events ?? NullSyncEventSink.Instance,
+            new RunHistoryStore(_appPaths));
 
     private void WriteDeviceFile(string deviceName, string relativePath, string content)
     {
@@ -200,7 +202,8 @@ public class SyncJobRunnerTests : IDisposable
             new ManifestStore(_appPaths),
             new PushSafetyGuard(_appPaths),
             new CheckpointManager(_appPaths),
-            recordingSink);
+            recordingSink,
+            new RunHistoryStore(_appPaths));
 
         var settingsWithNoProjectsDirectory = new GlobalSettings { ProjectsDirectory = "" };
         var result = await runner.RunAsync(job, 0, [device], settingsWithNoProjectsDirectory, resumeFrom: null);
@@ -245,7 +248,8 @@ public class SyncJobRunnerTests : IDisposable
             new ManifestStore(_appPaths),
             new PushSafetyGuard(_appPaths),
             checkpoints,
-            NullSyncEventSink.Instance);
+            NullSyncEventSink.Instance,
+            new RunHistoryStore(_appPaths));
 
         await runner.RunAsync(job, 0, [device], _settings, resumeFrom: null);
 

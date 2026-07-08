@@ -3,9 +3,10 @@ namespace AdbSync.Core.Transfer;
 public static class MirrorPlanApplier
 {
     /// <summary>Applies a plan between two local directory trees. ToCopy paths are read from <paramref name="sourceRoot"/>; both are applied against <paramref name="destRoot"/>.</summary>
-    public static (int Copied, int Deleted) Apply(MirrorPlan plan, string sourceRoot, string destRoot)
+    public static (int Copied, int Deleted, long BytesCopied) Apply(MirrorPlan plan, string sourceRoot, string destRoot)
     {
         var copied = 0;
+        var bytesCopied = 0L;
         foreach (var entry in plan.ToCopy)
         {
             var destPath = Path.Combine(destRoot, entry.RelativePath);
@@ -25,6 +26,7 @@ public static class MirrorPlanApplier
             File.SetLastWriteTimeUtc(tempPath, entry.ModifiedUtc.UtcDateTime);
             File.Move(tempPath, destPath, overwrite: true);
             copied++;
+            bytesCopied += entry.Size;
         }
 
         var deleted = 0;
@@ -43,6 +45,6 @@ public static class MirrorPlanApplier
             deleted++;
         }
 
-        return (copied, deleted);
+        return (copied, deleted, bytesCopied);
     }
 }

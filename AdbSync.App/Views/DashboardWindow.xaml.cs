@@ -4,6 +4,9 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using AdbSync.App.Services;
 using AdbSync.App.ViewModels;
+using AdbSync.Core.Config;
+using AdbSync.Core.Orchestration;
+using AdbSync.Core.Orchestration.RunHistory;
 
 namespace AdbSync.App.Views;
 
@@ -12,20 +15,54 @@ public partial class DashboardWindow : Window
     private readonly AppConfigService _configService;
     private readonly JobRunService _jobRunService;
     private readonly DashboardViewModel _viewModel;
+    private readonly IRunHistoryStore _historyStore;
 
-    public DashboardWindow(AppConfigService configService, JobRunService jobRunService, DashboardViewModel viewModel)
+    public DashboardWindow(AppConfigService configService, JobRunService jobRunService, DashboardViewModel viewModel, IRunHistoryStore historyStore)
     {
         InitializeComponent();
         _configService = configService;
         _jobRunService = jobRunService;
         _viewModel = viewModel;
+        _historyStore = historyStore;
         DataContext = viewModel;
 
         Loaded += async (_, _) => await RefreshAsync();
         _configService.ConfigChanged += async (_, _) => await Dispatcher.InvokeAsync(RefreshAsync);
     }
 
-    private async Task RefreshAsync() => _viewModel.SyncFrom(await _configService.GetAsync());
+    private async Task RefreshAsync()
+    {
+        var config = await _configService.GetAsync();
+        _viewModel.SyncFrom(config);
+        await PopulateLastOutcomesAsync(config);
+    }
+
+    // SyncFrom only knows the last-run timestamp from job config; the human-readable outcome text lives in run
+    // history and is otherwise only populated by live JobCompleted/JobFailed/JobSkipped events, so on a fresh
+    // app start the dashboard would show a blank result until the first run since launch.
+    private async Task PopulateLastOutcomesAsync(AppConfig config)
+    {
+        foreach (var job in config.Jobs)
+        {
+            var vm = _viewModel.Jobs.FirstOrDefault(j => j.Name == job.Name);
+            if (vm is null || vm.LastOutcome is not null)
+                continue;
+
+            var runs = await _historyStore.ListRunsAsync(job.Name);
+            if (runs.Count > 0)
+                vm.LastOutcome = FormatOutcome(runs[0]);
+        }
+    }
+
+    private static string FormatOutcome(JobRunRecord record) => record.Outcome switch
+    {
+        JobRunOutcome.Completed => "Success",
+        JobRunOutcome.CompletedNoChanges => "No changes",
+        JobRunOutcome.Skipped => "Skipped: already running",
+        JobRunOutcome.SkippedAppRunning => "Skipped: app running",
+        JobRunOutcome.Failed => $"Error: {record.ErrorMessage}",
+        _ => record.Outcome.ToString(),
+    };
 
     private void JobsGridBorder_SizeChanged(object sender, SizeChangedEventArgs e)
     {
@@ -88,6 +125,21 @@ public partial class DashboardWindow : Window
         await RefreshAsync();
     }
 
+    private async void JobEnabledToggle_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: JobStatusViewModel vm })
+            return;
+
+        var config = await _configService.GetAsync();
+        var job = config.Jobs.FirstOrDefault(j => j.Name == vm.Name);
+        if (job is null)
+            return;
+
+        job.Enabled = vm.Enabled;
+        await _configService.SaveAsync();
+        await RefreshAsync();
+    }
+
     private async void RunNow_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: JobStatusViewModel vm })
@@ -97,6 +149,14 @@ public partial class DashboardWindow : Window
         var index = config.Jobs.FindIndex(j => j.Name == vm.Name);
         if (index >= 0)
             _ = _jobRunService.RunJobAsync(index); // fire-and-forget; live status flows back via ISyncEventSink
+    }
+
+    private void ViewLogs_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: JobStatusViewModel vm })
+            return;
+
+        new RunHistoryWindow(_historyStore, vm.Name) { Owner = this }.ShowDialog();
     }
 
     private async void ManageDevices_Click(object sender, RoutedEventArgs e)

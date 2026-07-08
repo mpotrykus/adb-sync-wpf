@@ -11,11 +11,12 @@ public class AdbDeviceResolverTests
 {
     private readonly IAdbClient _adbClient = Substitute.For<IAdbClient>();
     private readonly IMdnsBrowser _mdns = Substitute.For<IMdnsBrowser>();
+    private readonly IAdbServer _adbServer = Substitute.For<IAdbServer>();
     private readonly AdbDeviceResolver _resolver;
 
     public AdbDeviceResolverTests()
     {
-        _resolver = new AdbDeviceResolver(_adbClient, _mdns);
+        _resolver = new AdbDeviceResolver(_adbClient, _mdns, _adbServer);
     }
 
     private static Task<IEnumerable<DeviceData>> Devices(params DeviceData[] devices) =>
@@ -31,6 +32,16 @@ public class AdbDeviceResolverTests
         Assert.Equal("emulator-5554", result);
         await _adbClient.DidNotReceiveWithAnyArgs().GetDevicesAsync(default);
         await _mdns.DidNotReceiveWithAnyArgs().BrowseAsync(default!, default, default);
+    }
+
+    [Fact]
+    public async Task EnsureConnectedAsync_AnyDevice_StartsAdbServerFirst()
+    {
+        var device = new DeviceConfig { Name = "BlueStacks", Serial = "emulator-5554" };
+
+        await _resolver.EnsureConnectedAsync(device);
+
+        await _adbServer.Received(1).StartServerAsync("adb", restartServerIfNewer: false, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -111,5 +122,61 @@ public class AdbDeviceResolverTests
             });
 
         await Assert.ThrowsAsync<DeviceConnectException>(() => _resolver.EnsureConnectedAsync(device));
+    }
+
+    [Fact]
+    public async Task PairAsync_AnnouncementFoundAndAdbConfirms_ReturnsHostPort()
+    {
+        var device = new DeviceConfig { Name = "S23+", Ip = "192.168.0.40" };
+        _mdns.BrowseAsync(Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns(new List<MdnsAnnouncement>
+            {
+                new("instance", "host.local", 37021, [IPAddress.Parse("192.168.0.40")]),
+            });
+        _adbClient.PairAsync("192.168.0.40", 37021, "123456", Arg.Any<CancellationToken>())
+            .Returns("Successfully paired to 192.168.0.40:37021 [guid=abc]");
+
+        var result = await _resolver.PairAsync(device, "123456");
+
+        Assert.Equal("192.168.0.40:37021", result);
+        await _mdns.Received(1).BrowseAsync("_adb-tls-pairing._tcp", Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task PairAsync_NoIpConfigured_Throws()
+    {
+        var device = new DeviceConfig { Name = "BlueStacks", Serial = "emulator-5554" };
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => _resolver.PairAsync(device, "123456"));
+    }
+
+    [Fact]
+    public async Task PairAsync_NoMatchingAnnouncement_ThrowsDevicePairException()
+    {
+        var device = new DeviceConfig { Name = "S23+", Ip = "192.168.0.40" };
+        _mdns.BrowseAsync(Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns(new List<MdnsAnnouncement>());
+
+        var ex = await Assert.ThrowsAsync<DevicePairException>(() => _resolver.PairAsync(device, "123456"));
+
+        Assert.Equal("S23+", ex.DeviceName);
+        await _adbClient.DidNotReceiveWithAnyArgs().PairAsync(default!, default, default!, default);
+    }
+
+    [Fact]
+    public async Task PairAsync_AdbRejectsCode_ThrowsDevicePairException()
+    {
+        var device = new DeviceConfig { Name = "S23+", Ip = "192.168.0.40" };
+        _mdns.BrowseAsync(Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns(new List<MdnsAnnouncement>
+            {
+                new("instance", "host.local", 37021, [IPAddress.Parse("192.168.0.40")]),
+            });
+        _adbClient.PairAsync("192.168.0.40", 37021, "000000", Arg.Any<CancellationToken>())
+            .Returns("Failed: Wrong pairing code");
+
+        var ex = await Assert.ThrowsAsync<DevicePairException>(() => _resolver.PairAsync(device, "000000"));
+
+        Assert.Contains("Failed: Wrong pairing code", ex.Message);
     }
 }

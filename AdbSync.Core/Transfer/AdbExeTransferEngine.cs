@@ -15,7 +15,7 @@ public sealed class AdbExeTransferEngine(IAdbProcessRunner adb, IMirrorDiffer di
         {
             var pullResult = await adb.RunAsync(["-s", serial, "pull", remotePath, tempRoot], ct);
             if (pullResult.ExitCode != 0)
-                return new TransferResult(0, 0, [$"adb pull failed (exit {pullResult.ExitCode}): {pullResult.StandardError}"]);
+                return new TransferResult(0, 0, 0, [$"adb pull failed (exit {pullResult.ExitCode}): {pullResult.StandardError}"]);
 
             var pulledRoot = Path.Combine(tempRoot, Path.GetFileName(remotePath.TrimEnd('/')));
             Directory.CreateDirectory(localPath);
@@ -23,9 +23,9 @@ public sealed class AdbExeTransferEngine(IAdbProcessRunner adb, IMirrorDiffer di
             var source = LocalFileTreeScanner.Scan(pulledRoot, exclude);
             var destination = LocalFileTreeScanner.Scan(localPath, exclude);
             var plan = differ.Diff(source, destination);
-            var (copied, deleted) = MirrorPlanApplier.Apply(plan, pulledRoot, localPath);
+            var (copied, deleted, bytesCopied) = MirrorPlanApplier.Apply(plan, pulledRoot, localPath);
 
-            return new TransferResult(copied, deleted, []);
+            return new TransferResult(copied, deleted, bytesCopied, []);
         }
         finally
         {
@@ -45,6 +45,7 @@ public sealed class AdbExeTransferEngine(IAdbProcessRunner adb, IMirrorDiffer di
         var local = LocalFileTreeScanner.Scan(localPath, exclude);
 
         var pushed = 0;
+        var bytesCopied = 0L;
         if (Directory.Exists(localPath))
         {
             foreach (var childPath in Directory.EnumerateFileSystemEntries(localPath))
@@ -56,16 +57,27 @@ public sealed class AdbExeTransferEngine(IAdbProcessRunner adb, IMirrorDiffer di
 
                 var pushResult = await adb.RunAsync(["-s", serial, "push", childPath, $"{remotePath}/{childName}"], ct);
                 if (pushResult.ExitCode != 0)
+                {
                     errors.Add($"push '{childName}' failed (exit {pushResult.ExitCode}): {pushResult.StandardError}");
+                }
                 else
+                {
                     pushed++;
+                    bytesCopied += GetLocalSize(childPath, isDirectory);
+                }
             }
         }
 
         var deleted = await DeleteRemoteExtrasAsync(serial, remotePath, local, exclude, errors, ct);
 
-        return new TransferResult(pushed, deleted, errors);
+        return new TransferResult(pushed, deleted, bytesCopied, errors);
     }
+
+    // adb push sends the whole raw subtree for a directory child (unfiltered by nested excludes), so this
+    // mirrors that by summing every file under it rather than relying on the already-exclude-filtered scan.
+    private static long GetLocalSize(string path, bool isDirectory) => isDirectory
+        ? Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories).Sum(f => new FileInfo(f).Length)
+        : new FileInfo(path).Length;
 
     private async Task<int> DeleteRemoteExtrasAsync(
         string serial, string remotePath, List<FileEntry> local, IExcludeMatcher exclude, List<string> errors, CancellationToken ct)

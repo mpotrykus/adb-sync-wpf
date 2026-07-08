@@ -4,9 +4,10 @@
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         xmlns:interop="clr-namespace:AdbSync.App.Interop"
         xmlns:controls="clr-namespace:AdbSync.App.Controls"
+        xmlns:conv="clr-namespace:AdbSync.App.Converters"
         interop:AcrylicEffect.Enabled="True"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
-        Title="Adb_Sync" Icon="/Assets/app.ico" Height="460" Width="1080" MinHeight="320" MinWidth="640" WindowStartupLocation="CenterScreen">
+        Title="AdbSync" Icon="/Assets/app.ico" Height="460" Width="1080" MinHeight="320" MinWidth="640" WindowStartupLocation="CenterScreen">
     <shell:WindowChrome.WindowChrome>
         <shell:WindowChrome CaptionHeight="36" ResizeBorderThickness="6" GlassFrameThickness="0" CornerRadius="8" UseAeroCaptionButtons="False"/>
     </shell:WindowChrome.WindowChrome>
@@ -20,30 +21,89 @@
             <controls:TitleBar Grid.Row="0"/>
 
             <DockPanel Grid.Row="1" Margin="20">
-                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,16">
-                    <Button Content="Add Job" Style="{StaticResource PrimaryButton}" Margin="0,0,8,0" Click="AddJob_Click"/>
-                    <Button Content="Manage Devices" Margin="0,0,8,0" Click="ManageDevices_Click"/>
-                    <Button Content="Settings" Click="Settings_Click"/>
-                </StackPanel>
+                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,16">
+                    <Button DockPanel.Dock="Right" Style="{StaticResource IconButton}" Click="Settings_Click" ToolTip="Settings">
+                        <TextBlock Text="&#xE713;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="16"/>
+                    </Button>
+                    <StackPanel Orientation="Horizontal">
+                        <Button Content="Add Job" Style="{StaticResource PrimaryButton}" Margin="0,0,8,0" Click="AddJob_Click"/>
+                        <Button Content="Manage Devices" Click="ManageDevices_Click"/>
+                    </StackPanel>
+                </DockPanel>
 
                 <Border x:Name="JobsGridBorder" CornerRadius="8" SizeChanged="JobsGridBorder_SizeChanged">
                     <Grid Background="#0AFFFFFF">
+                    <Grid.Resources>
+                        <conv:PhaseToBrushConverter x:Key="PhaseToBrushConverter"/>
+                        <conv:OutcomeToBrushConverter x:Key="OutcomeToBrushConverter"/>
+                    </Grid.Resources>
                     <DataGrid x:Name="JobsGrid" ItemsSource="{Binding Jobs}" AutoGenerateColumns="False" IsReadOnly="True"
-                              CanUserAddRows="False" HeadersVisibility="Column" GridLinesVisibility="Horizontal">
+                              CanUserAddRows="False" HeadersVisibility="Column" GridLinesVisibility="None">
                         <DataGrid.Columns>
-                            <DataGridCheckBoxColumn Header="ENABLED" Binding="{Binding Enabled}" Width="75"/>
-                            <DataGridTextColumn Header="JOB" Binding="{Binding Name}" Width="150"/>
-                            <DataGridTextColumn Header="STATUS" Binding="{Binding PhaseText}" Width="160"/>
-                            <DataGridTextColumn Header="LAST RESULT" Binding="{Binding LastOutcome}" Width="*"/>
-                            <DataGridTextColumn Header="LAST RUN" Binding="{Binding LastRunText}" Width="140"/>
-                            <DataGridTextColumn Header="NEXT RUN" Binding="{Binding NextRunText}" Width="140"/>
-                            <DataGridTemplateColumn Header="" Width="240">
+                            <DataGridTemplateColumn Header="ENABLED" Width="80">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <CheckBox Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Center"
+                                                  IsChecked="{Binding Enabled, Mode=TwoWay}" Click="JobEnabledToggle_Click"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="JOB" Binding="{Binding Name}" Width="150">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="FontWeight" Value="SemiBold"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTemplateColumn Header="STATUS" Width="160">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <StackPanel Orientation="Horizontal">
-                                            <Button Content="Run Now" Padding="10,4" Margin="0,0,6,0" Click="RunNow_Click"/>
-                                            <Button Content="Edit" Padding="10,4" Margin="0,0,6,0" Click="EditJob_Click"/>
-                                            <Button Content="Remove" Padding="10,4" Style="{StaticResource DangerButton}" Click="RemoveJob_Click"/>
+                                            <Ellipse Style="{StaticResource StatusDot}" Fill="{Binding PhaseText, Converter={StaticResource PhaseToBrushConverter}}"/>
+                                            <TextBlock Text="{Binding PhaseText}" VerticalAlignment="Center"
+                                                       Foreground="{Binding PhaseText, Converter={StaticResource PhaseToBrushConverter}}"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="LAST RESULT" Binding="{Binding LastOutcome}" Width="*">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+                                        <Setter Property="Foreground" Value="{Binding LastOutcome, Converter={StaticResource OutcomeToBrushConverter}}"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="LAST RUN" Binding="{Binding LastRunText}" Width="140">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="{StaticResource Brush.Text.Secondary}"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="NEXT RUN" Binding="{Binding NextRunText}" Width="140">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="{StaticResource Brush.Text.Secondary}"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTemplateColumn Header="" Width="160">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                            <Button Style="{StaticResource RowButton}" Margin="0,0,4,0" Click="RunNow_Click" ToolTip="Run Now">
+                                                <TextBlock Text="&#xE768;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="12"/>
+                                            </Button>
+                                            <Button Style="{StaticResource RowButton}" Margin="0,0,4,0" Click="ViewLogs_Click" ToolTip="Run History">
+                                                <TextBlock Text="&#xE81C;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="12"/>
+                                            </Button>
+                                            <Button Style="{StaticResource RowButton}" Margin="0,0,4,0" Click="EditJob_Click" ToolTip="Edit">
+                                                <TextBlock Text="&#xE70F;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="12"/>
+                                            </Button>
+                                            <Button Style="{StaticResource RowDangerButton}" Click="RemoveJob_Click" ToolTip="Remove">
+                                                <TextBlock Text="&#xE74D;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="12"/>
+                                            </Button>
                                         </StackPanel>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>

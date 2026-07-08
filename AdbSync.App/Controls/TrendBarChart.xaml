@@ -1,0 +1,12 @@
+<UserControl x:Class="AdbSync.App.Controls.TrendBarChart"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             SizeChanged="OnSizeChanged">
+    <Grid>
+        <Line X1="0" Y1="0" X2="1" Y2="0" Stretch="Fill" Stroke="{StaticResource Brush.Divider}" StrokeThickness="1"
+              VerticalAlignment="Bottom" SnapsToDevicePixels="True"/>
+        <Canvas x:Name="BarsCanvas" ClipToBounds="True"/>
+        <TextBlock x:Name="EmptyText" Text="Not enough runs yet" Style="{StaticResource EmptyStateText}"
+                   HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed"/>
+    </Grid>
+</UserControl>

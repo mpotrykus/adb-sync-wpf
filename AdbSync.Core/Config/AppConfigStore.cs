@@ -7,6 +7,8 @@ public sealed class AppConfigStore(AppPaths paths) : IAppConfigStore
     {
         var settings = await JsonFileIo.ReadAsync(paths.SettingsFile, AppConfigJsonContext.Default.GlobalSettings, ct)
             ?? new GlobalSettings();
+        if (string.IsNullOrWhiteSpace(settings.ProjectsDirectory))
+            settings.ProjectsDirectory = GlobalSettings.DefaultProjectsDirectory;
         var devicesFile = await JsonFileIo.ReadAsync(paths.DevicesFile, AppConfigJsonContext.Default.DevicesFile, ct)
             ?? new DevicesFile();
         var projectsFile = await JsonFileIo.ReadAsync(paths.ProjectsFile, AppConfigJsonContext.Default.ProjectsFile, ct)

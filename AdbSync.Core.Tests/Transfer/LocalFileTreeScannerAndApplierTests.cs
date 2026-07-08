@@ -54,10 +54,11 @@ public class LocalFileTreeScannerAndApplierTests : IDisposable
         var destination = LocalFileTreeScanner.Scan(_destDir, _noExclude);
         var plan = new MirrorDiffer().Diff(source, destination);
 
-        var (copied, deleted) = MirrorPlanApplier.Apply(plan, _sourceDir, _destDir);
+        var (copied, deleted, bytesCopied) = MirrorPlanApplier.Apply(plan, _sourceDir, _destDir);
 
         Assert.Equal(1, copied);
         Assert.Equal(0, deleted);
+        Assert.Equal(5, bytesCopied); // "hello"
         var destPath = Path.Combine(_destDir, "a.txt");
         Assert.True(File.Exists(destPath));
         Assert.Equal("hello", File.ReadAllText(destPath));
@@ -73,7 +74,7 @@ public class LocalFileTreeScannerAndApplierTests : IDisposable
         var destination = LocalFileTreeScanner.Scan(_destDir, _noExclude);
         var plan = new MirrorDiffer().Diff(source, destination);
 
-        var (copied, deleted) = MirrorPlanApplier.Apply(plan, _sourceDir, _destDir);
+        var (copied, deleted, _) = MirrorPlanApplier.Apply(plan, _sourceDir, _destDir);
 
         Assert.Equal(0, copied);
         Assert.Equal(1, deleted);

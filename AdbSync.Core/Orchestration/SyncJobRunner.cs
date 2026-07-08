@@ -1,6 +1,9 @@
+using System.Diagnostics;
 using AdbSync.Core.Config;
 using AdbSync.Core.Devices;
+using AdbSync.Core.Logging;
 using AdbSync.Core.Merge;
+using AdbSync.Core.Orchestration.RunHistory;
 using AdbSync.Core.Transfer;
 using Microsoft.Extensions.Logging;
 
@@ -17,14 +20,26 @@ public sealed class SyncJobRunner(
     IPushSafetyGuard pushSafety,
     ICheckpointManager checkpoints,
     ISyncEventSink events,
+    IRunHistoryStore runHistory,
     ILogger<SyncJobRunner>? logger = null)
 {
-    private readonly ILogger<SyncJobRunner> _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<SyncJobRunner>.Instance;
+    private readonly ILogger<SyncJobRunner> _logger = new RunCapturingLogger<SyncJobRunner>(logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<SyncJobRunner>.Instance);
 
     public async Task<JobRunResult> RunAsync(
         SyncJobConfig job, int jobIndex, IReadOnlyList<DeviceConfig> devices, GlobalSettings settings,
         SyncCheckpoint? resumeFrom, CancellationToken ct = default)
     {
+        var runId = Guid.NewGuid();
+        var startedAt = DateTimeOffset.UtcNow;
+        using var runLog = RunLogCapture.Begin();
+
+        var totalFilesCopied = 0;
+        var totalFilesDeleted = 0;
+        var totalErrors = 0;
+        var totalBytesCopied = 0L;
+        TimeSpan? pullDuration = null;
+        TimeSpan? pushDuration = null;
+
         var projectRoot = Path.Combine(settings.ProjectsDirectory, job.Name);
         var masterPath = Path.Combine(projectRoot, "master");
 
@@ -42,7 +57,7 @@ public sealed class SyncJobRunner(
             {
                 _logger.LogInformation("Job '{Job}' skipped - already running", job.Name);
                 events.JobSkipped(job.Name, "already running");
-                return new JobRunResult(JobRunOutcome.Skipped);
+                return await FinishAsync(JobRunOutcome.Skipped);
             }
 
             events.PhaseChanged(job.Name, SyncPhase.PreConnect);
@@ -60,44 +75,79 @@ public sealed class SyncJobRunner(
             {
                 _logger.LogInformation("Job '{Job}' skipped - {Package} is running on a device", job.Name, job.AppPackage);
                 events.JobSkipped(job.Name, $"{job.AppPackage} is running on a device");
-                return new JobRunResult(JobRunOutcome.SkippedAppRunning);
+                return await FinishAsync(JobRunOutcome.SkippedAppRunning);
             }
 
             var anyChange = resumeFrom is { Phase: SyncPhase.Push };
             if (!anyChange)
-                anyChange = await RunPullPhaseAsync(job, jobIndex, masterPath, serials, exclude, resumeFrom, ct);
+            {
+                var pullStopwatch = Stopwatch.StartNew();
+                var pullStats = await RunPullPhaseAsync(job, jobIndex, masterPath, serials, exclude, resumeFrom, ct);
+                pullDuration = pullStopwatch.Elapsed;
+                anyChange = pullStats.AnyChange;
+                totalFilesCopied += pullStats.FilesCopied;
+                totalFilesDeleted += pullStats.FilesDeleted;
+                totalErrors += pullStats.Errors;
+                totalBytesCopied += pullStats.BytesCopied;
+            }
 
             if (!anyChange)
             {
                 _logger.LogInformation("Job '{Job}' completed - no changes", job.Name);
                 events.JobCompleted(job.Name, pushed: false);
                 await checkpoints.ClearAsync(ct);
-                return new JobRunResult(JobRunOutcome.CompletedNoChanges);
+                return await FinishAsync(JobRunOutcome.CompletedNoChanges);
             }
 
             await pushSafety.AssertSafeToPushAsync(job.Name, masterPath, ct);
-            await RunPushPhaseAsync(job, jobIndex, masterPath, serials, exclude, resumeFrom, ct);
+            var pushStopwatch = Stopwatch.StartNew();
+            var pushStats = await RunPushPhaseAsync(job, jobIndex, masterPath, serials, exclude, resumeFrom, ct);
+            pushDuration = pushStopwatch.Elapsed;
+            totalFilesCopied += pushStats.FilesCopied;
+            totalFilesDeleted += pushStats.FilesDeleted;
+            totalErrors += pushStats.Errors;
+            totalBytesCopied += pushStats.BytesCopied;
 
             _logger.LogInformation("Job '{Job}' completed successfully", job.Name);
             events.JobCompleted(job.Name, pushed: true);
             await checkpoints.ClearAsync(ct);
-            return new JobRunResult(JobRunOutcome.Completed);
+            return await FinishAsync(JobRunOutcome.Completed);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Job '{Job}' failed", job.Name);
             events.JobFailed(job.Name, ex);
-            return new JobRunResult(JobRunOutcome.Failed, ex.Message);
+            return await FinishAsync(JobRunOutcome.Failed, ex.Message);
+        }
+
+        async Task<JobRunResult> FinishAsync(JobRunOutcome outcome, string? errorMessage = null)
+        {
+            var record = new JobRunRecord(
+                runId, job.Name, startedAt, DateTimeOffset.UtcNow, outcome, errorMessage,
+                totalFilesCopied, totalFilesDeleted, totalErrors, totalBytesCopied, pullDuration, pushDuration);
+            try
+            {
+                await runHistory.SaveRunAsync(record, runLog.BuildText(), ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to save run history for '{Job}'", job.Name);
+            }
+            return new JobRunResult(outcome, errorMessage);
         }
     }
 
-    private async Task<bool> RunPullPhaseAsync(
+    private async Task<PhaseStats> RunPullPhaseAsync(
         SyncJobConfig job, int jobIndex, string masterPath, Dictionary<string, string> serials,
         ExcludeMatcher exclude, SyncCheckpoint? resumeFrom, CancellationToken ct)
     {
         var projectRoot = Path.GetDirectoryName(masterPath)!;
         var startIndex = resumeFrom is { Phase: SyncPhase.Pull } r ? r.DeviceIndex : 0;
         var anyChange = false;
+        var filesCopied = 0;
+        var filesDeleted = 0;
+        var errors = 0;
+        var bytesCopied = 0L;
 
         for (var di = startIndex; di < job.Devices.Count; di++)
         {
@@ -110,6 +160,10 @@ public sealed class SyncJobRunner(
             _logger.LogInformation(
                 "Job '{Job}' pulled from '{Device}': {Copied} copied, {Deleted} deleted, {Errors} error(s)",
                 job.Name, binding.DeviceName, pullResult.FilesCopied, pullResult.FilesDeleted, pullResult.Errors.Count);
+            filesCopied += pullResult.FilesCopied;
+            filesDeleted += pullResult.FilesDeleted;
+            errors += pullResult.Errors.Count;
+            bytesCopied += pullResult.BytesCopied;
 
             var fileCount = Directory.Exists(stagingPath)
                 ? Directory.EnumerateFiles(stagingPath, "*", SearchOption.AllDirectories).Count()
@@ -136,14 +190,18 @@ public sealed class SyncJobRunner(
             await checkpoints.SaveAsync(new SyncCheckpoint(1, DateTimeOffset.UtcNow, jobIndex, job.Name, SyncPhase.Pull, di + 1, serials), ct);
         }
 
-        return anyChange;
+        return new PhaseStats(anyChange, filesCopied, filesDeleted, errors, bytesCopied);
     }
 
-    private async Task RunPushPhaseAsync(
+    private async Task<PhaseStats> RunPushPhaseAsync(
         SyncJobConfig job, int jobIndex, string masterPath, Dictionary<string, string> serials,
         ExcludeMatcher exclude, SyncCheckpoint? resumeFrom, CancellationToken ct)
     {
         var startIndex = resumeFrom is { Phase: SyncPhase.Push } r ? r.DeviceIndex : 0;
+        var filesCopied = 0;
+        var filesDeleted = 0;
+        var errors = 0;
+        var bytesCopied = 0L;
 
         for (var di = startIndex; di < job.Devices.Count; di++)
         {
@@ -155,10 +213,18 @@ public sealed class SyncJobRunner(
             _logger.LogInformation(
                 "Job '{Job}' pushed to '{Device}': {Copied} copied, {Deleted} deleted, {Errors} error(s)",
                 job.Name, binding.DeviceName, pushResult.FilesCopied, pushResult.FilesDeleted, pushResult.Errors.Count);
+            filesCopied += pushResult.FilesCopied;
+            filesDeleted += pushResult.FilesDeleted;
+            errors += pushResult.Errors.Count;
+            bytesCopied += pushResult.BytesCopied;
 
             await checkpoints.SaveAsync(new SyncCheckpoint(1, DateTimeOffset.UtcNow, jobIndex, job.Name, SyncPhase.Push, di + 1, serials), ct);
         }
+
+        return new PhaseStats(AnyChange: false, filesCopied, filesDeleted, errors, bytesCopied);
     }
+
+    private readonly record struct PhaseStats(bool AnyChange, int FilesCopied, int FilesDeleted, int Errors, long BytesCopied);
 
     private static string GetStagingPath(string projectRoot, string deviceName)
     {

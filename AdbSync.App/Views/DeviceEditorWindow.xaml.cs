@@ -132,7 +132,7 @@ public partial class DeviceEditorWindow : Window
         };
         try
         {
-            var resolver = new AdbDeviceResolver(new AdbClient(), new MdnsBrowser());
+            var resolver = new AdbDeviceResolver(new AdbClient(), new MdnsBrowser(), new AdbServer());
             var hostPort = await resolver.EnsureConnectedAsync(device);
             TestResultText.Text = $"Connected: {hostPort}";
         }
@@ -140,6 +140,21 @@ public partial class DeviceEditorWindow : Window
         {
             TestResultText.Text = $"Failed: {ex.Message}";
         }
+    }
+
+    private void Pair_Click(object sender, RoutedEventArgs e)
+    {
+        var ip = IpOrSerialBox.Text.Trim();
+        if (ip.Length == 0)
+        {
+            MessageBox.Show(this, "Enter the device's IP first.", "AdbSync", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        var name = string.IsNullOrWhiteSpace(NameBox.Text) ? "device" : NameBox.Text.Trim();
+        var dialog = new PairDeviceWindow(name, ip) { Owner = this };
+        if (dialog.ShowDialog() == true)
+            TestResultText.Text = $"Paired: {dialog.PairedHostPort}";
     }
 
     private void Close_Click(object sender, RoutedEventArgs e) => DialogResult = _changed;

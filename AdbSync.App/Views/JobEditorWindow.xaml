@@ -24,11 +24,11 @@
                     <Border Style="{StaticResource CardBorder}">
                         <StackPanel>
                             <TextBlock Text="Name" Style="{StaticResource SectionLabel}"/>
-                            <TextBox x:Name="NameBox" Margin="0,0,0,14"/>
+                            <TextBox x:Name="NameBox" Margin="0,0,0,14" controls:TextBoxHelper.Placeholder="e.g. Photos Backup"/>
 
                             <TextBlock Text="App package" Style="{StaticResource SectionLabel}"/>
-                            <TextBlock Text="Optional. The job is skipped while this app is running on any device." Style="{StaticResource CaptionText}"/>
-                            <TextBox x:Name="AppPackageBox"/>
+                            <TextBlock Style="{StaticResource CaptionText}" Text="Optional. The job is skipped while this app is running on any device."/>
+                            <TextBox x:Name="AppPackageBox" controls:TextBoxHelper.Placeholder="com.example.app"/>
                         </StackPanel>
                     </Border>
 
@@ -37,7 +37,8 @@
                             <TextBlock Text="Exclude patterns" Style="{StaticResource SectionLabel}"/>
                             <TextBlock Text="One glob pattern per line." Style="{StaticResource CaptionText}"/>
                             <TextBox x:Name="ExcludeBox" AcceptsReturn="True" Height="80" FontFamily="Cascadia Mono, Consolas"
-                                     TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" AcceptsTab="True"/>
+                                     TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" AcceptsTab="True"
+                                     controls:TextBoxHelper.Placeholder="*.tmp&#10;*/.thumbnails/*"/>
                         </StackPanel>
                     </Border>
 
@@ -53,7 +54,7 @@
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
                                 <ComboBox x:Name="DevicePicker" Grid.Column="0" Margin="0,0,8,0"/>
-                                <TextBox x:Name="RemotePathBox" Grid.Column="1" Margin="0,0,8,0"/>
+                                <TextBox x:Name="RemotePathBox" Grid.Column="1" Margin="0,0,8,0" controls:TextBoxHelper.Placeholder="/sdcard/DCIM"/>
                                 <Button Grid.Column="2" Content="Add" Margin="0,0,8,0" Click="AddBinding_Click"/>
                                 <Button Grid.Column="3" Content="Remove" Click="RemoveBinding_Click"/>
                             </Grid>
@@ -66,10 +67,10 @@
                             <StackPanel Orientation="Horizontal" Margin="0,4,0,12">
                                 <RadioButton x:Name="ScheduleManual" Content="Manual" GroupName="Schedule" Margin="0,0,20,0" VerticalAlignment="Center"/>
                                 <RadioButton x:Name="ScheduleInterval" Content="Every" GroupName="Schedule" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                                <TextBox x:Name="IntervalHoursBox" Width="44" Margin="0,0,6,0"/>
+                                <TextBox x:Name="IntervalHoursBox" Width="44" Margin="0,0,6,0" controls:TextBoxHelper.Placeholder="4"/>
                                 <TextBlock Text="hours" VerticalAlignment="Center" Margin="0,0,20,0" Foreground="{StaticResource Brush.Text.Secondary}"/>
                                 <RadioButton x:Name="ScheduleDailyAt" Content="Daily at" GroupName="Schedule" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                                <TextBox x:Name="DailyTimesBox" Width="150" ToolTip="Comma-separated 24h times, e.g. 06:00, 18:30"/>
+                                <TextBox x:Name="DailyTimesBox" Width="120" controls:TextBoxHelper.Placeholder="06:00, 18:30"/>
                             </StackPanel>
                             <CheckBox x:Name="EnabledCheckBox" Content="Enabled"/>
                         </StackPanel>

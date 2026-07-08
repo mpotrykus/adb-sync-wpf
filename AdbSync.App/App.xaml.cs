@@ -10,6 +10,7 @@ using AdbSync.Core.Devices;
 using AdbSync.Core.Logging;
 using AdbSync.Core.Merge;
 using AdbSync.Core.Orchestration;
+using AdbSync.Core.Orchestration.RunHistory;
 using AdbSync.Core.Transfer;
 using AdvancedSharpAdbClient;
 using Microsoft.Extensions.DependencyInjection;
@@ -117,6 +118,7 @@ public partial class App : Application
         services.AddSingleton<AppConfigService>();
 
         services.AddSingleton<IAdbClient>(_ => new AdbClient());
+        services.AddSingleton<IAdbServer>(_ => new AdbServer());
         services.AddSingleton<IMdnsBrowser, MdnsBrowser>();
         services.AddSingleton<IAdbDeviceResolver, AdbDeviceResolver>();
         services.AddSingleton<IAppRunningGuard, AppRunningGuard>();
@@ -129,6 +131,7 @@ public partial class App : Application
         services.AddSingleton<IManifestStore, ManifestStore>();
         services.AddSingleton<IPushSafetyGuard, PushSafetyGuard>();
         services.AddSingleton<ICheckpointManager, CheckpointManager>();
+        services.AddSingleton<IRunHistoryStore, RunHistoryStore>();
 
         services.AddSingleton<DashboardViewModel>();
         services.AddSingleton<ISyncEventSink>(sp => sp.GetRequiredService<DashboardViewModel>());
