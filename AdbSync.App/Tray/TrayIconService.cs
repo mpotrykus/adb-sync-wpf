@@ -145,7 +145,19 @@ public sealed class TrayIconService(
             window.Show();
         }));
         menu.Items.Add(new Separator());
-        menu.Items.Add(MakeItem("Exit", (_, _) => Application.Current.Shutdown()));
+        menu.Items.Add(MakeItem("Exit", async (_, _) =>
+        {
+            // Drop the tray icon immediately so the click feels instant instead of hung.
+            _icon?.Dispose();
+            _icon = null;
+
+            // Host shutdown (stopping the scheduler/change-watch hosted services) can take a few seconds - use
+            // ExitGracefullyAsync rather than Application.Current.Shutdown() directly, so the UI thread's message
+            // pump keeps running during that wait instead of blocking synchronously (which would freeze the popup
+            // mid-close and stop the notification above from ever actually rendering).
+            if (Application.Current is App app)
+                await app.ExitGracefullyAsync();
+        }));
 
         _icon.ContextMenu = menu;
     }

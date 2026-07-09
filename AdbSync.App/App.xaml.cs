@@ -27,6 +27,7 @@ public partial class App : Application
 {
     private IHost? _host;
     private Mutex? _singleInstanceMutex;
+    private bool _hostStopped;
 
     public static IServiceProvider Services { get; private set; } = null!;
 
@@ -109,12 +110,27 @@ public partial class App : Application
         }
     }
 
+    // Stops the host without blocking the UI thread, then shuts down - unlike a bare Shutdown() call, this keeps
+    // the Dispatcher message pump alive for the several seconds host.StopAsync can take, so whatever triggered the
+    // exit (e.g. the tray context menu popup, a toast notification) still gets to close/render normally instead of
+    // appearing to hang. Call this from UI-thread event handlers (e.g. the tray Exit menu item) instead of Shutdown().
+    public async Task ExitGracefullyAsync()
+    {
+        if (_host is { } host)
+        {
+            await host.StopAsync(TimeSpan.FromSeconds(5));
+            _hostStopped = true;
+        }
+        Shutdown();
+    }
+
     protected override void OnExit(ExitEventArgs e)
     {
         // Same reasoning as the Task.Run around StartAsync above: run the stop off the UI thread's
         // SynchronizationContext so hosted-service shutdown (which awaits without ConfigureAwait(false)) never
         // needs to post a continuation back to this thread, which is synchronously blocked on GetResult() below.
-        if (_host is { } host)
+        // Skipped when ExitGracefullyAsync already stopped the host asynchronously ahead of this Shutdown() call.
+        if (_host is { } host && !_hostStopped)
             Task.Run(() => host.StopAsync(TimeSpan.FromSeconds(5))).GetAwaiter().GetResult();
         _host?.Dispose();
         _singleInstanceMutex?.ReleaseMutex();
