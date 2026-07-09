@@ -973,13 +973,39 @@
                         <Border.Background>
                             <SolidColorBrush x:Name="Fill" Color="#00000000"/>
                         </Border.Background>
-                        <SelectiveScrollingGrid>
-                            <SelectiveScrollingGrid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                            </SelectiveScrollingGrid.ColumnDefinitions>
-                            <DataGridCellsPresenter Grid.Column="1"/>
-                        </SelectiveScrollingGrid>
+                        <Grid>
+                            <SelectiveScrollingGrid>
+                                <SelectiveScrollingGrid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </SelectiveScrollingGrid.ColumnDefinitions>
+                                <DataGridCellsPresenter Grid.Column="1"/>
+                            </SelectiveScrollingGrid>
+                            <Rectangle x:Name="ShimmerRunning" IsHitTestVisible="False" Opacity="0">
+                                <Rectangle.Fill>
+                                    <LinearGradientBrush StartPoint="0,1" EndPoint="1,0">
+                                        <GradientStop Color="#006C63FF" Offset="0"/>
+                                        <GradientStop Color="#226C63FF" Offset="0.5"/>
+                                        <GradientStop Color="#006C63FF" Offset="1"/>
+                                        <LinearGradientBrush.RelativeTransform>
+                                            <TranslateTransform x:Name="RunTranslate" X="-1"/>
+                                        </LinearGradientBrush.RelativeTransform>
+                                    </LinearGradientBrush>
+                                </Rectangle.Fill>
+                            </Rectangle>
+                            <Rectangle x:Name="ShimmerAttention" IsHitTestVisible="False" Opacity="0">
+                                <Rectangle.Fill>
+                                    <LinearGradientBrush StartPoint="0,1" EndPoint="1,0">
+                                        <GradientStop Color="#00FFB454" Offset="0"/>
+                                        <GradientStop Color="#22FFB454" Offset="0.5"/>
+                                        <GradientStop Color="#00FFB454" Offset="1"/>
+                                        <LinearGradientBrush.RelativeTransform>
+                                            <TranslateTransform x:Name="AttTranslate" X="-1"/>
+                                        </LinearGradientBrush.RelativeTransform>
+                                    </LinearGradientBrush>
+                                </Rectangle.Fill>
+                            </Rectangle>
+                        </Grid>
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
@@ -1001,6 +1027,46 @@
                         <Trigger Property="IsSelected" Value="True">
                             <Setter TargetName="Chrome" Property="Background" Value="#332F6BFF"/>
                         </Trigger>
+                        <DataTrigger Binding="{Binding IsRunning}" Value="True">
+                            <DataTrigger.EnterActions>
+                                <BeginStoryboard x:Name="RunningShimmerStoryboard">
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="ShimmerRunning" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.2"/>
+                                        <DoubleAnimation Storyboard.TargetName="RunTranslate" Storyboard.TargetProperty="X" From="-1" To="1" Duration="0:0:1.4" RepeatBehavior="Forever"/>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </DataTrigger.EnterActions>
+                            <DataTrigger.ExitActions>
+                                <StopStoryboard BeginStoryboardName="RunningShimmerStoryboard"/>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="ShimmerRunning" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.2"/>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </DataTrigger.ExitActions>
+                        </DataTrigger>
+                        <MultiDataTrigger>
+                            <MultiDataTrigger.Conditions>
+                                <Condition Binding="{Binding NeedsAttention}" Value="True"/>
+                                <Condition Binding="{Binding IsRunning}" Value="False"/>
+                            </MultiDataTrigger.Conditions>
+                            <MultiDataTrigger.EnterActions>
+                                <BeginStoryboard x:Name="AttentionShimmerStoryboard">
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="ShimmerAttention" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.2"/>
+                                        <DoubleAnimation Storyboard.TargetName="AttTranslate" Storyboard.TargetProperty="X" From="-1" To="1" Duration="0:0:1.8" RepeatBehavior="Forever"/>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </MultiDataTrigger.EnterActions>
+                            <MultiDataTrigger.ExitActions>
+                                <StopStoryboard BeginStoryboardName="AttentionShimmerStoryboard"/>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="ShimmerAttention" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.2"/>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </MultiDataTrigger.ExitActions>
+                        </MultiDataTrigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value>

@@ -11,6 +11,8 @@ public sealed partial class JobStatusViewModel(string name) : ObservableObject
     private bool _enabled = true;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsRunning))]
+    [NotifyPropertyChangedFor(nameof(IsActive))]
     private string _phaseText = "Idle";
 
     [ObservableProperty]
@@ -18,7 +20,14 @@ public sealed partial class JobStatusViewModel(string name) : ObservableObject
 
     /// <summary>True when the last run failed and hasn't been superseded by a later success - drives the row's attention badge.</summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsActive))]
     private bool _needsAttention;
+
+    /// <summary>True while a sync is actively in progress for this job - drives the row's running shimmer.</summary>
+    public bool IsRunning => PhaseText != "Idle";
+
+    /// <summary>True when the row should draw attention to itself (running or needing attention) - drives the row's shimmer.</summary>
+    public bool IsActive => IsRunning || NeedsAttention;
 
     /// <summary>True when the failure was a <see cref="AdbSync.Core.Orchestration.PushSafetyException"/>, which can be resolved via the Force Push action.</summary>
     [ObservableProperty]
