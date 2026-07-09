@@ -1,10 +1,12 @@
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using AdbSync.Core.Config;
 using AdbSync.Core.Devices;
 using AdbSync.Core.Transfer;
+using Microsoft.Win32;
 
 namespace AdbSync.App.Views;
 
@@ -40,6 +42,7 @@ public partial class JobEditorWindow : Window
             NameBox.Text = job.Name;
             NameBox.IsEnabled = false; // renaming would orphan the job's master folder/manifests on disk
             AppPackageBox.Text = job.AppPackage ?? "";
+            ProjectDirectoryBox.Text = job.ProjectDirectory ?? "";
             ExcludeBox.Text = string.Join(Environment.NewLine, job.Exclude);
             foreach (var binding in job.Devices)
                 _bindings.Add(new JobDeviceBindingRow(binding.DeviceName, binding.RemotePath));
@@ -126,6 +129,16 @@ public partial class JobEditorWindow : Window
         }
     }
 
+    private void BrowseProjectDirectory_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new OpenFolderDialog
+        {
+            InitialDirectory = Directory.Exists(ProjectDirectoryBox.Text) ? ProjectDirectoryBox.Text : null,
+        };
+        if (dialog.ShowDialog(this) == true)
+            ProjectDirectoryBox.Text = dialog.FolderName;
+    }
+
     private void RemoveBinding_Click(object sender, RoutedEventArgs e)
     {
         if (((Button)sender).Tag is JobDeviceBindingRow row)
@@ -157,6 +170,7 @@ public partial class JobEditorWindow : Window
         {
             Name = NameBox.Text.Trim(),
             AppPackage = string.IsNullOrWhiteSpace(AppPackageBox.Text) ? null : AppPackageBox.Text.Trim(),
+            ProjectDirectory = string.IsNullOrWhiteSpace(ProjectDirectoryBox.Text) ? null : ProjectDirectoryBox.Text.Trim(),
             Exclude = ExcludeBox.Text
                 .Split('\n', StringSplitOptions.RemoveEmptyEntries)
                 .Select(s => s.Trim())

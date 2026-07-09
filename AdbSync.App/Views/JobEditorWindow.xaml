@@ -39,11 +39,22 @@
 
                                 <TextBlock Text="App package" Style="{StaticResource SectionLabel}"/>
                                 <TextBlock Style="{StaticResource CaptionText}" Text="Optional. The job is skipped while this app is running on any device."/>
-                                <TextBox x:Name="AppPackageBox" controls:TextBoxHelper.Placeholder="com.example.app"/>
+                                <TextBox x:Name="AppPackageBox" Margin="0,0,0,14" controls:TextBoxHelper.Placeholder="com.example.app"/>
+
+                                <TextBlock Text="Project directory override" Style="{StaticResource SectionLabel}"/>
+                                <TextBlock Style="{StaticResource CaptionText}" Text="Optional. Overrides the default projects directory (Settings) for this job only."/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox x:Name="ProjectDirectoryBox" Grid.Column="0" Margin="0,0,8,0" controls:TextBoxHelper.Placeholder="Default: Settings > Projects directory"/>
+                                    <Button Grid.Column="1" Content="Browse..." Click="BrowseProjectDirectory_Click"/>
+                                </Grid>
                             </StackPanel>
                         </Border>
 
-                        <Border Grid.Row="0" Grid.Column="1" Style="{StaticResource CardBorder}" Margin="8,0,0,16" VerticalAlignment="Top">
+                        <Border Grid.Row="0" Grid.Column="1" Style="{StaticResource CardBorder}" Margin="8,0,0,16" VerticalAlignment="Stretch">
                             <StackPanel>
                                 <TextBlock Text="Exclude patterns" Style="{StaticResource SectionLabel}"/>
                                 <TextBlock Text="One glob pattern per line." Style="{StaticResource CaptionText}"/>

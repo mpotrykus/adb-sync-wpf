@@ -40,7 +40,8 @@ public sealed class SyncJobRunner(
         TimeSpan? pullDuration = null;
         TimeSpan? pushDuration = null;
 
-        var projectRoot = Path.Combine(settings.ProjectsDirectory, job.Name);
+        var projectsDirectory = string.IsNullOrWhiteSpace(job.ProjectDirectory) ? settings.ProjectsDirectory : job.ProjectDirectory;
+        var projectRoot = Path.Combine(projectsDirectory, job.Name);
         var masterPath = Path.Combine(projectRoot, "master");
 
         _logger.LogInformation("Starting run for job '{Job}'", job.Name);
@@ -48,7 +49,7 @@ public sealed class SyncJobRunner(
 
         try
         {
-            if (string.IsNullOrWhiteSpace(settings.ProjectsDirectory))
+            if (string.IsNullOrWhiteSpace(projectsDirectory))
                 throw new InvalidOperationException("Projects directory is not configured - set it in Settings before running a job.");
 
             Directory.CreateDirectory(masterPath);
