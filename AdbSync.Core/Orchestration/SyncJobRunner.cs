@@ -44,6 +44,7 @@ public sealed class SyncJobRunner(
         var masterPath = Path.Combine(projectRoot, "master");
 
         _logger.LogInformation("Starting run for job '{Job}'", job.Name);
+        _logger.LogInformation("Using {Engine} engine", transfer.GetType().Name);
 
         try
         {
