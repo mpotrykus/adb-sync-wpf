@@ -137,8 +137,12 @@ public sealed class TrayIconService(
         {
             var config = await configService.GetAsync();
             var window = new SettingsWindow(config) { Owner = _dashboardWindow };
-            if (window.ShowDialog() == true)
-                await configService.SaveAsync();
+            window.Closed += async (_, _) =>
+            {
+                if (window.Saved)
+                    await configService.SaveAsync();
+            };
+            window.Show();
         }));
         menu.Items.Add(new Separator());
         menu.Items.Add(MakeItem("Exit", (_, _) => Application.Current.Shutdown()));

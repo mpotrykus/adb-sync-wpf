@@ -166,7 +166,7 @@ public partial class JobEditorWindow : Window
             Schedule = schedule,
             Enabled = EnabledCheckBox.IsChecked == true,
         };
-        DialogResult = true;
+        Close();
     }
 
     private JobSchedule BuildSchedule()
@@ -246,7 +246,7 @@ public partial class JobEditorWindow : Window
     private static Brush WarningBrush => (Brush)Application.Current.Resources["Brush.Warning"];
     private static Brush DangerBrush => (Brush)Application.Current.Resources["Brush.Danger"];
 
-    private void Cancel_Click(object sender, RoutedEventArgs e) => DialogResult = false;
+    private void Cancel_Click(object sender, RoutedEventArgs e) => Close();
 }
 
 public sealed record JobDeviceBindingRow(string DeviceName, string RemotePath)

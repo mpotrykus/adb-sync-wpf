@@ -106,6 +106,55 @@ public class SyncJobRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task RunAsync_FileFromOneDevicePushedToTwoOtherDevices_ReportsUniqueFileCountNotPerDeviceSum()
+    {
+        WriteDeviceFile("DeviceA", "photo.jpg", "content");
+        List<DeviceConfig> devices =
+        [
+            new() { Name = "DeviceA", Serial = "DeviceA" },
+            new() { Name = "DeviceB", Serial = "DeviceB" },
+            new() { Name = "DeviceC", Serial = "DeviceC" },
+        ];
+        var job = new SyncJobConfig
+        {
+            Name = "JobUniqueFiles",
+            Devices =
+            [
+                new JobDeviceBinding { DeviceName = "DeviceA", RemotePath = "/sdcard/app" },
+                new JobDeviceBinding { DeviceName = "DeviceB", RemotePath = "/sdcard/app" },
+                new JobDeviceBinding { DeviceName = "DeviceC", RemotePath = "/sdcard/app" },
+            ],
+        };
+        var historyStore = new RunHistoryStore(_appPaths);
+        var runner = new SyncJobRunner(
+            new FakeDeviceResolver(),
+            new FakeAppRunningGuard(),
+            new SyncLockManager(),
+            new FakeAdbTransferEngine(new Dictionary<string, string>
+            {
+                ["DeviceA"] = DeviceFolder("DeviceA"),
+                ["DeviceB"] = DeviceFolder("DeviceB"),
+                ["DeviceC"] = DeviceFolder("DeviceC"),
+            }),
+            new TwoWayMergeEngine(),
+            new ManifestStore(_appPaths),
+            new PushSafetyGuard(_appPaths),
+            new CheckpointManager(_appPaths),
+            NullSyncEventSink.Instance,
+            historyStore);
+
+        var result = await runner.RunAsync(job, 0, devices, _settings, resumeFrom: null);
+
+        Assert.Equal(JobRunOutcome.Completed, result.Outcome);
+        Assert.Equal("content", File.ReadAllText(Path.Combine(DeviceFolder("DeviceB"), "photo.jpg")));
+        Assert.Equal("content", File.ReadAllText(Path.Combine(DeviceFolder("DeviceC"), "photo.jpg")));
+
+        var runs = await historyStore.ListRunsAsync(job.Name);
+        var record = Assert.Single(runs);
+        Assert.Equal(1, record.FilesCopied);
+    }
+
+    [Fact]
     public async Task RunAsync_NothingChanged_ReturnsCompletedNoChanges()
     {
         var device = new DeviceConfig { Name = "DeviceA", Serial = "DeviceA" };

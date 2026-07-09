@@ -85,8 +85,6 @@ public sealed class SyncJobRunner(
                 var pullStats = await RunPullPhaseAsync(job, jobIndex, masterPath, serials, exclude, resumeFrom, ct);
                 pullDuration = pullStopwatch.Elapsed;
                 anyChange = pullStats.AnyChange;
-                totalFilesCopied += pullStats.FilesCopied;
-                totalFilesDeleted += pullStats.FilesDeleted;
                 totalErrors += pullStats.Errors;
                 totalBytesCopied += pullStats.BytesCopied;
             }
@@ -112,8 +110,10 @@ public sealed class SyncJobRunner(
             var pushStopwatch = Stopwatch.StartNew();
             var pushStats = await RunPushPhaseAsync(job, jobIndex, masterPath, serials, exclude, resumeFrom, ct);
             pushDuration = pushStopwatch.Elapsed;
-            totalFilesCopied += pushStats.FilesCopied;
-            totalFilesDeleted += pushStats.FilesDeleted;
+            // Files column reports unique files actually pushed, not a per-device sum - pushing the same
+            // file to 3 devices should read as "1 copied", not "3 copied".
+            totalFilesCopied = pushStats.CopiedPaths.Count;
+            totalFilesDeleted = pushStats.DeletedPaths.Count;
             totalErrors += pushStats.Errors;
             totalBytesCopied += pushStats.BytesCopied;
 
@@ -199,7 +199,7 @@ public sealed class SyncJobRunner(
             await checkpoints.SaveAsync(new SyncCheckpoint(1, DateTimeOffset.UtcNow, jobIndex, job.Name, SyncPhase.Pull, di + 1, serials), ct);
         }
 
-        return new PhaseStats(anyChange, filesCopied, filesDeleted, errors, bytesCopied);
+        return new PhaseStats(anyChange, filesCopied, filesDeleted, errors, bytesCopied, [], []);
     }
 
     private async Task<PhaseStats> RunPushPhaseAsync(
@@ -211,6 +211,8 @@ public sealed class SyncJobRunner(
         var filesDeleted = 0;
         var errors = 0;
         var bytesCopied = 0L;
+        var copiedPaths = new HashSet<string>(StringComparer.Ordinal);
+        var deletedPaths = new HashSet<string>(StringComparer.Ordinal);
 
         for (var di = startIndex; di < job.Devices.Count; di++)
         {
@@ -226,14 +228,18 @@ public sealed class SyncJobRunner(
             filesDeleted += pushResult.FilesDeleted;
             errors += pushResult.Errors.Count;
             bytesCopied += pushResult.BytesCopied;
+            copiedPaths.UnionWith(pushResult.CopiedPaths);
+            deletedPaths.UnionWith(pushResult.DeletedPaths);
 
             await checkpoints.SaveAsync(new SyncCheckpoint(1, DateTimeOffset.UtcNow, jobIndex, job.Name, SyncPhase.Push, di + 1, serials), ct);
         }
 
-        return new PhaseStats(AnyChange: false, filesCopied, filesDeleted, errors, bytesCopied);
+        return new PhaseStats(AnyChange: false, filesCopied, filesDeleted, errors, bytesCopied, copiedPaths.ToList(), deletedPaths.ToList());
     }
 
-    private readonly record struct PhaseStats(bool AnyChange, int FilesCopied, int FilesDeleted, int Errors, long BytesCopied);
+    private readonly record struct PhaseStats(
+        bool AnyChange, int FilesCopied, int FilesDeleted, int Errors, long BytesCopied,
+        IReadOnlyList<string> CopiedPaths, IReadOnlyList<string> DeletedPaths);
 
     private static string GetStagingPath(string projectRoot, string deviceName)
     {

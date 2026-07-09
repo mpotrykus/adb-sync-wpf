@@ -10,6 +10,8 @@ public partial class SettingsWindow : Window
 {
     private readonly AppConfig _config;
 
+    public bool Saved { get; private set; }
+
     public SettingsWindow(AppConfig config)
     {
         InitializeComponent();
@@ -53,8 +55,9 @@ public partial class SettingsWindow : Window
 
         StartupRegistration.SetEnabled(_config.Settings.StartAtLogin);
 
-        DialogResult = true;
+        Saved = true;
+        Close();
     }
 
-    private void Cancel_Click(object sender, RoutedEventArgs e) => DialogResult = false;
+    private void Cancel_Click(object sender, RoutedEventArgs e) => Close();
 }

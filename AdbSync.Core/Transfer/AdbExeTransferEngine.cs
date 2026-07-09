@@ -15,7 +15,7 @@ public sealed class AdbExeTransferEngine(IAdbProcessRunner adb, IMirrorDiffer di
         {
             var pullResult = await adb.RunAsync(["-s", serial, "pull", remotePath, tempRoot], ct);
             if (pullResult.ExitCode != 0)
-                return new TransferResult(0, 0, 0, [$"adb pull failed (exit {pullResult.ExitCode}): {pullResult.StandardError}"]);
+                return new TransferResult(0, 0, 0, [$"adb pull failed (exit {pullResult.ExitCode}): {pullResult.StandardError}"], [], []);
 
             var pulledRoot = Path.Combine(tempRoot, Path.GetFileName(remotePath.TrimEnd('/')));
             Directory.CreateDirectory(localPath);
@@ -24,8 +24,10 @@ public sealed class AdbExeTransferEngine(IAdbProcessRunner adb, IMirrorDiffer di
             var destination = LocalFileTreeScanner.Scan(localPath, exclude);
             var plan = differ.Diff(source, destination);
             var (copied, deleted, bytesCopied) = MirrorPlanApplier.Apply(plan, pulledRoot, localPath);
+            var copiedPaths = plan.ToCopy.Where(e => !e.IsDirectory).Select(e => e.RelativePath).ToList();
+            var deletedPaths = plan.ToDelete.Select(e => e.RelativePath).ToList();
 
-            return new TransferResult(copied, deleted, bytesCopied, []);
+            return new TransferResult(copied, deleted, bytesCopied, [], copiedPaths, deletedPaths);
         }
         finally
         {
@@ -46,6 +48,7 @@ public sealed class AdbExeTransferEngine(IAdbProcessRunner adb, IMirrorDiffer di
 
         var pushed = 0;
         var bytesCopied = 0L;
+        var copiedPaths = new List<string>();
         if (Directory.Exists(localPath))
         {
             foreach (var childPath in Directory.EnumerateFileSystemEntries(localPath))
@@ -63,14 +66,15 @@ public sealed class AdbExeTransferEngine(IAdbProcessRunner adb, IMirrorDiffer di
                 else
                 {
                     pushed++;
+                    copiedPaths.Add(childName);
                     bytesCopied += GetLocalSize(childPath, isDirectory);
                 }
             }
         }
 
-        var deleted = await DeleteRemoteExtrasAsync(serial, remotePath, local, exclude, errors, ct);
+        var (deleted, deletedPaths) = await DeleteRemoteExtrasAsync(serial, remotePath, local, exclude, errors, ct);
 
-        return new TransferResult(pushed, deleted, bytesCopied, errors);
+        return new TransferResult(pushed, deleted, bytesCopied, errors, copiedPaths, deletedPaths);
     }
 
     // adb push sends the whole raw subtree for a directory child (unfiltered by nested excludes), so this
@@ -79,7 +83,7 @@ public sealed class AdbExeTransferEngine(IAdbProcessRunner adb, IMirrorDiffer di
         ? Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories).Sum(f => new FileInfo(f).Length)
         : new FileInfo(path).Length;
 
-    private async Task<int> DeleteRemoteExtrasAsync(
+    private async Task<(int Deleted, List<string> DeletedPaths)> DeleteRemoteExtrasAsync(
         string serial, string remotePath, List<FileEntry> local, IExcludeMatcher exclude, List<string> errors, CancellationToken ct)
     {
         var remoteDirs = await ListRemoteAsync(serial, remotePath, isDirectory: true, ct);
@@ -97,13 +101,17 @@ public sealed class AdbExeTransferEngine(IAdbProcessRunner adb, IMirrorDiffer di
             .ToList();
 
         var deleted = 0;
+        var deletedPaths = new List<string>();
         foreach (var dir in topMostExtraDirs)
         {
             var result = await adb.RunAsync(["-s", serial, "shell", "rm", "-rf", $"{remotePath}/{dir}"], ct);
             if (result.ExitCode != 0)
                 errors.Add($"rm -rf '{dir}' failed (exit {result.ExitCode}): {result.StandardError}");
             else
+            {
                 deleted++;
+                deletedPaths.Add(dir);
+            }
         }
         foreach (var file in extraFiles)
         {
@@ -111,10 +119,13 @@ public sealed class AdbExeTransferEngine(IAdbProcessRunner adb, IMirrorDiffer di
             if (result.ExitCode != 0)
                 errors.Add($"rm '{file}' failed (exit {result.ExitCode}): {result.StandardError}");
             else
+            {
                 deleted++;
+                deletedPaths.Add(file);
+            }
         }
 
-        return deleted;
+        return (deleted, deletedPaths);
     }
 
     private async Task<List<string>> ListRemoteAsync(string serial, string remotePath, bool isDirectory, CancellationToken ct)

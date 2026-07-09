@@ -25,6 +25,8 @@ public sealed class FakeAdbTransferEngine(IReadOnlyDictionary<string, string> de
         var destination = LocalFileTreeScanner.Scan(destRoot, exclude);
         var plan = _differ.Diff(source, destination);
         var (copied, deleted, bytesCopied) = MirrorPlanApplier.Apply(plan, sourceRoot, destRoot);
-        return new TransferResult(copied, deleted, bytesCopied, []);
+        var copiedPaths = plan.ToCopy.Where(e => !e.IsDirectory).Select(e => e.RelativePath).ToList();
+        var deletedPaths = plan.ToDelete.Select(e => e.RelativePath).ToList();
+        return new TransferResult(copied, deleted, bytesCopied, [], copiedPaths, deletedPaths);
     }
 }

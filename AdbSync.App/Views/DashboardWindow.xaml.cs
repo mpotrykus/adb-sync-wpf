@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Threading;
 using AdbSync.App.Services;
 using AdbSync.App.ViewModels;
 using AdbSync.Core.Config;
@@ -21,6 +22,7 @@ public partial class DashboardWindow : Window
     private readonly IAdbDeviceResolver _deviceResolver;
     private readonly IDeviceChangeWatcher _changeWatcher;
     private readonly IRemoteFileSystemFactory _remoteFileSystemFactory;
+    private readonly DispatcherTimer _relativeTimeTimer;
 
     public DashboardWindow(
         AppConfigService configService, JobRunService jobRunService, DashboardViewModel viewModel, IRunHistoryStore historyStore,
@@ -35,6 +37,22 @@ public partial class DashboardWindow : Window
         _changeWatcher = changeWatcher;
         _remoteFileSystemFactory = remoteFileSystemFactory;
         DataContext = viewModel;
+
+        // Only ticks while the window is visible - it's tray-resident and hidden (not closed) most of the time,
+        // so IsVisibleChanged (not Loaded/Closed) is what actually tracks when it's worth updating.
+        _relativeTimeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        _relativeTimeTimer.Tick += (_, _) =>
+        {
+            foreach (var job in _viewModel.Jobs)
+                job.RefreshLastRunText();
+        };
+        IsVisibleChanged += (_, _) =>
+        {
+            if (IsVisible)
+                _relativeTimeTimer.Start();
+            else
+                _relativeTimeTimer.Stop();
+        };
 
         Loaded += async (_, _) => await RefreshAsync();
         _configService.ConfigChanged += async (_, _) => await Dispatcher.InvokeAsync(RefreshAsync);
@@ -101,12 +119,15 @@ public partial class DashboardWindow : Window
     {
         var config = await _configService.GetAsync();
         var editor = new JobEditorWindow(config, job: null, _deviceResolver, _changeWatcher, _remoteFileSystemFactory) { Owner = this };
-        if (editor.ShowDialog() == true)
+        editor.Closed += async (_, _) =>
         {
-            config.Jobs.Add(editor.Result!);
+            if (editor.Result is null)
+                return;
+            config.Jobs.Add(editor.Result);
             await _configService.SaveAsync();
             await RefreshAsync();
-        }
+        };
+        editor.Show();
     }
 
     private async void EditJob_Click(object sender, RoutedEventArgs e)
@@ -120,13 +141,18 @@ public partial class DashboardWindow : Window
             return;
 
         var editor = new JobEditorWindow(config, job, _deviceResolver, _changeWatcher, _remoteFileSystemFactory) { Owner = this };
-        if (editor.ShowDialog() == true)
+        editor.Closed += async (_, _) =>
         {
+            if (editor.Result is null)
+                return;
             var index = config.Jobs.IndexOf(job);
-            config.Jobs[index] = editor.Result!;
+            if (index < 0)
+                return; // job was removed from another window while this editor was open
+            config.Jobs[index] = editor.Result;
             await _configService.SaveAsync();
             await RefreshAsync();
-        }
+        };
+        editor.Show();
     }
 
     private async void RemoveJob_Click(object sender, RoutedEventArgs e)
@@ -201,25 +227,33 @@ public partial class DashboardWindow : Window
         if (sender is not FrameworkElement { DataContext: JobStatusViewModel vm })
             return;
 
-        new RunHistoryWindow(_historyStore, vm.Name) { Owner = this }.ShowDialog();
+        new RunHistoryWindow(_historyStore, vm.Name) { Owner = this }.Show();
     }
 
     private async void ManageDevices_Click(object sender, RoutedEventArgs e)
     {
         var config = await _configService.GetAsync();
         var window = new DeviceEditorWindow(config) { Owner = this };
-        if (window.ShowDialog() == true)
-            await _configService.SaveAsync();
+        window.Closed += async (_, _) =>
+        {
+            if (window.Changed)
+                await _configService.SaveAsync();
+        };
+        window.Show();
     }
 
     private async void Settings_Click(object sender, RoutedEventArgs e)
     {
         var config = await _configService.GetAsync();
         var window = new SettingsWindow(config) { Owner = this };
-        if (window.ShowDialog() == true)
+        window.Closed += async (_, _) =>
         {
-            await _configService.SaveAsync();
-            await RefreshAsync();
-        }
+            if (window.Saved)
+            {
+                await _configService.SaveAsync();
+                await RefreshAsync();
+            }
+        };
+        window.Show();
     }
 }

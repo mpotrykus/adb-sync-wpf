@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Shapes;
+using System.Windows.Threading;
 using AdbSync.App.Controls;
 using AdbSync.App.Converters;
 using AdbSync.App.ViewModels;
@@ -11,8 +12,11 @@ namespace AdbSync.App.Views;
 
 public partial class RunHistoryWindow : Window
 {
+    private static readonly TimeSpan AutoRefreshInterval = TimeSpan.FromSeconds(5);
+
     private readonly IRunHistoryStore _historyStore;
     private readonly string _jobName;
+    private readonly DispatcherTimer _autoRefreshTimer;
 
     public RunHistoryWindow(IRunHistoryStore historyStore, string jobName)
     {
@@ -21,13 +25,29 @@ public partial class RunHistoryWindow : Window
         _jobName = jobName;
         Title = $"Run History - {jobName}";
 
-        Loaded += async (_, _) => await RefreshAsync();
+        _autoRefreshTimer = new DispatcherTimer { Interval = AutoRefreshInterval };
+        _autoRefreshTimer.Tick += async (_, _) => await RefreshAsync();
+
+        Loaded += async (_, _) =>
+        {
+            await RefreshAsync();
+            _autoRefreshTimer.Start();
+        };
+        Closed += (_, _) => _autoRefreshTimer.Stop();
     }
 
     private async Task RefreshAsync()
     {
+        var selectedRunId = (RunsGrid.SelectedItem as RunHistoryRowViewModel)?.RunId;
+
         var runs = await _historyStore.ListRunsAsync(_jobName);
-        RunsGrid.ItemsSource = runs.Select(r => new RunHistoryRowViewModel(r)).ToList();
+        var rows = runs.Select(r => new RunHistoryRowViewModel(r)).ToList();
+        RunsGrid.ItemsSource = rows;
+
+        if (selectedRunId is not null)
+        {
+            RunsGrid.SelectedItem = rows.FirstOrDefault(r => r.RunId == selectedRunId);
+        }
 
         UpdateSummary(runs);
         UpdateDurationChart(runs);

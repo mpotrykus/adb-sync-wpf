@@ -60,7 +60,15 @@ public sealed class DeviceChangeWatcher(IAdbClient adbClient) : IDeviceChangeWat
 
         // "name:size:mtime" per file is enough to notice additions, deletions, and content/metadata changes; the
         // exact find/stat flags may need adjusting for a given OEM's toybox build - isolated here for a one-line fix.
-        return await RunAsync(device, $"find {Quote(remotePath)} -exec stat -c '%n:%s:%Y' {{}} +", ct);
+        var output = await RunAsync(device, $"find {Quote(remotePath)} -exec stat -c '%n:%s:%Y' {{}} +", ct);
+
+        // Android's shared storage is FUSE-emulated, so the directory-entry order "find" walks in isn't guaranteed
+        // stable between successive calls even when nothing changed. Sorting makes the snapshot comparison in
+        // RunPollLoopAsync order-independent, so that reordering alone doesn't look like a change and re-trigger
+        // the job on every poll.
+        var lines = output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        Array.Sort(lines, StringComparer.Ordinal);
+        return string.Join('\n', lines);
     }
 
     private async Task<string> RunAsync(DeviceData device, string command, CancellationToken ct)

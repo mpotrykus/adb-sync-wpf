@@ -48,7 +48,30 @@ public sealed partial class JobStatusViewModel(string name) : ObservableObject
         OutcomeReported?.Invoke(this);
     }
 
-    public string LastRunText => LastRunAt is { } t ? t.LocalDateTime.ToString("g") : "Never";
+    public string LastRunText => LastRunAt is { } t ? FormatRelative(t) : "Never";
+
+    /// <summary>Re-raises <see cref="LastRunText"/> change notification so the dashboard's ticking clock can
+    /// advance "n seconds/minutes ago" text even though <see cref="LastRunAt"/> itself hasn't changed.</summary>
+    public void RefreshLastRunText() => OnPropertyChanged(nameof(LastRunText));
+
+    private static readonly TimeSpan RelativeTimeCutoff = TimeSpan.FromHours(24);
+
+    private static string FormatRelative(DateTimeOffset t)
+    {
+        var elapsed = DateTimeOffset.Now - t;
+        if (elapsed < TimeSpan.Zero)
+            elapsed = TimeSpan.Zero; // guard against clock skew making this negative
+
+        return elapsed switch
+        {
+            { TotalSeconds: < 60 } e => Pluralize(Math.Max(1, (int)e.TotalSeconds), "second"),
+            { TotalMinutes: < 60 } e => Pluralize((int)e.TotalMinutes, "minute"),
+            { } e when e < RelativeTimeCutoff => Pluralize((int)e.TotalHours, "hour"),
+            _ => t.LocalDateTime.ToString("g"),
+        };
+    }
+
+    private static string Pluralize(int count, string unit) => $"{count} {unit}{(count == 1 ? "" : "s")} ago";
 
     public string NextRunText => Enabled
         ? NextRunAt switch

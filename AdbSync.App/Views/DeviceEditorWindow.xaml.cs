@@ -12,6 +12,8 @@ public partial class DeviceEditorWindow : Window
     private DeviceConfig? _selected;
     private bool _changed;
 
+    public bool Changed => _changed;
+
     public DeviceEditorWindow(AppConfig config)
     {
         InitializeComponent();
@@ -157,5 +159,5 @@ public partial class DeviceEditorWindow : Window
             TestResultText.Text = $"Paired: {dialog.PairedHostPort}";
     }
 
-    private void Close_Click(object sender, RoutedEventArgs e) => DialogResult = _changed;
+    private void Close_Click(object sender, RoutedEventArgs e) => Close();
 }
