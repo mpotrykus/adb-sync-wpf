@@ -374,7 +374,7 @@
                             <TextBlock x:Name="Placeholder" Text="{TemplateBinding controls:TextBoxHelper.Placeholder}"
                                        Foreground="{StaticResource Brush.Text.Secondary}"
                                        Margin="{TemplateBinding Padding}"
-                                       VerticalAlignment="Center"
+                                       VerticalAlignment="Top"
                                        IsHitTestVisible="False"
                                        Visibility="Collapsed"/>
                             <ScrollViewer x:Name="PART_ContentHost"/>
