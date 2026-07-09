@@ -38,6 +38,16 @@ public sealed partial class JobStatusViewModel(string name) : ObservableObject
     /// <summary>Accumulates across the current run's devices; reset to 0 at the start of each new run.</summary>
     public int ConflictCountThisRun { get; set; }
 
+    /// <summary>Raised only when a run just finished live, as opposed to <see cref="LastOutcome"/> also being set
+    /// when the dashboard hydrates it from persisted history on load - lets the tray notify on the former only.</summary>
+    public event Action<JobStatusViewModel>? OutcomeReported;
+
+    public void ReportOutcome(string outcome)
+    {
+        LastOutcome = outcome;
+        OutcomeReported?.Invoke(this);
+    }
+
     public string LastRunText => LastRunAt is { } t ? t.LocalDateTime.ToString("g") : "Never";
 
     public string NextRunText => Enabled

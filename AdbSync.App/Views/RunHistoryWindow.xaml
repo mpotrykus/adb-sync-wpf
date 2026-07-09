@@ -7,7 +7,7 @@
         xmlns:conv="clr-namespace:AdbSync.App.Converters"
         interop:AcrylicEffect.Enabled="True"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
-        Title="Run History" Icon="/Assets/app.ico" Height="760" Width="1080" MinHeight="620" MinWidth="820" WindowStartupLocation="CenterOwner">
+        Title="Run History" Icon="/Assets/app.ico" Height="820" Width="1080" MinHeight="660" MinWidth="820" WindowStartupLocation="CenterOwner">
     <shell:WindowChrome.WindowChrome>
         <shell:WindowChrome CaptionHeight="36" ResizeBorderThickness="6" GlassFrameThickness="0" CornerRadius="8" UseAeroCaptionButtons="False"/>
     </shell:WindowChrome.WindowChrome>
@@ -58,8 +58,8 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="188"/>
-                    <RowDefinition Height="1.1*"/>
-                    <RowDefinition Height="1.4*"/>
+                    <RowDefinition Height="*" MinHeight="160"/>
+                    <RowDefinition Height="150"/>
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
@@ -129,7 +129,7 @@
                 </Grid>
 
                 <DataGrid x:Name="RunsGrid" Grid.Row="2" Margin="0,0,0,12" AutoGenerateColumns="False" IsReadOnly="True"
-                          CanUserAddRows="False" HeadersVisibility="Column" GridLinesVisibility="None"
+                          CanUserAddRows="False" HeadersVisibility="Column" GridLinesVisibility="None" RowHeight="40"
                           SelectionChanged="RunsGrid_SelectionChanged">
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="STARTED" Binding="{Binding StartedAtText}" Width="150"/>

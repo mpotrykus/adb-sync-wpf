@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using AdbSync.Core.Config;
 using AdbSync.Core.Devices;
+using AdbSync.Core.Transfer;
 
 namespace AdbSync.App.Views;
 
@@ -14,16 +15,20 @@ public partial class JobEditorWindow : Window
     private readonly List<DeviceConfig> _devices;
     private readonly IAdbDeviceResolver _deviceResolver;
     private readonly IDeviceChangeWatcher _changeWatcher;
+    private readonly IRemoteFileSystemFactory _remoteFileSystemFactory;
 
     public SyncJobConfig? Result { get; private set; }
 
-    public JobEditorWindow(AppConfig config, SyncJobConfig? job, IAdbDeviceResolver deviceResolver, IDeviceChangeWatcher changeWatcher)
+    public JobEditorWindow(
+        AppConfig config, SyncJobConfig? job, IAdbDeviceResolver deviceResolver, IDeviceChangeWatcher changeWatcher,
+        IRemoteFileSystemFactory remoteFileSystemFactory)
     {
         InitializeComponent();
         _originalJob = job;
         _devices = config.Devices;
         _deviceResolver = deviceResolver;
         _changeWatcher = changeWatcher;
+        _remoteFileSystemFactory = remoteFileSystemFactory;
 
         DevicePicker.ItemsSource = config.Devices.Select(d => d.Name).ToList();
         DeviceBindingsList.ItemsSource = _bindings;
@@ -78,6 +83,47 @@ public partial class JobEditorWindow : Window
 
         _bindings.Add(new JobDeviceBindingRow(deviceName, RemotePathBox.Text.Trim()));
         RemotePathBox.Clear();
+    }
+
+    private async void BrowseRemotePath_Click(object sender, RoutedEventArgs e)
+    {
+        if (DevicePicker.SelectedItem is not string deviceName)
+        {
+            MessageBox.Show(this, "Select a device first.", "AdbSync", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var device = _devices.FirstOrDefault(d => d.Name == deviceName);
+        if (device is null)
+            return;
+
+        var button = (Button)sender;
+        button.IsEnabled = false;
+        try
+        {
+            var serial = await _deviceResolver.EnsureConnectedAsync(device);
+            var remoteFileSystem = _remoteFileSystemFactory.Create(serial);
+            try
+            {
+                var startPath = string.IsNullOrWhiteSpace(RemotePathBox.Text) ? "/sdcard" : RemotePathBox.Text.Trim();
+                var browser = new DeviceFolderBrowserWindow(remoteFileSystem, startPath, deviceName) { Owner = this };
+                if (browser.ShowDialog() == true)
+                    RemotePathBox.Text = browser.SelectedPath;
+            }
+            finally
+            {
+                if (remoteFileSystem is IAsyncDisposable disposable)
+                    await disposable.DisposeAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, $"Could not connect to device - {ex.Message}", "AdbSync", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            button.IsEnabled = true;
+        }
     }
 
     private void RemoveBinding_Click(object sender, RoutedEventArgs e)

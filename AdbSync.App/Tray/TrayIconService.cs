@@ -56,17 +56,12 @@ public sealed class TrayIconService(
     /// <summary>Live tray tooltip (mirrors the old tool's per-phase tooltip updates) + balloon notifications on outcome, gated by settings.</summary>
     private void WireJobUpdates(JobStatusViewModel job)
     {
-        job.PropertyChanged += async (_, e) =>
+        job.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(JobStatusViewModel.PhaseText))
-            {
                 UpdateTooltip(job);
-            }
-            else if (e.PropertyName == nameof(JobStatusViewModel.LastOutcome) && job.LastOutcome is not null)
-            {
-                await ShowOutcomeNotificationAsync(job);
-            }
         };
+        job.OutcomeReported += async _ => await ShowOutcomeNotificationAsync(job);
     }
 
     private void UpdateTooltip(JobStatusViewModel job)

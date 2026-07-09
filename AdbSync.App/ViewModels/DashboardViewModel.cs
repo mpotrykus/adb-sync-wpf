@@ -61,7 +61,7 @@ public sealed class DashboardViewModel : ISyncEventSink
         UpdateJob(jobName, vm =>
         {
             vm.PhaseText = "Idle";
-            vm.LastOutcome = $"Skipped: {reason}";
+            vm.ReportOutcome($"Skipped: {reason}");
         });
 
     public void JobCompleted(string jobName, bool pushed) =>
@@ -69,7 +69,7 @@ public sealed class DashboardViewModel : ISyncEventSink
         {
             vm.PhaseText = "Idle";
             var outcome = pushed ? "Success" : "No changes";
-            vm.LastOutcome = vm.ConflictCountThisRun > 0 ? $"{outcome} ({vm.ConflictCountThisRun} conflict(s) resolved)" : outcome;
+            vm.ReportOutcome(vm.ConflictCountThisRun > 0 ? $"{outcome} ({vm.ConflictCountThisRun} conflict(s) resolved)" : outcome);
             vm.LastRunAt = DateTimeOffset.Now;
             vm.NeedsAttention = false;
             vm.CanForcePush = false;
@@ -79,7 +79,7 @@ public sealed class DashboardViewModel : ISyncEventSink
         UpdateJob(jobName, vm =>
         {
             vm.PhaseText = "Idle";
-            vm.LastOutcome = $"Error: {exception.Message}";
+            vm.ReportOutcome($"Error: {exception.Message}");
             vm.LastRunAt = DateTimeOffset.Now;
             vm.NeedsAttention = true;
             vm.CanForcePush = exception is PushSafetyException;

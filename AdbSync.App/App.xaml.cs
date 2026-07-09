@@ -63,7 +63,13 @@ public partial class App : Application
             .ConfigureServices(ConfigureServices)
             .Build();
         Services = _host.Services;
-        _host.Start();
+
+        // Escape the UI thread's DispatcherSynchronizationContext for the duration of host startup: BackgroundService
+        // starts its ExecuteAsync synchronously from here, so whatever context is ambient at that first `await` is
+        // what every later continuation (timers, cancellation, etc.) gets posted back to. If that's the dispatcher,
+        // OnExit's synchronous host-stop call below deadlocks against its own blocked thread. Task.Run guarantees a
+        // thread-pool (null) context instead, so hosted-service internals never need the UI thread to make progress.
+        Task.Run(() => _host.StartAsync()).GetAwaiter().GetResult();
 
         Services.GetRequiredService<TrayIconService>().Initialize();
 
@@ -105,7 +111,11 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
-        _host?.StopAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult();
+        // Same reasoning as the Task.Run around StartAsync above: run the stop off the UI thread's
+        // SynchronizationContext so hosted-service shutdown (which awaits without ConfigureAwait(false)) never
+        // needs to post a continuation back to this thread, which is synchronously blocked on GetResult() below.
+        if (_host is { } host)
+            Task.Run(() => host.StopAsync(TimeSpan.FromSeconds(5))).GetAwaiter().GetResult();
         _host?.Dispose();
         _singleInstanceMutex?.ReleaseMutex();
         base.OnExit(e);

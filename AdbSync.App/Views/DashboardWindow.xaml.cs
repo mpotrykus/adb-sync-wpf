@@ -8,6 +8,7 @@ using AdbSync.Core.Config;
 using AdbSync.Core.Devices;
 using AdbSync.Core.Orchestration;
 using AdbSync.Core.Orchestration.RunHistory;
+using AdbSync.Core.Transfer;
 
 namespace AdbSync.App.Views;
 
@@ -19,10 +20,11 @@ public partial class DashboardWindow : Window
     private readonly IRunHistoryStore _historyStore;
     private readonly IAdbDeviceResolver _deviceResolver;
     private readonly IDeviceChangeWatcher _changeWatcher;
+    private readonly IRemoteFileSystemFactory _remoteFileSystemFactory;
 
     public DashboardWindow(
         AppConfigService configService, JobRunService jobRunService, DashboardViewModel viewModel, IRunHistoryStore historyStore,
-        IAdbDeviceResolver deviceResolver, IDeviceChangeWatcher changeWatcher)
+        IAdbDeviceResolver deviceResolver, IDeviceChangeWatcher changeWatcher, IRemoteFileSystemFactory remoteFileSystemFactory)
     {
         InitializeComponent();
         _configService = configService;
@@ -31,6 +33,7 @@ public partial class DashboardWindow : Window
         _historyStore = historyStore;
         _deviceResolver = deviceResolver;
         _changeWatcher = changeWatcher;
+        _remoteFileSystemFactory = remoteFileSystemFactory;
         DataContext = viewModel;
 
         Loaded += async (_, _) => await RefreshAsync();
@@ -97,7 +100,7 @@ public partial class DashboardWindow : Window
     private async void AddJob_Click(object sender, RoutedEventArgs e)
     {
         var config = await _configService.GetAsync();
-        var editor = new JobEditorWindow(config, job: null, _deviceResolver, _changeWatcher) { Owner = this };
+        var editor = new JobEditorWindow(config, job: null, _deviceResolver, _changeWatcher, _remoteFileSystemFactory) { Owner = this };
         if (editor.ShowDialog() == true)
         {
             config.Jobs.Add(editor.Result!);
@@ -116,7 +119,7 @@ public partial class DashboardWindow : Window
         if (job is null)
             return;
 
-        var editor = new JobEditorWindow(config, job, _deviceResolver, _changeWatcher) { Owner = this };
+        var editor = new JobEditorWindow(config, job, _deviceResolver, _changeWatcher, _remoteFileSystemFactory) { Owner = this };
         if (editor.ShowDialog() == true)
         {
             var index = config.Jobs.IndexOf(job);
@@ -143,15 +146,23 @@ public partial class DashboardWindow : Window
 
     private async void JobEnabledToggle_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is not FrameworkElement { DataContext: JobStatusViewModel vm })
+        // Read the checkbox's own IsChecked rather than the bound JobStatusViewModel.Enabled: inside this
+        // DataGrid template column, the TwoWay binding's target-to-source push lags behind the Click event
+        // (the click handler otherwise observes the pre-toggle value), so trusting the viewmodel here silently
+        // re-saves the old state. JobEditorWindow's EnabledCheckBox doesn't hit this because it reads straight
+        // off the control too, never through a bound viewmodel property.
+        if (sender is not CheckBox { DataContext: JobStatusViewModel vm } checkBox)
             return;
+
+        var isEnabled = checkBox.IsChecked == true;
 
         var config = await _configService.GetAsync();
         var job = config.Jobs.FirstOrDefault(j => j.Name == vm.Name);
         if (job is null)
             return;
 
-        job.Enabled = vm.Enabled;
+        job.Enabled = isEnabled;
+        vm.Enabled = isEnabled;
         await _configService.SaveAsync();
         await RefreshAsync();
     }

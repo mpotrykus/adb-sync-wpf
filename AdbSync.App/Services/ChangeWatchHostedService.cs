@@ -118,7 +118,12 @@ public sealed class ChangeWatchHostedService(
     {
         var config = await configService.GetAsync();
         var index = config.Jobs.FindIndex(j => j.Name == jobName);
-        if (index >= 0)
+
+        // The coordinator's own debounce window plus however long disposal takes to unwind the live watch loop
+        // (which can block until the device's next change event, per the comment on StopAsync) leaves a real gap
+        // between "user disabled the job" and "the coordinator actually stops" - re-check here so a change that
+        // was already in flight when the job got disabled doesn't still trigger a run.
+        if (index >= 0 && config.Jobs[index].Enabled)
             await jobRunService.RunJobAsync(index);
     }
 
