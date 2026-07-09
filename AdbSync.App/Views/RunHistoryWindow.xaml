@@ -136,7 +136,20 @@
                         <DataGridTextColumn Header="DURATION" Binding="{Binding DurationText}" Width="90"/>
                         <DataGridTextColumn Header="PULL" Binding="{Binding PullDurationText}" Width="60"/>
                         <DataGridTextColumn Header="PUSH" Binding="{Binding PushDurationText}" Width="60"/>
-                        <DataGridTextColumn Header="FILES" Binding="{Binding FilesText}" Width="165"/>
+                        <DataGridTemplateColumn Header="FILES" Width="120">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="&#xE8C8;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="12"
+                                                   VerticalAlignment="Center" Foreground="{StaticResource Brush.Text.Secondary}"/>
+                                        <TextBlock Text="{Binding FilesCopied}" VerticalAlignment="Center" Margin="4,0,10,0"/>
+                                        <TextBlock Text="&#xE74D;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="12"
+                                                   VerticalAlignment="Center" Foreground="{StaticResource Brush.Text.Secondary}"/>
+                                        <TextBlock Text="{Binding FilesDeleted}" VerticalAlignment="Center" Margin="4,0,0,0"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
                         <DataGridTextColumn Header="SIZE" Binding="{Binding SizeText}" Width="90"/>
                         <DataGridTextColumn Header="ERRORS" Binding="{Binding ErrorCount}" Width="80"/>
                         <DataGridTemplateColumn Header="OUTCOME" Width="150">

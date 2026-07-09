@@ -11,15 +11,41 @@ public sealed class RunHistoryRowViewModel(JobRunRecord record)
     public string DurationText { get; } = FormatDuration(record.CompletedAt - record.StartedAt);
     public string PullDurationText { get; } = record.PullDuration is { } pull ? FormatDuration(pull) : "-";
     public string PushDurationText { get; } = record.PushDuration is { } push ? FormatDuration(push) : "-";
-    public string FilesText { get; } = $"{record.FilesCopied} copied, {record.FilesDeleted} deleted";
+    public int FilesCopied { get; } = record.FilesCopied;
+    public int FilesDeleted { get; } = record.FilesDeleted;
     public string SizeText { get; } = FormatSize(record.BytesCopied);
     public int ErrorCount { get; } = record.ErrorCount;
     public JobRunOutcome Outcome { get; } = record.Outcome;
     public string OutcomeText { get; } = RunOutcomeDisplay.FriendlyName(record.Outcome);
     public string? ErrorMessage { get; } = record.ErrorMessage;
 
-    internal static string FormatDuration(TimeSpan duration) =>
-        duration < TimeSpan.Zero ? "-" : duration.ToString(duration.TotalHours >= 1 ? @"h\:mm\:ss" : @"m\:ss");
+    internal static string FormatDuration(TimeSpan duration)
+    {
+        if (duration < TimeSpan.Zero)
+        {
+            return "-";
+        }
+
+        var totalSeconds = (long)duration.TotalSeconds;
+        var days = totalSeconds / 86400;
+        var hours = totalSeconds % 86400 / 3600;
+        var minutes = totalSeconds % 3600 / 60;
+        var seconds = totalSeconds % 60;
+
+        if (days > 0)
+        {
+            return $"{days}d {hours}h {minutes}m {seconds}s";
+        }
+        if (hours > 0)
+        {
+            return $"{hours}h {minutes}m {seconds}s";
+        }
+        if (minutes > 0)
+        {
+            return $"{minutes}m {seconds}s";
+        }
+        return $"{seconds}s";
+    }
 
     internal static string FormatSize(long bytes)
     {
