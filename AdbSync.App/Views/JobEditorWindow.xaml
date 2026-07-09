@@ -90,9 +90,9 @@
                                 <TextBlock Text="Use Test Watch Availability to confirm this device and path support live watching."
                                            Style="{StaticResource CaptionText}" Margin="26,0,0,14"/>
 
-                                <Separator Margin="0,10,0,10"/>
+                                <Separator Margin="0,10,0,20"/>
 
-                                <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                                <StackPanel Orientation="Horizontal" Margin="0,2,0,10">
                                     <CheckBox x:Name="EnabledCheckBox" Style="{StaticResource ToggleSwitch}" Margin="0,0,10,0"/>
                                     <TextBlock Text="Enabled" VerticalAlignment="Center"/>
                                 </StackPanel>
