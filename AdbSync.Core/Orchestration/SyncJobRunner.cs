@@ -81,6 +81,7 @@ public sealed class SyncJobRunner(
             }
 
             var anyChange = resumeFrom is { Phase: SyncPhase.Push };
+            var pullFilesTouched = 0;
             if (!anyChange)
             {
                 var pullStopwatch = Stopwatch.StartNew();
@@ -89,6 +90,7 @@ public sealed class SyncJobRunner(
                 anyChange = pullStats.AnyChange;
                 totalErrors += pullStats.Errors;
                 totalBytesCopied += pullStats.BytesCopied;
+                pullFilesTouched = pullStats.FilesCopied + pullStats.FilesDeleted;
             }
 
             if (!anyChange)
@@ -122,7 +124,10 @@ public sealed class SyncJobRunner(
             _logger.LogInformation("Job '{Job}' completed successfully", job.Name);
             events.JobCompleted(job.Name, pushed: true);
             await checkpoints.ClearAsync(ct);
-            return await FinishAsync(JobRunOutcome.Completed);
+            var outcome = pullFilesTouched == 0 && totalFilesCopied == 0 && totalFilesDeleted == 0
+                ? JobRunOutcome.CompletedNoChanges
+                : JobRunOutcome.Completed;
+            return await FinishAsync(outcome);
         }
         catch (Exception ex)
         {

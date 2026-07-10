@@ -155,6 +155,29 @@ public class SyncJobRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task RunAsync_ResumedIntoPushPhaseWithNothingLeftToPush_ReturnsCompletedNoChanges()
+    {
+        WriteDeviceFile("DeviceA", "photo.jpg", "content");
+        var device = new DeviceConfig { Name = "DeviceA", Serial = "DeviceA" };
+        var job = new SyncJobConfig
+        {
+            Name = "JobResume",
+            Devices = [new JobDeviceBinding { DeviceName = "DeviceA", RemotePath = "/sdcard/app" }],
+        };
+        var runner = CreateRunner(new Dictionary<string, string> { ["DeviceA"] = DeviceFolder("DeviceA") });
+
+        // Establish a baseline where master and the device already agree.
+        await runner.RunAsync(job, 0, [device], _settings, resumeFrom: null);
+
+        // Simulate resuming a crashed run that jumps straight into the push phase - since nothing
+        // changed since the baseline, push has nothing left to do and the run should read as a no-op.
+        var resumeFrom = new SyncCheckpoint(1, DateTimeOffset.UtcNow, 0, job.Name, SyncPhase.Push, 0, new Dictionary<string, string> { ["DeviceA"] = "DeviceA" });
+        var result = await runner.RunAsync(job, 0, [device], _settings, resumeFrom);
+
+        Assert.Equal(JobRunOutcome.CompletedNoChanges, result.Outcome);
+    }
+
+    [Fact]
     public async Task RunAsync_NothingChanged_ReturnsCompletedNoChanges()
     {
         var device = new DeviceConfig { Name = "DeviceA", Serial = "DeviceA" };

@@ -82,6 +82,7 @@
                                     <Style TargetType="TextBlock">
                                         <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
                                         <Setter Property="Foreground" Value="{Binding LastOutcome, Converter={StaticResource OutcomeToBrushConverter}}"/>
+                                        <Setter Property="ToolTip" Value="{Binding LastOutcome}"/>
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>

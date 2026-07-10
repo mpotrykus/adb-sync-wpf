@@ -993,18 +993,6 @@
                                     </LinearGradientBrush>
                                 </Rectangle.Fill>
                             </Rectangle>
-                            <Rectangle x:Name="ShimmerAttention" IsHitTestVisible="False" Opacity="0">
-                                <Rectangle.Fill>
-                                    <LinearGradientBrush StartPoint="0,1" EndPoint="1,0">
-                                        <GradientStop Color="#00FFB454" Offset="0"/>
-                                        <GradientStop Color="#22FFB454" Offset="0.5"/>
-                                        <GradientStop Color="#00FFB454" Offset="1"/>
-                                        <LinearGradientBrush.RelativeTransform>
-                                            <TranslateTransform x:Name="AttTranslate" X="-1"/>
-                                        </LinearGradientBrush.RelativeTransform>
-                                    </LinearGradientBrush>
-                                </Rectangle.Fill>
-                            </Rectangle>
                         </Grid>
                     </Border>
                     <ControlTemplate.Triggers>
@@ -1045,28 +1033,6 @@
                                 </BeginStoryboard>
                             </DataTrigger.ExitActions>
                         </DataTrigger>
-                        <MultiDataTrigger>
-                            <MultiDataTrigger.Conditions>
-                                <Condition Binding="{Binding NeedsAttention}" Value="True"/>
-                                <Condition Binding="{Binding IsRunning}" Value="False"/>
-                            </MultiDataTrigger.Conditions>
-                            <MultiDataTrigger.EnterActions>
-                                <BeginStoryboard x:Name="AttentionShimmerStoryboard">
-                                    <Storyboard>
-                                        <DoubleAnimation Storyboard.TargetName="ShimmerAttention" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.2"/>
-                                        <DoubleAnimation Storyboard.TargetName="AttTranslate" Storyboard.TargetProperty="X" From="-1" To="1" Duration="0:0:1.8" RepeatBehavior="Forever"/>
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </MultiDataTrigger.EnterActions>
-                            <MultiDataTrigger.ExitActions>
-                                <StopStoryboard BeginStoryboardName="AttentionShimmerStoryboard"/>
-                                <BeginStoryboard>
-                                    <Storyboard>
-                                        <DoubleAnimation Storyboard.TargetName="ShimmerAttention" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.2"/>
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </MultiDataTrigger.ExitActions>
-                        </MultiDataTrigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value>

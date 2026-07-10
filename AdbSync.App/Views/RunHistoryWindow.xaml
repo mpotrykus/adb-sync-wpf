@@ -168,6 +168,7 @@
                                 <Style TargetType="TextBlock">
                                     <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
                                     <Setter Property="Foreground" Value="{StaticResource Brush.Danger}"/>
+                                    <Setter Property="ToolTip" Value="{Binding ErrorMessage}"/>
                                 </Style>
                             </DataGridTextColumn.ElementStyle>
                         </DataGridTextColumn>
