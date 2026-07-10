@@ -46,7 +46,7 @@ async Task<int> TestDeviceAsync(string deviceName)
         return 1;
     }
 
-    var resolver = new AdbDeviceResolver(new AdbClient(), new MdnsBrowser(), new AdbServer());
+    var resolver = new AdbDeviceResolver(new AdbClient(), new MdnsBrowser(), new AdbServer(), logger: CreateConsoleLogger<AdbDeviceResolver>());
     try
     {
         var hostPort = await resolver.EnsureConnectedAsync(device);
@@ -71,7 +71,7 @@ async Task<int> PairDeviceAsync(string deviceName, string code)
         return 1;
     }
 
-    var resolver = new AdbDeviceResolver(new AdbClient(), new MdnsBrowser(), new AdbServer());
+    var resolver = new AdbDeviceResolver(new AdbClient(), new MdnsBrowser(), new AdbServer(), logger: CreateConsoleLogger<AdbDeviceResolver>());
     try
     {
         var hostPort = await resolver.PairAsync(device, code);
@@ -115,6 +115,11 @@ async Task<int> RunOneAsync(string jobName, bool useNativeTransfer, bool forcePu
     return PrintResultsAndExitCode(config, [result], [jobName]);
 }
 
+// Standalone console logger for the on-demand diagnostic commands ("device test"/"device pair") - unlike
+// BuildRunner's file logger, these are run interactively specifically to see *why* a connect is failing.
+ILogger<T> CreateConsoleLogger<T>() =>
+    LoggerFactory.Create(b => b.AddConsole().SetMinimumLevel(LogLevel.Debug)).CreateLogger<T>();
+
 SyncJobRunner BuildRunner(bool useNativeTransfer)
 {
     var adbClient = new AdbClient();
@@ -126,7 +131,7 @@ SyncJobRunner BuildRunner(bool useNativeTransfer)
     var loggerFactory = LoggerFactory.Create(b => b.AddSerilog(AdbSyncLogging.CreateFileLogger(paths, retentionDays: 30), dispose: true));
 
     return new SyncJobRunner(
-        new AdbDeviceResolver(adbClient, new MdnsBrowser(), new AdbServer()),
+        new AdbDeviceResolver(adbClient, new MdnsBrowser(), new AdbServer(), logger: loggerFactory.CreateLogger<AdbDeviceResolver>()),
         new AppRunningGuard(adbClient),
         new SyncLockManager(),
         transfer,

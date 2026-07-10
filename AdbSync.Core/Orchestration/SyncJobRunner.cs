@@ -81,7 +81,6 @@ public sealed class SyncJobRunner(
             }
 
             var anyChange = resumeFrom is { Phase: SyncPhase.Push };
-            var pullFilesTouched = 0;
             if (!anyChange)
             {
                 var pullStopwatch = Stopwatch.StartNew();
@@ -90,7 +89,6 @@ public sealed class SyncJobRunner(
                 anyChange = pullStats.AnyChange;
                 totalErrors += pullStats.Errors;
                 totalBytesCopied += pullStats.BytesCopied;
-                pullFilesTouched = pullStats.FilesCopied + pullStats.FilesDeleted;
             }
 
             if (!anyChange)
@@ -124,7 +122,9 @@ public sealed class SyncJobRunner(
             _logger.LogInformation("Job '{Job}' completed successfully", job.Name);
             events.JobCompleted(job.Name, pushed: true);
             await checkpoints.ClearAsync(ct);
-            var outcome = pullFilesTouched == 0 && totalFilesCopied == 0 && totalFilesDeleted == 0
+            // "No changes" reflects what actually left the machine - if nothing needed pushing (e.g. a device
+            // already had everything the pull brought in), the run reads as a no-op regardless of pull activity.
+            var outcome = totalFilesCopied == 0 && totalFilesDeleted == 0
                 ? JobRunOutcome.CompletedNoChanges
                 : JobRunOutcome.Completed;
             return await FinishAsync(outcome);

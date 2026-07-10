@@ -1,21 +1,31 @@
 using AdbSync.Core.Config;
+using AdbSync.Core.Logging;
 using AdvancedSharpAdbClient;
 using AdvancedSharpAdbClient.Models;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AdbSync.Core.Devices;
 
-public sealed class AdbDeviceResolver(IAdbClient adbClient, IMdnsBrowser mdns, IAdbServer adbServer, string adbExecutablePath = "adb") : IAdbDeviceResolver
+public sealed class AdbDeviceResolver(
+    IAdbClient adbClient, IMdnsBrowser mdns, IAdbServer adbServer, string adbExecutablePath = "adb",
+    ILogger<AdbDeviceResolver>? logger = null) : IAdbDeviceResolver
 {
     private const string AdbTlsConnectServiceType = "_adb-tls-connect._tcp";
     private const string AdbTlsPairingServiceType = "_adb-tls-pairing._tcp";
     private static readonly TimeSpan MdnsBrowseTimeout = TimeSpan.FromSeconds(5);
+
+    // Wrapped so every diagnostic below also lands in the failing run's saved log (RunLogCapture), not just the
+    // rolling file log - "why did connect fail" is otherwise a black box, since ConnectAsync/mDNS give no detail.
+    private readonly ILogger<AdbDeviceResolver> _logger = new RunCapturingLogger<AdbDeviceResolver>(logger ?? NullLogger<AdbDeviceResolver>.Instance);
 
     public async Task<string> EnsureConnectedAsync(DeviceConfig device, CancellationToken ct = default)
     {
         // AdvancedSharpAdbClient's IAdbClient talks to the adb server daemon over a raw socket on 127.0.0.1:5037
         // and never starts it - unlike shelling out to adb.exe directly, nothing here auto-launches the daemon,
         // so every caller relied on some other process (a terminal, Android Studio, ...) having started it first.
-        await adbServer.StartServerAsync(adbExecutablePath, restartServerIfNewer: false, ct);
+        var startResult = await adbServer.StartServerAsync(adbExecutablePath, restartServerIfNewer: false, ct);
+        _logger.LogDebug("Device '{Device}': adb server start result: {Result}", device.Name, startResult);
 
         if (device.Ip is null)
         {
@@ -23,29 +33,67 @@ public sealed class AdbDeviceResolver(IAdbClient adbClient, IMdnsBrowser mdns, I
                 ?? throw new InvalidOperationException($"Device '{device.Name}' has neither an IP nor a serial configured.");
         }
 
-        if (device.CachedHostPort is not null && await IsOnlineAsync(device.CachedHostPort, ct))
-            return device.CachedHostPort;
+        if (device.CachedHostPort is not null)
+        {
+            if (await IsOnlineAsync(device.CachedHostPort, ct))
+                return device.CachedHostPort;
+            _logger.LogDebug(
+                "Device '{Device}': cached host:port {HostPort} is no longer online, re-discovering", device.Name, device.CachedHostPort);
+        }
 
-        var existing = await FindOnlineHostPortAsync(device.Ip, ct);
+        var existing = await FindOnlineHostPortAsync(device, ct);
         if (existing is not null)
         {
+            _logger.LogDebug("Device '{Device}': found already-connected {HostPort} via 'adb devices'", device.Name, existing);
             Cache(device, existing);
             return existing;
         }
 
-        var announcements = await mdns.BrowseAsync(AdbTlsConnectServiceType, MdnsBrowseTimeout, ct);
-        foreach (var candidate in announcements.Where(a => a.Addresses.Any(addr => addr.ToString() == device.Ip)))
+        _logger.LogDebug("Device '{Device}': browsing mDNS for {ServiceType} to find {Ip}", device.Name, AdbTlsConnectServiceType, device.Ip);
+        var announcements = (await mdns.BrowseAsync(AdbTlsConnectServiceType, MdnsBrowseTimeout, ct)).ToList();
+        _logger.LogDebug(
+            "Device '{Device}': mDNS returned {Count} announcement(s): {Announcements}", device.Name, announcements.Count,
+            string.Join("; ", announcements.Select(a => $"{a.InstanceName} @ [{string.Join(',', a.Addresses)}]:{a.Port}")));
+
+        var candidates = announcements.Where(a => a.Addresses.Any(addr => addr.ToString() == device.Ip)).ToList();
+        if (candidates.Count == 0)
         {
-            await adbClient.ConnectAsync(device.Ip, candidate.Port, ct);
+            throw new DeviceConnectException(device.Name, device.Ip, announcements.Count == 0
+                ? "no wireless-debugging devices are being advertised on this network - enable Wireless debugging under Developer options on the device, and confirm the PC and device are on the same network/subnet"
+                : $"found {announcements.Count} wireless-debugging announcement(s) but none for {device.Ip} - check the device's current IP address (it may have changed) under Settings > Developer options > Wireless debugging");
+        }
+
+        string? lastFailureReason = null;
+        foreach (var candidate in candidates)
+        {
+            try
+            {
+                await adbClient.ConnectAsync(device.Ip, candidate.Port, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Device '{Device}': adb connect to {Ip}:{Port} threw", device.Name, device.Ip, candidate.Port);
+                lastFailureReason = $"connecting to {device.Ip}:{candidate.Port} threw {ex.GetType().Name}: {ex.Message}";
+                continue;
+            }
+
             var hostPort = $"{device.Ip}:{candidate.Port}";
-            if (await IsOnlineAsync(hostPort, ct))
+            var state = await GetStateAsync(hostPort, ct);
+            if (state == DeviceState.Online)
             {
                 Cache(device, hostPort);
                 return hostPort;
             }
+
+            _logger.LogInformation("Device '{Device}': connected to {HostPort} but adb reports state {State}", device.Name, hostPort, state);
+            lastFailureReason = state is null
+                ? $"connected to {hostPort} but it never showed up in 'adb devices'"
+                : $"connected to {hostPort} but adb reports its state as '{state}'" + (state == DeviceState.Unauthorized
+                    ? " - accept the debugging prompt on the device's screen and try again"
+                    : "");
         }
 
-        throw new DeviceConnectException(device.Name, device.Ip);
+        throw new DeviceConnectException(device.Name, device.Ip, lastFailureReason);
     }
 
     public async Task<string> PairAsync(DeviceConfig device, string pairingCode, CancellationToken ct = default)
@@ -70,19 +118,30 @@ public sealed class AdbDeviceResolver(IAdbClient adbClient, IMdnsBrowser mdns, I
         return $"{device.Ip}:{candidate.Port}";
     }
 
-    private async Task<string?> FindOnlineHostPortAsync(string ip, CancellationToken ct)
+    private async Task<string?> FindOnlineHostPortAsync(DeviceConfig device, CancellationToken ct)
     {
-        var devices = await adbClient.GetDevicesAsync(ct);
-        return devices
-            .FirstOrDefault(d => d.State == DeviceState.Online && d.Serial.StartsWith($"{ip}:", StringComparison.Ordinal))
-            ?.Serial;
+        var matching = (await adbClient.GetDevicesAsync(ct))
+            .Where(d => d.Serial.StartsWith($"{device.Ip}:", StringComparison.Ordinal))
+            .ToList();
+
+        if (matching.Count > 0 && matching.All(d => d.State != DeviceState.Online))
+        {
+            _logger.LogInformation(
+                "Device '{Device}': 'adb devices' already lists {Ip} but not online: {States}",
+                device.Name, device.Ip, string.Join(", ", matching.Select(d => $"{d.Serial}={d.State}")));
+        }
+
+        return matching.FirstOrDefault(d => d.State == DeviceState.Online)?.Serial;
     }
 
-    private async Task<bool> IsOnlineAsync(string hostPort, CancellationToken ct)
+    private async Task<DeviceState?> GetStateAsync(string hostPort, CancellationToken ct)
     {
         var devices = await adbClient.GetDevicesAsync(ct);
-        return devices.Any(d => d.Serial == hostPort && d.State == DeviceState.Online);
+        return devices.FirstOrDefault(d => d.Serial == hostPort)?.State;
     }
+
+    private async Task<bool> IsOnlineAsync(string hostPort, CancellationToken ct) =>
+        await GetStateAsync(hostPort, ct) == DeviceState.Online;
 
     private static void Cache(DeviceConfig device, string hostPort)
     {

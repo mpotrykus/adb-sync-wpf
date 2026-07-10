@@ -55,7 +55,7 @@ public class SyncJobRunnerTests : IDisposable
     }
 
     [Fact]
-    public async Task RunAsync_SingleDeviceWithNewFile_MergesIntoMasterAndCompletes()
+    public async Task RunAsync_SingleDeviceWithNewFile_MergesIntoMasterWithNoChangesToPush()
     {
         WriteDeviceFile("DeviceA", "photo.jpg", "content");
         var device = new DeviceConfig { Name = "DeviceA", Serial = "DeviceA" };
@@ -68,7 +68,9 @@ public class SyncJobRunnerTests : IDisposable
 
         var result = await runner.RunAsync(job, 0, [device], _settings, resumeFrom: null);
 
-        Assert.Equal(JobRunOutcome.Completed, result.Outcome);
+        // Outcome reflects the push phase only: DeviceA already has photo.jpg (it's the file's origin), so
+        // pushing back to it copies nothing even though the pull did populate the master mirror.
+        Assert.Equal(JobRunOutcome.CompletedNoChanges, result.Outcome);
         var masterPath = Path.Combine(_projectsDirectory, "JobOne", "master");
         Assert.Equal("content", File.ReadAllText(Path.Combine(masterPath, "photo.jpg")));
     }
@@ -270,12 +272,14 @@ public class SyncJobRunnerTests : IDisposable
         var runner = CreateRunner(new Dictionary<string, string> { ["DeviceA"] = DeviceFolder("DeviceA") }, pushSafety: pushSafety);
 
         var result = await runner.RunAsync(job, 0, [device], _settings, resumeFrom: null, forcePush: true);
-        Assert.Equal(JobRunOutcome.Completed, result.Outcome);
+        // Both runs push back to the very same device the content came from, so nothing is actually copied out -
+        // the push-phase file count is what drives the outcome, so these correctly read as no-op pushes.
+        Assert.Equal(JobRunOutcome.CompletedNoChanges, result.Outcome);
 
         // Baseline is now rebased to the 1-file master, so a normal (non-forced) run at the same level no longer trips the guard.
         WriteDeviceFile("DeviceA", "only-one-file.txt", "content edited");
         var secondResult = await runner.RunAsync(job, 0, [device], _settings, resumeFrom: null);
-        Assert.Equal(JobRunOutcome.Completed, secondResult.Outcome);
+        Assert.Equal(JobRunOutcome.CompletedNoChanges, secondResult.Outcome);
     }
 
     [Fact]
