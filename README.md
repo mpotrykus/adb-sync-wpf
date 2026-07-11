@@ -129,7 +129,7 @@ Config lives under `%LocalAppData%\AdbSync\config\` as three JSON files, compose
 
 - **`devices.json`** — `DeviceConfig`: `Name`, and either `Ip` (WiFi/mDNS) or `Serial` (static USB), plus a cached resolved connection.
 - **`projects.json`** — `SyncJobConfig` per job: `Name` (also the master-folder name — locked after creation), optional `AppPackage` (skip sync while running), `Exclude` patterns, one or more `{ DeviceName, RemotePath }` bindings, `Enabled`, and a `Schedule` (`Manual`, `Interval` in hours from the previous run, or `DailyAt` a list of local times).
-- **`settings.json`** — `GlobalSettings`: `ProjectsDirectory`, `StartAtLogin`, notification toggles, `StaleLockHours`, `LogRetentionDays`, and `MaxConcurrentJobs` (currently unused — job execution is serialized regardless of this value).
+- **`settings.json`** — `GlobalSettings`: `ProjectsDirectory`, `StartAtLogin`, notification toggles, `StaleLockHours`, `LogRetentionDays`, `ConflictRetentionDays`, and `MaxConcurrentJobs` (currently unused — job execution is serialized regardless of this value).
 
 A legacy importer (`adbsync config import <devices.json> <projects.json>`) converts an older tool's config files into this format.
 

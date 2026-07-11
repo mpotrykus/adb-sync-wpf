@@ -424,4 +424,36 @@ public class SyncJobRunnerTests : IDisposable
             Directory.EnumerateFileSystemEntries(masterPath, "*", SearchOption.AllDirectories),
             p => p.Contains(".conflicts", StringComparison.Ordinal));
     }
+
+    [Fact]
+    public async Task RunAsync_PrunesConflictBackupsOlderThanRetention()
+    {
+        var projectRoot = Path.Combine(_projectsDirectory, "JobPrune");
+        var masterPath = Path.Combine(projectRoot, "master");
+        Directory.CreateDirectory(masterPath);
+
+        var backupDir = Path.Combine(projectRoot, ".sync_conflicts", "DeviceA");
+        Directory.CreateDirectory(backupDir);
+        var stalePath = Path.Combine(backupDir, "stale.txt.conflict");
+        File.WriteAllText(stalePath, "stale-backup");
+        File.SetLastWriteTimeUtc(stalePath, DateTime.UtcNow.AddDays(-40));
+        var freshPath = Path.Combine(backupDir, "fresh.txt.conflict");
+        File.WriteAllText(freshPath, "fresh-backup");
+        File.SetLastWriteTimeUtc(freshPath, DateTime.UtcNow.AddDays(-1));
+
+        WriteDeviceFile("DeviceA", "photo.jpg", "content");
+        var device = new DeviceConfig { Name = "DeviceA", Serial = "DeviceA" };
+        var job = new SyncJobConfig
+        {
+            Name = "JobPrune",
+            Devices = [new JobDeviceBinding { DeviceName = "DeviceA", RemotePath = "/sdcard/app" }],
+        };
+        _settings.ConflictRetentionDays = 30;
+        var runner = CreateRunner(new Dictionary<string, string> { ["DeviceA"] = DeviceFolder("DeviceA") });
+
+        await runner.RunAsync(job, 0, [device], _settings, resumeFrom: null);
+
+        Assert.False(File.Exists(stalePath), "Expected the 40-day-old backup to be pruned.");
+        Assert.True(File.Exists(freshPath), "Expected the 1-day-old backup to survive.");
+    }
 }

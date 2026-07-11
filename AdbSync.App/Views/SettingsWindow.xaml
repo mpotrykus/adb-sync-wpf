@@ -55,13 +55,16 @@
                                 <RowDefinition/>
                                 <RowDefinition/>
                                 <RowDefinition/>
+                                <RowDefinition/>
                             </Grid.RowDefinitions>
                             <TextBlock Grid.Row="0" Grid.Column="0" Text="Stale lock timeout (hours)" VerticalAlignment="Center"/>
                             <TextBox Grid.Row="0" Grid.Column="1" x:Name="StaleLockHoursBox" controls:TextBoxHelper.Placeholder="4"/>
                             <TextBlock Grid.Row="1" Grid.Column="0" Text="Log retention (days)" VerticalAlignment="Center" Margin="0,10,0,0"/>
                             <TextBox Grid.Row="1" Grid.Column="1" x:Name="LogRetentionDaysBox" Margin="0,10,0,0" controls:TextBoxHelper.Placeholder="30"/>
-                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Max concurrent jobs" VerticalAlignment="Center" Margin="0,10,0,0"/>
-                            <TextBox Grid.Row="2" Grid.Column="1" x:Name="MaxConcurrentJobsBox" Margin="0,10,0,0" IsEnabled="False"
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Conflict backup retention (days)" VerticalAlignment="Center" Margin="0,10,0,0"/>
+                            <TextBox Grid.Row="2" Grid.Column="1" x:Name="ConflictRetentionDaysBox" Margin="0,10,0,0" controls:TextBoxHelper.Placeholder="30"/>
+                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Max concurrent jobs" VerticalAlignment="Center" Margin="0,10,0,0"/>
+                            <TextBox Grid.Row="3" Grid.Column="1" x:Name="MaxConcurrentJobsBox" Margin="0,10,0,0" IsEnabled="False"
                                      ToolTip="Fixed at 1 until a same-device concurrency guard is implemented."
                                      controls:TextBoxHelper.Placeholder="1"/>
                         </Grid>

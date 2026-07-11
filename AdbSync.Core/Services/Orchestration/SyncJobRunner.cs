@@ -90,7 +90,7 @@ public sealed class SyncJobRunner(
             if (!anyChange)
             {
                 var pullStopwatch = Stopwatch.StartNew();
-                var pullStats = await RunPullPhaseAsync(job, jobIndex, masterPath, serials, exclude, resumeFrom, ct);
+                var pullStats = await RunPullPhaseAsync(job, jobIndex, masterPath, serials, exclude, resumeFrom, settings, ct);
                 pullDuration = pullStopwatch.Elapsed;
                 anyChange = pullStats.AnyChange;
                 totalErrors += pullStats.Errors;
@@ -161,7 +161,7 @@ public sealed class SyncJobRunner(
 
     private async Task<PhaseStats> RunPullPhaseAsync(
         SyncJobConfig job, int jobIndex, string masterPath, Dictionary<string, string> serials,
-        ExcludeMatcher exclude, SyncCheckpoint? resumeFrom, CancellationToken ct)
+        ExcludeMatcher exclude, SyncCheckpoint? resumeFrom, GlobalSettings settings, CancellationToken ct)
     {
         var projectRoot = Path.GetDirectoryName(masterPath)!;
         var startIndex = resumeFrom is { Phase: SyncPhase.Pull } r ? r.DeviceIndex : 0;
@@ -209,6 +209,10 @@ public sealed class SyncJobRunner(
                     string.Join(", ", mergeResult.Conflicts.Select(c => c.RelativePath)));
                 events.MergeConflictsDetected(job.Name, binding.DeviceName, mergeResult.Conflicts.Count);
             }
+
+            // Opportunistic sweep: piggyback on the run that just touched this device's backup folder rather
+            // than running a separate cleanup job for what's normally an empty or near-empty directory.
+            PruneConflictBackups(mergeOptions.ConflictBackupDir!, settings.ConflictRetentionDays);
 
             if (Directory.Exists(stagingPath))
                 Directory.Delete(stagingPath, recursive: true);
@@ -267,4 +271,17 @@ public sealed class SyncJobRunner(
 
     private static string GetConflictBackupDir(string projectRoot, string deviceName) =>
         Path.Combine(projectRoot, ".sync_conflicts", deviceName);
+
+    private static void PruneConflictBackups(string backupDir, int retentionDays)
+    {
+        if (retentionDays <= 0 || !Directory.Exists(backupDir))
+            return;
+
+        var cutoffUtc = DateTimeOffset.UtcNow.AddDays(-retentionDays).UtcDateTime;
+        foreach (var file in Directory.EnumerateFiles(backupDir))
+        {
+            if (File.GetLastWriteTimeUtc(file) < cutoffUtc)
+                File.Delete(file);
+        }
+    }
 }

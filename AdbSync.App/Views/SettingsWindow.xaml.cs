@@ -24,6 +24,7 @@ public partial class SettingsWindow : Window
         ShowErrorNotificationsBox.IsChecked = config.Settings.ShowErrorNotifications;
         StaleLockHoursBox.Text = config.Settings.StaleLockHours.ToString();
         LogRetentionDaysBox.Text = config.Settings.LogRetentionDays.ToString();
+        ConflictRetentionDaysBox.Text = config.Settings.ConflictRetentionDays.ToString();
         MaxConcurrentJobsBox.Text = config.Settings.MaxConcurrentJobs.ToString();
     }
 
@@ -53,6 +54,8 @@ public partial class SettingsWindow : Window
             _config.Settings.StaleLockHours = staleHours;
         if (int.TryParse(LogRetentionDaysBox.Text, out var retentionDays) && retentionDays > 0)
             _config.Settings.LogRetentionDays = retentionDays;
+        if (int.TryParse(ConflictRetentionDaysBox.Text, out var conflictRetentionDays) && conflictRetentionDays > 0)
+            _config.Settings.ConflictRetentionDays = conflictRetentionDays;
 
         StartupRegistration.SetEnabled(_config.Settings.StartAtLogin);
 
