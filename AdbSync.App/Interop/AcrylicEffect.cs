@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
@@ -47,48 +48,34 @@ public static class AcrylicEffect
         {
             EnableAcrylicBlur(hwnd);
         }
-        catch
+        catch (Exception ex)
         {
-            // Best-effort visual flourish only; never let this break window creation.
+            Debug.WriteLine($"AcrylicEffect: failed to enable acrylic blur. {ex}");
         }
 
         try
         {
-            // SetWindowCompositionAttribute's blur paints the whole rectangular HWND surface,
-            // not just the pixels our own WPF Border renders inside its rounded clip - a GDI
-            // SetWindowRgn has no effect here because this is a per-pixel-alpha layered window
-            // (region clipping is ignored for those). Telling DWM itself to round the window's
-            // physical composition surface is the only thing that also clips the blur, so the
-            // sharp corner doesn't poke out past our rounded Border. Windows 10 and older simply
-            // fail this call (unsupported attribute) and keep the square corner as before.
             var preference = (int)DwmWindowCornerPreference.Round;
             DwmSetWindowAttribute(hwnd, DwmWindowAttribute.WindowCornerPreference, ref preference, sizeof(int));
         }
-        catch
+        catch (Exception ex)
         {
-            // Best-effort visual flourish only; never let this break window creation.
+            Debug.WriteLine($"AcrylicEffect: failed to set window corner preference. {ex}");
         }
 
         try
         {
-            // Once DWM treats the window as a normal rounded top-level window, it also paints
-            // its own default ~1px accent border around it. Our own WindowRootBorder already
-            // carries a (deliberately transparent) outline for this borderless design, so turn
-            // DWM's off rather than stacking a second, visible one on top.
             var noBorder = DwmwaColorNone;
             DwmSetWindowAttribute(hwnd, DwmWindowAttribute.BorderColor, ref noBorder, sizeof(int));
         }
-        catch
+        catch (Exception ex)
         {
-            // Best-effort visual flourish only; never let this break window creation.
+            Debug.WriteLine($"AcrylicEffect: failed to clear window border color. {ex}");
         }
     }
 
     private static void EnableAcrylicBlur(IntPtr hwnd)
     {
-        // Tint the blur black to match Brush.Window.Background. Keep this fairly low-opacity -
-        // a high tint alpha visually drowns out the blur underneath it, which is what made an
-        // earlier, more opaque version of this look like a flat color with no blur at all.
         const byte alpha = 0x60;
         const byte r = 0x00;
         const byte g = 0x00;

@@ -1,4 +1,5 @@
-using AdbSync.Core.Orchestration;
+using AdbSync.Core.Models.Orchestration;
+using AdbSync.Core.Services.Orchestration;
 
 namespace AdbSync.Core.Tests.Orchestration;
 

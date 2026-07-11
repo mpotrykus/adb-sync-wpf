@@ -2,7 +2,8 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Data;
 using System.Windows.Media;
-using AdbSync.Core.Orchestration;
+using AdbSync.Core.Models.Orchestration;
+using AdbSync.Core.Services.Orchestration;
 
 namespace AdbSync.App.Converters;
 

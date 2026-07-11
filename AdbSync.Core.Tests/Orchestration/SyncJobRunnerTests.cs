@@ -1,7 +1,11 @@
-using AdbSync.Core.Config;
-using AdbSync.Core.Merge;
-using AdbSync.Core.Orchestration;
-using AdbSync.Core.Orchestration.RunHistory;
+using AdbSync.Core.Models.Config;
+using AdbSync.Core.Services.Config;
+using AdbSync.Core.Models.Merge;
+using AdbSync.Core.Services.Merge;
+using AdbSync.Core.Models.Orchestration;
+using AdbSync.Core.Services.Orchestration;
+using AdbSync.Core.Models.Orchestration.RunHistory;
+using AdbSync.Core.Services.Orchestration.RunHistory;
 using AdbSync.Core.Tests.Orchestration.Fakes;
 
 namespace AdbSync.Core.Tests.Orchestration;
@@ -380,8 +384,44 @@ public class SyncJobRunnerTests : IDisposable
 
         var result = await runner.RunAsync(job, 0, [device], _settings, resumeFrom: null);
 
-        Assert.Equal(JobRunOutcome.Completed, result.Outcome);
+        // The device already holds the winning content, so the push phase has nothing left to send it -
+        // "no changes" describes what left the machine, not whether a conflict was resolved along the way.
+        Assert.Equal(JobRunOutcome.CompletedNoChanges, result.Outcome);
         Assert.Equal(1, recordingSink.TotalConflictsReported);
         Assert.Equal("device-version-newer", File.ReadAllText(Path.Combine(masterPath, "a.txt")));
+    }
+
+    [Fact]
+    public async Task RunAsync_ConflictBackup_SurvivesStagingCleanupAndDoesNotLeakIntoMaster()
+    {
+        var projectRoot = Path.Combine(_projectsDirectory, "JobConflictBackup");
+        var masterPath = Path.Combine(projectRoot, "master");
+        Directory.CreateDirectory(masterPath);
+        File.WriteAllText(Path.Combine(masterPath, "a.txt"), "master-version");
+        File.SetLastWriteTimeUtc(Path.Combine(masterPath, "a.txt"), DateTime.UtcNow.AddMinutes(-10));
+
+        WriteDeviceFile("DeviceA", "a.txt", "device-version-newer");
+        File.SetLastWriteTimeUtc(Path.Combine(DeviceFolder("DeviceA"), "a.txt"), DateTime.UtcNow);
+
+        var device = new DeviceConfig { Name = "DeviceA", Serial = "DeviceA" };
+        var job = new SyncJobConfig
+        {
+            Name = "JobConflictBackup",
+            Devices = [new JobDeviceBinding { DeviceName = "DeviceA", RemotePath = "/sdcard/app" }],
+        };
+        var runner = CreateRunner(new Dictionary<string, string> { ["DeviceA"] = DeviceFolder("DeviceA") });
+
+        await runner.RunAsync(job, 0, [device], _settings, resumeFrom: null);
+
+        // The losing side (master's stale copy) must still be backed up somewhere after the run completes...
+        var backupDir = Path.Combine(projectRoot, ".sync_conflicts", "DeviceA");
+        Assert.True(Directory.Exists(backupDir) && Directory.EnumerateFiles(backupDir).Any(),
+            "Expected a conflict backup to survive under the project root.");
+
+        // ...and that location must not be inside master, or it would get mirrored out to every other device
+        // on the next push.
+        Assert.DoesNotContain(
+            Directory.EnumerateFileSystemEntries(masterPath, "*", SearchOption.AllDirectories),
+            p => p.Contains(".conflicts", StringComparison.Ordinal));
     }
 }

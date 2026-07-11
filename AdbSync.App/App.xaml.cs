@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 using System.Windows;
@@ -5,13 +6,19 @@ using AdbSync.App.Services;
 using AdbSync.App.Tray;
 using AdbSync.App.ViewModels;
 using AdbSync.App.Views;
-using AdbSync.Core.Config;
-using AdbSync.Core.Devices;
-using AdbSync.Core.Logging;
-using AdbSync.Core.Merge;
-using AdbSync.Core.Orchestration;
-using AdbSync.Core.Orchestration.RunHistory;
-using AdbSync.Core.Transfer;
+using AdbSync.Core.Models.Config;
+using AdbSync.Core.Services.Config;
+using AdbSync.Core.Models.Devices;
+using AdbSync.Core.Services.Devices;
+using AdbSync.Core.Services.Logging;
+using AdbSync.Core.Models.Merge;
+using AdbSync.Core.Services.Merge;
+using AdbSync.Core.Models.Orchestration;
+using AdbSync.Core.Services.Orchestration;
+using AdbSync.Core.Models.Orchestration.RunHistory;
+using AdbSync.Core.Services.Orchestration.RunHistory;
+using AdbSync.Core.Models.Transfer;
+using AdbSync.Core.Services.Transfer;
 using AdvancedSharpAdbClient;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -104,8 +111,10 @@ public partial class App : Application
             using var doc = JsonDocument.Parse(File.ReadAllText(paths.SettingsFile));
             return doc.RootElement.TryGetProperty("logRetentionDays", out var prop) ? prop.GetInt32() : defaultDays;
         }
-        catch
+        catch (Exception ex)
         {
+            // File logger isn't set up yet at this point in startup, so there's nowhere better to send this.
+            Debug.WriteLine($"Failed to read logRetentionDays from settings; using default of {defaultDays}. {ex}");
             return defaultDays;
         }
     }

@@ -1,4 +1,5 @@
-using AdbSync.Core.Transfer;
+using AdbSync.Core.Models.Transfer;
+using AdbSync.Core.Services.Transfer;
 using AdvancedSharpAdbClient;
 
 namespace AdbSync.Core.IntegrationTests;

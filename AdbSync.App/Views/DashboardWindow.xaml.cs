@@ -5,11 +5,16 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using AdbSync.App.Services;
 using AdbSync.App.ViewModels;
-using AdbSync.Core.Config;
-using AdbSync.Core.Devices;
-using AdbSync.Core.Orchestration;
-using AdbSync.Core.Orchestration.RunHistory;
-using AdbSync.Core.Transfer;
+using AdbSync.Core.Models.Config;
+using AdbSync.Core.Services.Config;
+using AdbSync.Core.Models.Devices;
+using AdbSync.Core.Services.Devices;
+using AdbSync.Core.Models.Orchestration;
+using AdbSync.Core.Services.Orchestration;
+using AdbSync.Core.Models.Orchestration.RunHistory;
+using AdbSync.Core.Services.Orchestration.RunHistory;
+using AdbSync.Core.Models.Transfer;
+using AdbSync.Core.Services.Transfer;
 
 namespace AdbSync.App.Views;
 

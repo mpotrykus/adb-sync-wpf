@@ -1,4 +1,5 @@
-using AdbSync.Core.Devices;
+using AdbSync.Core.Models.Devices;
+using AdbSync.Core.Services.Devices;
 
 namespace AdbSync.Core.Tests.Orchestration.Fakes;
 

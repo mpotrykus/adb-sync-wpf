@@ -1,8 +1,10 @@
 using System.Collections.ObjectModel;
 using System.Windows;
-using AdbSync.Core.Config;
-using AdbSync.Core.Orchestration;
-using AdbSync.Core.Scheduling;
+using AdbSync.Core.Models.Config;
+using AdbSync.Core.Services.Config;
+using AdbSync.Core.Models.Orchestration;
+using AdbSync.Core.Services.Orchestration;
+using AdbSync.Core.Services.Scheduling;
 
 namespace AdbSync.App.ViewModels;
 
@@ -54,7 +56,7 @@ public sealed class DashboardViewModel : ISyncEventSink
         {
             vm.PhaseText = deviceName is null ? phase.ToString() : $"{phase} @ {deviceName}";
             if (phase == SyncPhase.PreConnect)
-                vm.ConflictCountThisRun = 0; // start of a fresh run - reset the counter from any previous run
+                vm.ConflictCountThisRun = 0;
         });
 
     public void JobSkipped(string jobName, string reason) =>
@@ -97,7 +99,6 @@ public sealed class DashboardViewModel : ISyncEventSink
     public void WatchStopped(string jobName, string deviceName) =>
         UpdateJob(jobName, vm => vm.WatchStatusText = null);
 
-    // Surfaced to the user via the run it triggers (PhaseChanged/JobCompleted), not its own status text.
     public void ChangeDetected(string jobName, string deviceName) { }
 
     private void UpdateJob(string jobName, Action<JobStatusViewModel> apply) =>
@@ -112,8 +113,6 @@ public sealed class DashboardViewModel : ISyncEventSink
             apply(vm);
         });
 
-    // Application.Current.Dispatcher is always the UI thread's dispatcher, regardless of which thread
-    // constructs/resolves this singleton (a background hosted service may resolve it first via DI).
     private static void RunOnUi(Action action)
     {
         var dispatcher = Application.Current.Dispatcher;

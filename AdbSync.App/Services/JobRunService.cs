@@ -1,5 +1,6 @@
-using AdbSync.Core.Orchestration;
-using AdbSync.Core.Scheduling;
+using AdbSync.Core.Models.Orchestration;
+using AdbSync.Core.Services.Orchestration;
+using AdbSync.Core.Services.Scheduling;
 
 namespace AdbSync.App.Services;
 

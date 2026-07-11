@@ -1,5 +1,6 @@
 using System.Text;
-using AdbSync.Core.Transfer;
+using AdbSync.Core.Models.Transfer;
+using AdbSync.Core.Services.Transfer;
 
 namespace AdbSync.Core.Tests.Transfer;
 

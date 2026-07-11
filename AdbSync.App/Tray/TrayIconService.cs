@@ -6,7 +6,8 @@ using System.Windows.Controls;
 using AdbSync.App.Services;
 using AdbSync.App.ViewModels;
 using AdbSync.App.Views;
-using AdbSync.Core.Config;
+using AdbSync.Core.Models.Config;
+using AdbSync.Core.Services.Config;
 using H.NotifyIcon;
 using H.NotifyIcon.Core;
 using Microsoft.Extensions.DependencyInjection;
@@ -33,8 +34,7 @@ public sealed class TrayIconService(
             Icon = LoadAppIcon(),
             ToolTipText = "AdbSync: idle",
         };
-        // Without an owning XAML tree, TaskbarIcon never gets its normal Loaded-triggered auto-create -
-        // without this, the icon silently never appears and ShowNotification throws "TrayIcon is not created."
+
         _icon.ForceCreate(enablesEfficiencyMode: false);
         _icon.TrayMouseDoubleClick += (_, _) => OpenDashboard();
 
@@ -89,8 +89,6 @@ public sealed class TrayIconService(
         }
         catch (Exception ex)
         {
-            // Toast/balloon delivery is inherently unreliable from an unpackaged exe (Focus Assist, notification
-            // settings, etc.) - a failure here must never take down a tray-resident background app.
             logger.LogWarning(ex, "Failed to show notification for job '{Job}'", job.Name);
         }
     }
@@ -147,14 +145,9 @@ public sealed class TrayIconService(
         menu.Items.Add(new Separator());
         menu.Items.Add(MakeItem("Exit", async (_, _) =>
         {
-            // Drop the tray icon immediately so the click feels instant instead of hung.
             _icon?.Dispose();
             _icon = null;
 
-            // Host shutdown (stopping the scheduler/change-watch hosted services) can take a few seconds - use
-            // ExitGracefullyAsync rather than Application.Current.Shutdown() directly, so the UI thread's message
-            // pump keeps running during that wait instead of blocking synchronously (which would freeze the popup
-            // mid-close and stop the notification above from ever actually rendering).
             if (Application.Current is App app)
                 await app.ExitGracefullyAsync();
         }));

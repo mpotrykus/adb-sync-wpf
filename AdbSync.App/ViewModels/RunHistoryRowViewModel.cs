@@ -1,6 +1,8 @@
 using AdbSync.App.Converters;
-using AdbSync.Core.Orchestration;
-using AdbSync.Core.Orchestration.RunHistory;
+using AdbSync.Core.Models.Orchestration;
+using AdbSync.Core.Services.Orchestration;
+using AdbSync.Core.Models.Orchestration.RunHistory;
+using AdbSync.Core.Services.Orchestration.RunHistory;
 
 namespace AdbSync.App.ViewModels;
 

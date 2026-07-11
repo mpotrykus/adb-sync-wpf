@@ -5,8 +5,10 @@ using System.Windows.Threading;
 using AdbSync.App.Controls;
 using AdbSync.App.Converters;
 using AdbSync.App.ViewModels;
-using AdbSync.Core.Orchestration;
-using AdbSync.Core.Orchestration.RunHistory;
+using AdbSync.Core.Models.Orchestration;
+using AdbSync.Core.Services.Orchestration;
+using AdbSync.Core.Models.Orchestration.RunHistory;
+using AdbSync.Core.Services.Orchestration.RunHistory;
 
 namespace AdbSync.App.Views;
 

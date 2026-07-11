@@ -1,5 +1,7 @@
-using AdbSync.Core.Config;
-using AdbSync.Core.Config.Legacy;
+using AdbSync.Core.Models.Config;
+using AdbSync.Core.Services.Config;
+using AdbSync.Core.Models.Config.Legacy;
+using AdbSync.Core.Services.Config.Legacy;
 
 namespace AdbSync.Core.Tests.Config.Legacy;
 

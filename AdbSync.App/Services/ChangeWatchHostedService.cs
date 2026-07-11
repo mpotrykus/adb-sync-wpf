@@ -1,7 +1,11 @@
-using AdbSync.Core.Config;
-using AdbSync.Core.Devices;
-using AdbSync.Core.Orchestration;
+using AdbSync.Core.Models.Config;
+using AdbSync.Core.Services.Config;
+using AdbSync.Core.Models.Devices;
+using AdbSync.Core.Services.Devices;
+using AdbSync.Core.Models.Orchestration;
+using AdbSync.Core.Services.Orchestration;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace AdbSync.App.Services;
 
@@ -16,7 +20,8 @@ public sealed class ChangeWatchHostedService(
     IDeviceChangeWatcher watcher,
     IAdbDeviceResolver deviceResolver,
     ISyncEventSink events,
-    JobRunService jobRunService) : BackgroundService
+    JobRunService jobRunService,
+    ILogger<ChangeWatchHostedService> logger) : BackgroundService
 {
     private readonly Dictionary<string, ActiveWatch> _active = [];
     private readonly SemaphoreSlim _reconcileGate = new(1, 1);
@@ -40,11 +45,7 @@ public sealed class ChangeWatchHostedService(
         configService.ConfigChanged -= OnConfigChanged;
         await base.StopAsync(cancellationToken);
 
-        // Each coordinator's binding loops only unwind once their in-flight adb read (e.g. a live
-        // "inotifyd" watch, which blocks until the device reports a change) observes cancellation -
-        // that can hang indefinitely if the device is slow/unresponsive. Bounding this by the host's
-        // own shutdown token guarantees app exit never hangs waiting for it.
-        foreach (var active in _active.Values)
+        foreach (var (jobName, active) in _active)
         {
             try
             {
@@ -54,6 +55,7 @@ public sealed class ChangeWatchHostedService(
             {
                 // Shutdown deadline hit while a watch loop was still unwinding - abandon it; the
                 // process is exiting regardless.
+                logger.LogWarning("Watch for job '{Job}' didn't stop within the shutdown deadline; abandoning it", jobName);
             }
         }
         _active.Clear();
@@ -65,9 +67,10 @@ public sealed class ChangeWatchHostedService(
         {
             await ReconcileAsync(CancellationToken.None);
         }
-        catch
+        catch (Exception ex)
         {
             // best-effort reconciliation - a bad tick shouldn't take down the app; the next config save retries
+            logger.LogWarning(ex, "Failed to reconcile change watchers after a config change");
         }
     }
 
@@ -103,7 +106,8 @@ public sealed class ChangeWatchHostedService(
                 var coordinator = new ChangeWatchCoordinator(
                     jobName, bindings, watcher, deviceResolver, events,
                     job.Schedule.DebounceWindow, job.Schedule.RescanInterval,
-                    onTriggered: () => TriggerAsync(jobName));
+                    onTriggered: () => TriggerAsync(jobName),
+                    logger: logger);
                 coordinator.Start();
                 _active[job.Name] = new ActiveWatch(coordinator, Signature(job));
             }
@@ -119,16 +123,10 @@ public sealed class ChangeWatchHostedService(
         var config = await configService.GetAsync();
         var index = config.Jobs.FindIndex(j => j.Name == jobName);
 
-        // The coordinator's own debounce window plus however long disposal takes to unwind the live watch loop
-        // (which can block until the device's next change event, per the comment on StopAsync) leaves a real gap
-        // between "user disabled the job" and "the coordinator actually stops" - re-check here so a change that
-        // was already in flight when the job got disabled doesn't still trigger a run.
         if (index >= 0 && config.Jobs[index].Enabled)
             await jobRunService.RunJobAsync(index);
     }
 
-    // Cheap "did anything this coordinator depends on change" fingerprint - avoids needing value-equality on
-    // JobSchedule/JobDeviceBinding just to decide whether a watcher needs restarting.
     private static string Signature(SyncJobConfig job) => string.Join('|',
         job.Schedule.DebounceWindow, job.Schedule.RescanInterval,
         string.Join(',', job.Devices.Select(b => $"{b.DeviceName}={b.RemotePath}")));

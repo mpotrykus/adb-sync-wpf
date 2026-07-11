@@ -1,4 +1,5 @@
-using AdbSync.Core.Config;
+using AdbSync.Core.Models.Config;
+using AdbSync.Core.Services.Config;
 
 namespace AdbSync.App.Services;
 

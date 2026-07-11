@@ -1,5 +1,6 @@
-using AdbSync.Core.Config;
-using AdbSync.Core.Scheduling;
+using AdbSync.Core.Models.Config;
+using AdbSync.Core.Services.Config;
+using AdbSync.Core.Services.Scheduling;
 
 namespace AdbSync.Core.Tests.Scheduling;
 

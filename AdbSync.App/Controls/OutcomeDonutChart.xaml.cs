@@ -49,8 +49,6 @@ public partial class OutcomeDonutChart : UserControl
         var outerRadius = size / 2;
         var innerRadius = outerRadius - Thickness;
 
-        // A single fully-populated segment can't be drawn as one arc (zero-length start/end seam), so it's
-        // split into two half-rings of the same brush - visually identical, but avoids the degenerate geometry.
         var slices = _segments.Count == 1
             ? [_segments[0] with { Value = _segments[0].Value / 2 }, _segments[0]]
             : _segments;

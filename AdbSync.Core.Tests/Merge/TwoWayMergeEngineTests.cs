@@ -1,4 +1,5 @@
-using AdbSync.Core.Merge;
+using AdbSync.Core.Models.Merge;
+using AdbSync.Core.Services.Merge;
 
 namespace AdbSync.Core.Tests.Merge;
 

@@ -1,7 +1,8 @@
 using System.IO;
 using System.Windows;
 using AdbSync.App.Services;
-using AdbSync.Core.Config;
+using AdbSync.Core.Models.Config;
+using AdbSync.Core.Services.Config;
 using Microsoft.Win32;
 
 namespace AdbSync.App.Views;

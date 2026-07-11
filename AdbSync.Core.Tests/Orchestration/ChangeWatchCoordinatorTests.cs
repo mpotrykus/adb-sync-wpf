@@ -1,7 +1,10 @@
 using System.Collections.Concurrent;
-using AdbSync.Core.Config;
-using AdbSync.Core.Devices;
-using AdbSync.Core.Orchestration;
+using AdbSync.Core.Models.Config;
+using AdbSync.Core.Services.Config;
+using AdbSync.Core.Models.Devices;
+using AdbSync.Core.Services.Devices;
+using AdbSync.Core.Models.Orchestration;
+using AdbSync.Core.Services.Orchestration;
 using AdbSync.Core.Tests.Orchestration.Fakes;
 using NSubstitute;
 
