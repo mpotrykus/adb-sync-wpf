@@ -14,9 +14,11 @@ public sealed class DeviceSnapshotService(IAdbDeviceResolver deviceResolver, IAd
     public async Task<SnapshotResult> CreateSnapshotAsync(
         SyncJobConfig job, IReadOnlyList<DeviceConfig> devices, GlobalSettings settings, CancellationToken ct = default)
     {
+        var eff = job.Resolve(settings);
+        var checkpointsRoot = GetCheckpointsRoot(job, eff);
         // Sibling of "master"/".sync_staging"/".sync_conflicts" - pull/push/merge only ever touch those by name,
         // so this folder is never read from or written to by a sync run.
-        var snapshotRoot = Path.Combine(GetCheckpointsRoot(job, settings), DateTimeOffset.Now.ToString(TimestampFormat));
+        var snapshotRoot = Path.Combine(checkpointsRoot, DateTimeOffset.Now.ToString(TimestampFormat));
         var exclude = new ExcludeMatcher(job.Exclude);
 
         var totalFiles = 0;
@@ -31,18 +33,20 @@ public sealed class DeviceSnapshotService(IAdbDeviceResolver deviceResolver, IAd
 
             var destination = Path.Combine(snapshotRoot, binding.DeviceName);
             Directory.CreateDirectory(destination);
-            var result = await transfer.PullMirrorAsync(serial, binding.RemotePath, destination, exclude, ct);
+            var result = await transfer.PullMirrorAsync(serial, binding.RemotePath, destination, exclude, eff.ToTransferPolicy(), ct);
             totalFiles += result.FilesCopied;
             totalBytes += result.BytesCopied;
             errors += result.Errors.Count;
         }
+
+        PruneOldSnapshots(checkpointsRoot, eff.CheckpointRetentionDays);
 
         return new SnapshotResult(snapshotRoot, job.Devices.Count, totalFiles, totalBytes, errors);
     }
 
     public IReadOnlyList<SnapshotInfo> ListSnapshots(SyncJobConfig job, GlobalSettings settings)
     {
-        var checkpointsRoot = GetCheckpointsRoot(job, settings);
+        var checkpointsRoot = GetCheckpointsRoot(job, job.Resolve(settings));
         if (!Directory.Exists(checkpointsRoot))
             return [];
 
@@ -70,6 +74,7 @@ public sealed class DeviceSnapshotService(IAdbDeviceResolver deviceResolver, IAd
         if (!Directory.Exists(snapshotPath))
             throw new InvalidOperationException($"Checkpoint '{snapshotPath}' no longer exists.");
 
+        var eff = job.Resolve(settings);
         var exclude = new ExcludeMatcher(job.Exclude);
         var restoredDevices = 0;
         var totalFilesCopied = 0;
@@ -92,7 +97,7 @@ public sealed class DeviceSnapshotService(IAdbDeviceResolver deviceResolver, IAd
                 ?? throw new InvalidOperationException($"Device '{binding.DeviceName}' referenced by job '{job.Name}' was not found.");
             var serial = await deviceResolver.EnsureConnectedAsync(device, ct);
 
-            var result = await transfer.PushMirrorAsync(serial, deviceDir, binding.RemotePath, exclude, ct);
+            var result = await transfer.PushMirrorAsync(serial, deviceDir, binding.RemotePath, exclude, eff.ToTransferPolicy(), ct);
             totalFilesCopied += result.FilesCopied;
             totalFilesDeleted += result.FilesDeleted;
             totalBytes += result.BytesCopied;
@@ -103,9 +108,25 @@ public sealed class DeviceSnapshotService(IAdbDeviceResolver deviceResolver, IAd
         return new SnapshotResult(snapshotPath, restoredDevices, totalFilesCopied, totalBytes, errors, totalFilesDeleted, skipped);
     }
 
-    private static string GetCheckpointsRoot(SyncJobConfig job, GlobalSettings settings)
+    private static string GetCheckpointsRoot(SyncJobConfig job, EffectiveJobSettings eff) =>
+        Path.Combine(eff.ProjectsDirectory, job.Name, "checkpoints");
+
+    // Opportunistic sweep, mirroring SyncJobRunner.PruneConflictBackups: piggyback on the run that just
+    // created a new checkpoint rather than running a separate cleanup job.
+    private static void PruneOldSnapshots(string checkpointsRoot, int retentionDays)
     {
-        var projectsDirectory = string.IsNullOrWhiteSpace(job.ProjectDirectory) ? settings.ProjectsDirectory : job.ProjectDirectory;
-        return Path.Combine(projectsDirectory, job.Name, "checkpoints");
+        if (retentionDays <= 0 || !Directory.Exists(checkpointsRoot))
+            return;
+
+        var cutoffUtc = DateTimeOffset.UtcNow.AddDays(-retentionDays).UtcDateTime;
+        foreach (var dir in Directory.EnumerateDirectories(checkpointsRoot))
+        {
+            var name = Path.GetFileName(dir);
+            if (DateTimeOffset.TryParseExact(name, TimestampFormat, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out var createdAt)
+                && createdAt.UtcDateTime < cutoffUtc)
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
     }
 }

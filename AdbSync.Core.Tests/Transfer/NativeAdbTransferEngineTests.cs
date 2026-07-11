@@ -10,7 +10,7 @@ public class NativeAdbTransferEngineTests : IDisposable
 
     private sealed class SingleDeviceFactory(FakeRemoteFileSystem fs) : IRemoteFileSystemFactory
     {
-        public IRemoteFileSystem Create(string serial) => fs;
+        public IRemoteFileSystem Create(string serial, TransferPolicy? policy = null) => fs;
     }
 
     public void Dispose()

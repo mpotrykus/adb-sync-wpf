@@ -6,8 +6,6 @@ namespace AdbSync.Core.Services.Orchestration;
 
 public sealed class PushSafetyGuard(AppPaths paths) : IPushSafetyGuard
 {
-    private const double MinimumFraction = 0.25;
-
     public async Task RecordDeviceSnapshotAsync(string jobName, string deviceName, int fileCount, CancellationToken ct = default)
     {
         var history = await LoadHistoryAsync(jobName, ct);
@@ -18,7 +16,7 @@ public sealed class PushSafetyGuard(AppPaths paths) : IPushSafetyGuard
         }
     }
 
-    public async Task AssertSafeToPushAsync(string jobName, string masterPath, CancellationToken ct = default)
+    public async Task AssertSafeToPushAsync(string jobName, string masterPath, int minimumPercent, CancellationToken ct = default)
     {
         var masterCount = CountFiles(masterPath);
         if (masterCount == 0)
@@ -29,7 +27,7 @@ public sealed class PushSafetyGuard(AppPaths paths) : IPushSafetyGuard
             return;
 
         var maxHistorical = history.MaxFileCounts.Values.Max();
-        var minimumAllowed = Math.Max(1, (int)Math.Floor(maxHistorical * MinimumFraction));
+        var minimumAllowed = Math.Max(1, (int)Math.Floor(maxHistorical * (minimumPercent / 100.0)));
         if (masterCount < minimumAllowed)
         {
             throw new PushSafetyException(

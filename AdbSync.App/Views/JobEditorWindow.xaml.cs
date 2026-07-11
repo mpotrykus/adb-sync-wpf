@@ -69,6 +69,20 @@ public partial class JobEditorWindow : Window
                     ScheduleManual.IsChecked = true;
                     break;
             }
+            RescanIntervalMinutesBox.Text = job.Schedule.RescanInterval.TotalMinutes.ToString("0.##");
+
+            StaleLockHoursOverrideBox.Text = job.StaleLockHours?.ToString() ?? "";
+            ConflictRetentionDaysOverrideBox.Text = job.ConflictRetentionDays?.ToString() ?? "";
+            CheckpointRetentionDaysOverrideBox.Text = job.CheckpointRetentionDays?.ToString() ?? "";
+            MaxRunHistoryEntriesOverrideBox.Text = job.MaxRunHistoryEntries?.ToString() ?? "";
+            BandwidthThrottleKBpsOverrideBox.Text = job.BandwidthThrottleKBps?.ToString() ?? "";
+            PushSafetyMinimumPercentOverrideBox.Text = job.PushSafetyMinimumPercent?.ToString() ?? "";
+            RetryMaxAttemptsOverrideBox.Text = job.RetryMaxAttempts?.ToString() ?? "";
+            RetryBackoffSecondsOverrideBox.Text = job.RetryBackoffSeconds?.ToString() ?? "";
+            ShowInfoNotificationsOverrideBox.IsChecked = job.ShowInfoNotifications;
+            ShowErrorNotificationsOverrideBox.IsChecked = job.ShowErrorNotifications;
+            BackupConflictLosersOverrideBox.IsChecked = job.BackupConflictLosers;
+            DryRunBox.IsChecked = job.DryRun;
         }
         else
         {
@@ -77,6 +91,12 @@ public partial class JobEditorWindow : Window
             ScheduleManual.IsChecked = true;
             IntervalHoursBox.Text = "4";
             DebounceSecondsBox.Text = "10";
+            RescanIntervalMinutesBox.Text = "15";
+            // Indeterminate = inherit the global default - CheckBox's own default (unchecked/false) would
+            // otherwise silently save as an explicit "off" override the user never asked for.
+            ShowInfoNotificationsOverrideBox.IsChecked = null;
+            ShowErrorNotificationsOverrideBox.IsChecked = null;
+            BackupConflictLosersOverrideBox.IsChecked = null;
         }
 
         UpdateNoDevicesText();
@@ -182,9 +202,23 @@ public partial class JobEditorWindow : Window
             Devices = _bindings.Select(b => new JobDeviceBinding { DeviceName = b.DeviceName, RemotePath = b.RemotePath }).ToList(),
             Schedule = schedule,
             Enabled = EnabledCheckBox.IsChecked == true,
+            StaleLockHours = ParseIntOrNull(StaleLockHoursOverrideBox.Text),
+            ConflictRetentionDays = ParseIntOrNull(ConflictRetentionDaysOverrideBox.Text),
+            CheckpointRetentionDays = ParseIntOrNull(CheckpointRetentionDaysOverrideBox.Text),
+            MaxRunHistoryEntries = ParseIntOrNull(MaxRunHistoryEntriesOverrideBox.Text),
+            BandwidthThrottleKBps = ParseIntOrNull(BandwidthThrottleKBpsOverrideBox.Text),
+            PushSafetyMinimumPercent = ParseIntOrNull(PushSafetyMinimumPercentOverrideBox.Text),
+            RetryMaxAttempts = ParseIntOrNull(RetryMaxAttemptsOverrideBox.Text),
+            RetryBackoffSeconds = ParseIntOrNull(RetryBackoffSecondsOverrideBox.Text),
+            ShowInfoNotifications = ShowInfoNotificationsOverrideBox.IsChecked,
+            ShowErrorNotifications = ShowErrorNotificationsOverrideBox.IsChecked,
+            BackupConflictLosers = BackupConflictLosersOverrideBox.IsChecked,
+            DryRun = DryRunBox.IsChecked == true,
         };
         Close();
     }
+
+    private static int? ParseIntOrNull(string text) => int.TryParse(text, out var value) ? value : null;
 
     private JobSchedule BuildSchedule()
     {
@@ -208,7 +242,13 @@ public partial class JobEditorWindow : Window
         if (ScheduleOnChange.IsChecked == true)
         {
             var seconds = double.TryParse(DebounceSecondsBox.Text, out var s) && s > 0 ? s : 10;
-            return new JobSchedule { Kind = ScheduleKind.OnChange, DebounceWindow = TimeSpan.FromSeconds(seconds) };
+            var rescanMinutes = double.TryParse(RescanIntervalMinutesBox.Text, out var m) && m > 0 ? m : 15;
+            return new JobSchedule
+            {
+                Kind = ScheduleKind.OnChange,
+                DebounceWindow = TimeSpan.FromSeconds(seconds),
+                RescanInterval = TimeSpan.FromMinutes(rescanMinutes),
+            };
         }
 
         return new JobSchedule { Kind = ScheduleKind.Manual };

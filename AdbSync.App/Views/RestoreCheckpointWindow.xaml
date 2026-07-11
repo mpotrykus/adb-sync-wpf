@@ -41,7 +41,7 @@
                                 </Style>
                             </DataGridTextColumn.ElementStyle>
                         </DataGridTextColumn>
-                        <DataGridTemplateColumn Header="" Width="40">
+                        <DataGridTemplateColumn Header="" Width="75">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
                                     <Button Style="{StaticResource RowButton}" Click="OpenFolder_Click" ToolTip="Open folder">

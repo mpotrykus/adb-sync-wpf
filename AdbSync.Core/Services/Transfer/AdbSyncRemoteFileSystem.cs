@@ -15,12 +15,14 @@ public sealed class AdbSyncRemoteFileSystem : IRemoteFileSystem, IAsyncDisposabl
     private readonly IAdbClient _adbClient;
     private readonly DeviceData _device;
     private readonly SyncService _sync;
+    private readonly TransferPolicy _policy;
 
-    public AdbSyncRemoteFileSystem(IAdbClient adbClient, string serial)
+    public AdbSyncRemoteFileSystem(IAdbClient adbClient, string serial, TransferPolicy? policy = null)
     {
         _adbClient = adbClient;
         _device = new DeviceData { Serial = serial, State = DeviceState.Online };
         _sync = new SyncService(adbClient, _device);
+        _policy = policy ?? TransferPolicy.None;
     }
 
     public async Task<IReadOnlyList<RemoteFileInfo>> ListDirectoryAsync(string remotePath, CancellationToken ct = default)
@@ -40,15 +42,27 @@ public sealed class AdbSyncRemoteFileSystem : IRemoteFileSystem, IAsyncDisposabl
     public async Task PullFileAsync(string remotePath, string localPath, CancellationToken ct = default)
     {
         await EnsureOpenAsync(ct);
-        await using var destStream = File.Create(localPath);
-        await _sync.PullAsync(remotePath, destStream, cancellationToken: ct);
+        await RetryHelper.ExecuteAsync(async () =>
+        {
+            await using var destStream = File.Create(localPath);
+            Stream stream = _policy.BandwidthThrottleKBps is > 0
+                ? new ThrottledStream(destStream, _policy.BandwidthThrottleKBps.Value * 1024L)
+                : destStream;
+            await _sync.PullAsync(remotePath, stream, cancellationToken: ct);
+        }, _policy.RetryMaxAttempts, _policy.RetryBackoff, ct);
     }
 
     public async Task PushFileAsync(string localPath, string remotePath, DateTimeOffset modifiedUtc, CancellationToken ct = default)
     {
         await EnsureOpenAsync(ct);
-        await using var sourceStream = File.OpenRead(localPath);
-        await _sync.PushAsync(sourceStream, remotePath, UnixFileStatus.DefaultFileMode, modifiedUtc, cancellationToken: ct);
+        await RetryHelper.ExecuteAsync(async () =>
+        {
+            await using var sourceStream = File.OpenRead(localPath);
+            Stream stream = _policy.BandwidthThrottleKBps is > 0
+                ? new ThrottledStream(sourceStream, _policy.BandwidthThrottleKBps.Value * 1024L)
+                : sourceStream;
+            await _sync.PushAsync(stream, remotePath, UnixFileStatus.DefaultFileMode, modifiedUtc, cancellationToken: ct);
+        }, _policy.RetryMaxAttempts, _policy.RetryBackoff, ct);
     }
 
     public Task DeleteFileAsync(string remotePath, CancellationToken ct = default) =>
@@ -60,11 +74,12 @@ public sealed class AdbSyncRemoteFileSystem : IRemoteFileSystem, IAsyncDisposabl
     public Task CreateDirectoryAsync(string remotePath, CancellationToken ct = default) =>
         ExecuteAsync($"mkdir -p \"{remotePath}\"", ct);
 
-    private async Task ExecuteAsync(string command, CancellationToken ct)
-    {
-        var receiver = new ConsoleOutputReceiver();
-        await _adbClient.ExecuteRemoteCommandAsync(command, _device, receiver, Encoding.UTF8, ct);
-    }
+    private Task ExecuteAsync(string command, CancellationToken ct) =>
+        RetryHelper.ExecuteAsync(async () =>
+        {
+            var receiver = new ConsoleOutputReceiver();
+            await _adbClient.ExecuteRemoteCommandAsync(command, _device, receiver, Encoding.UTF8, ct);
+        }, _policy.RetryMaxAttempts, _policy.RetryBackoff, ct);
 
     private async Task EnsureOpenAsync(CancellationToken ct)
     {

@@ -59,8 +59,8 @@ public partial class App : Application
             return;
         }
 
-        var retentionDays = ReadLogRetentionDaysOrDefault(AppPaths.Default);
-        var fileLogger = AdbSyncLogging.CreateFileLogger(AppPaths.Default, retentionDays);
+        var (retentionDays, maxBytesPerFile) = ReadLogSettingsOrDefault(AppPaths.Default);
+        var fileLogger = AdbSyncLogging.CreateFileLogger(AppPaths.Default, retentionDays, maxBytesPerFile);
 
         _host = Host.CreateDefaultBuilder()
             .ConfigureLogging(logging =>
@@ -98,24 +98,27 @@ public partial class App : Application
     }
 
     // Config isn't loaded through AppConfigService yet at this point in startup (chicken-and-egg with the host
-    // not being built), so this reads settings.json directly - a stale/default retention value until next restart
-    // if the user changes it via Settings is an acceptable tradeoff for a "polish" feature.
-    private static int ReadLogRetentionDaysOrDefault(AppPaths paths)
+    // not being built), so this reads settings.json directly - a stale/default value until next restart if the
+    // user changes either setting via Settings is an acceptable tradeoff for a "polish" feature.
+    private static (int RetentionDays, long MaxBytesPerFile) ReadLogSettingsOrDefault(AppPaths paths)
     {
         const int defaultDays = 30;
+        const long defaultMaxBytes = 5 * 1024 * 1024;
         try
         {
             if (!File.Exists(paths.SettingsFile))
-                return defaultDays;
+                return (defaultDays, defaultMaxBytes);
 
             using var doc = JsonDocument.Parse(File.ReadAllText(paths.SettingsFile));
-            return doc.RootElement.TryGetProperty("logRetentionDays", out var prop) ? prop.GetInt32() : defaultDays;
+            var retentionDays = doc.RootElement.TryGetProperty("logRetentionDays", out var retentionProp) ? retentionProp.GetInt32() : defaultDays;
+            var maxBytes = doc.RootElement.TryGetProperty("perLogFileMaxBytes", out var maxBytesProp) ? maxBytesProp.GetInt64() : defaultMaxBytes;
+            return (retentionDays, maxBytes);
         }
         catch (Exception ex)
         {
             // File logger isn't set up yet at this point in startup, so there's nowhere better to send this.
-            Debug.WriteLine($"Failed to read logRetentionDays from settings; using default of {defaultDays}. {ex}");
-            return defaultDays;
+            Debug.WriteLine($"Failed to read log settings; using defaults ({defaultDays} days, {defaultMaxBytes} bytes). {ex}");
+            return (defaultDays, defaultMaxBytes);
         }
     }
 

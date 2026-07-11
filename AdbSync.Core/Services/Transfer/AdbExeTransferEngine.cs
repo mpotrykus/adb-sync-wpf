@@ -9,7 +9,7 @@ namespace AdbSync.Core.Services.Transfer;
 /// </summary>
 public sealed class AdbExeTransferEngine(IAdbProcessRunner adb, IMirrorDiffer differ) : IAdbTransferEngine
 {
-    public async Task<TransferResult> PullMirrorAsync(string serial, string remotePath, string localPath, IExcludeMatcher exclude, CancellationToken ct = default)
+    public async Task<TransferResult> PullMirrorAsync(string serial, string remotePath, string localPath, IExcludeMatcher exclude, TransferPolicy? policy = null, CancellationToken ct = default)
     {
         var tempRoot = Path.Combine(Path.GetTempPath(), "AdbSync", $"pull-{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempRoot);
@@ -38,7 +38,7 @@ public sealed class AdbExeTransferEngine(IAdbProcessRunner adb, IMirrorDiffer di
         }
     }
 
-    public async Task<TransferResult> PushMirrorAsync(string serial, string localPath, string remotePath, IExcludeMatcher exclude, CancellationToken ct = default)
+    public async Task<TransferResult> PushMirrorAsync(string serial, string localPath, string remotePath, IExcludeMatcher exclude, TransferPolicy? policy = null, CancellationToken ct = default)
     {
         var errors = new List<string>();
 

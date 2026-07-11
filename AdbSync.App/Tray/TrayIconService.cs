@@ -81,10 +81,18 @@ public sealed class TrayIconService(
         try
         {
             var config = await configService.GetAsync();
+            if (config.Settings.IsQuietNow())
+                return;
+
+            var jobConfig = config.Jobs.FirstOrDefault(j => j.Name == job.Name);
+            var eff = jobConfig?.Resolve(config.Settings);
+            var showInfo = eff?.ShowInfoNotifications ?? config.Settings.ShowInfoNotifications;
+            var showErrors = eff?.ShowErrorNotifications ?? config.Settings.ShowErrorNotifications;
+
             var isError = job.LastOutcome.StartsWith("Error", StringComparison.Ordinal);
-            if (isError && config.Settings.ShowErrorNotifications)
+            if (isError && showErrors)
                 _icon.ShowNotification($"AdbSync: {job.Name}", job.LastOutcome, NotificationIcon.Error);
-            else if (!isError && config.Settings.ShowInfoNotifications)
+            else if (!isError && showInfo)
                 _icon.ShowNotification($"AdbSync: {job.Name}", job.LastOutcome, NotificationIcon.Info);
         }
         catch (Exception ex)

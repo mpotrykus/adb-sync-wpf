@@ -12,13 +12,15 @@ namespace AdbSync.Core.Services.Logging;
 /// </summary>
 public static class AdbSyncLogging
 {
-    public static Serilog.ILogger CreateFileLogger(AppPaths paths, int retentionDays) =>
+    public static Serilog.ILogger CreateFileLogger(AppPaths paths, int retentionDays, long maxBytesPerFile) =>
         new LoggerConfiguration()
             .MinimumLevel.Information()
             .WriteTo.File(
                 Path.Combine(paths.LogsDir, "transcript-.log"),
                 rollingInterval: RollingInterval.Day,
                 retainedFileCountLimit: Math.Max(1, retentionDays),
+                fileSizeLimitBytes: Math.Max(1, maxBytesPerFile),
+                rollOnFileSizeLimit: true,
                 outputTemplate: "[{Timestamp:yyyy-MM-dd HH:mm:ss.fff}] [{Level:u3}] {Message:lj}{NewLine}{Exception}")
             .CreateLogger();
 }

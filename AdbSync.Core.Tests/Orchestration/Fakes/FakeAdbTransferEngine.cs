@@ -12,10 +12,10 @@ public sealed class FakeAdbTransferEngine(IReadOnlyDictionary<string, string> de
 {
     private readonly MirrorDiffer _differ = new();
 
-    public Task<TransferResult> PullMirrorAsync(string serial, string remotePath, string localPath, IExcludeMatcher exclude, CancellationToken ct = default) =>
+    public Task<TransferResult> PullMirrorAsync(string serial, string remotePath, string localPath, IExcludeMatcher exclude, TransferPolicy? policy = null, CancellationToken ct = default) =>
         Task.FromResult(Mirror(deviceFolders[serial], localPath, exclude));
 
-    public Task<TransferResult> PushMirrorAsync(string serial, string localPath, string remotePath, IExcludeMatcher exclude, CancellationToken ct = default) =>
+    public Task<TransferResult> PushMirrorAsync(string serial, string localPath, string remotePath, IExcludeMatcher exclude, TransferPolicy? policy = null, CancellationToken ct = default) =>
         Task.FromResult(Mirror(localPath, deviceFolders[serial], exclude));
 
     private TransferResult Mirror(string sourceRoot, string destRoot, IExcludeMatcher exclude)

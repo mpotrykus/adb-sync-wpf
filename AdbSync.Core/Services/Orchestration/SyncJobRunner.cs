@@ -46,7 +46,13 @@ public sealed class SyncJobRunner(
         TimeSpan? pullDuration = null;
         TimeSpan? pushDuration = null;
 
-        var projectsDirectory = string.IsNullOrWhiteSpace(job.ProjectDirectory) ? settings.ProjectsDirectory : job.ProjectDirectory;
+        var eff = job.Resolve(settings);
+        // A dry run rehearses the pull/merge pipeline only - any checkpoint left over from a prior real run
+        // would resume into the push phase, which dry run must never reach.
+        if (eff.DryRun)
+            resumeFrom = null;
+
+        var projectsDirectory = eff.ProjectsDirectory;
         var projectRoot = Path.Combine(projectsDirectory, job.Name);
         var masterPath = Path.Combine(projectRoot, "master");
 
@@ -60,7 +66,7 @@ public sealed class SyncJobRunner(
 
             Directory.CreateDirectory(masterPath);
 
-            await using var @lock = await lockManager.TryAcquireAsync(projectRoot, TimeSpan.FromHours(settings.StaleLockHours), ct);
+            await using var @lock = await lockManager.TryAcquireAsync(projectRoot, TimeSpan.FromHours(eff.StaleLockHours), ct);
             if (@lock is null)
             {
                 _logger.LogInformation("Job '{Job}' skipped - already running", job.Name);
@@ -90,11 +96,18 @@ public sealed class SyncJobRunner(
             if (!anyChange)
             {
                 var pullStopwatch = Stopwatch.StartNew();
-                var pullStats = await RunPullPhaseAsync(job, jobIndex, masterPath, serials, exclude, resumeFrom, settings, ct);
+                var pullStats = await RunPullPhaseAsync(job, jobIndex, masterPath, serials, exclude, resumeFrom, eff, ct);
                 pullDuration = pullStopwatch.Elapsed;
                 anyChange = pullStats.AnyChange;
                 totalErrors += pullStats.Errors;
                 totalBytesCopied += pullStats.BytesCopied;
+            }
+
+            if (eff.DryRun)
+            {
+                _logger.LogInformation("Job '{Job}' dry run completed - nothing was written to master or pushed", job.Name);
+                events.JobCompleted(job.Name, pushed: false);
+                return await FinishAsync(JobRunOutcome.DryRunCompleted);
             }
 
             if (!anyChange)
@@ -112,11 +125,11 @@ public sealed class SyncJobRunner(
             }
             else
             {
-                await pushSafety.AssertSafeToPushAsync(job.Name, masterPath, ct);
+                await pushSafety.AssertSafeToPushAsync(job.Name, masterPath, eff.PushSafetyMinimumPercent, ct);
             }
 
             var pushStopwatch = Stopwatch.StartNew();
-            var pushStats = await RunPushPhaseAsync(job, jobIndex, masterPath, serials, exclude, resumeFrom, ct);
+            var pushStats = await RunPushPhaseAsync(job, jobIndex, masterPath, serials, exclude, resumeFrom, eff, ct);
             pushDuration = pushStopwatch.Elapsed;
             // Files column reports unique files actually pushed, not a per-device sum - pushing the same
             // file to 3 devices should read as "1 copied", not "3 copied".
@@ -149,7 +162,7 @@ public sealed class SyncJobRunner(
                 totalFilesCopied, totalFilesDeleted, totalErrors, totalBytesCopied, pullDuration, pushDuration);
             try
             {
-                await runHistory.SaveRunAsync(record, runLog.BuildText(), ct);
+                await runHistory.SaveRunAsync(record, runLog.BuildText(), eff.MaxRunHistoryEntries, ct);
             }
             catch (Exception ex)
             {
@@ -161,7 +174,7 @@ public sealed class SyncJobRunner(
 
     private async Task<PhaseStats> RunPullPhaseAsync(
         SyncJobConfig job, int jobIndex, string masterPath, Dictionary<string, string> serials,
-        ExcludeMatcher exclude, SyncCheckpoint? resumeFrom, GlobalSettings settings, CancellationToken ct)
+        ExcludeMatcher exclude, SyncCheckpoint? resumeFrom, EffectiveJobSettings eff, CancellationToken ct)
     {
         var projectRoot = Path.GetDirectoryName(masterPath)!;
         var startIndex = resumeFrom is { Phase: SyncPhase.Pull } r ? r.DeviceIndex : 0;
@@ -178,7 +191,7 @@ public sealed class SyncJobRunner(
             var stagingPath = GetStagingPath(projectRoot, binding.DeviceName);
 
             events.PhaseChanged(job.Name, SyncPhase.Pull, binding.DeviceName);
-            var pullResult = await transfer.PullMirrorAsync(serial, binding.RemotePath, stagingPath, exclude, ct);
+            var pullResult = await transfer.PullMirrorAsync(serial, binding.RemotePath, stagingPath, exclude, eff.ToTransferPolicy(), ct);
             _logger.LogInformation(
                 "Job '{Job}' pulled from '{Device}': {Copied} copied, {Deleted} deleted, {Errors} error(s)",
                 job.Name, binding.DeviceName, pullResult.FilesCopied, pullResult.FilesDeleted, pullResult.Errors.Count);
@@ -196,9 +209,14 @@ public sealed class SyncJobRunner(
             // ConflictBackupDir must live outside both stagingPath (deleted at the end of this loop iteration,
             // which would destroy a staging-side backup) and masterPath (mirrored verbatim to every device on
             // push, which would leak a master-side backup out to devices that had nothing to do with the conflict).
-            var mergeOptions = new MergeOptions(ConflictBackupDir: GetConflictBackupDir(projectRoot, binding.DeviceName));
+            var mergeOptions = new MergeOptions(
+                BackupConflictLosers: eff.BackupConflictLosers,
+                ConflictBackupDir: GetConflictBackupDir(projectRoot, binding.DeviceName),
+                DryRun: eff.DryRun);
             var mergeResult = await merge.MergeAsync(stagingPath, masterPath, manifest, mergeOptions, ct);
-            await manifests.SaveAsync(job.Name, binding.DeviceName, mergeResult.UpdatedManifest, ct);
+            // A dry run must never persist state - the manifest write is what would make the rehearsal "real".
+            if (!eff.DryRun)
+                await manifests.SaveAsync(job.Name, binding.DeviceName, mergeResult.UpdatedManifest, ct);
             anyChange |= pullResult.AnyChange || mergeResult.AnyChange;
 
             if (mergeResult.Conflicts.Count > 0)
@@ -212,12 +230,15 @@ public sealed class SyncJobRunner(
 
             // Opportunistic sweep: piggyback on the run that just touched this device's backup folder rather
             // than running a separate cleanup job for what's normally an empty or near-empty directory.
-            PruneConflictBackups(mergeOptions.ConflictBackupDir!, settings.ConflictRetentionDays);
+            PruneConflictBackups(mergeOptions.ConflictBackupDir!, eff.ConflictRetentionDays);
 
             if (Directory.Exists(stagingPath))
                 Directory.Delete(stagingPath, recursive: true);
 
-            await checkpoints.SaveAsync(new SyncCheckpoint(1, DateTimeOffset.UtcNow, jobIndex, job.Name, SyncPhase.Pull, di + 1, serials), ct);
+            // A dry run must never persist state - a checkpoint would let a later real run "resume" into a push
+            // phase that this rehearsal never actually reached.
+            if (!eff.DryRun)
+                await checkpoints.SaveAsync(new SyncCheckpoint(1, DateTimeOffset.UtcNow, jobIndex, job.Name, SyncPhase.Pull, di + 1, serials), ct);
         }
 
         return new PhaseStats(anyChange, filesCopied, filesDeleted, errors, bytesCopied, [], []);
@@ -225,7 +246,7 @@ public sealed class SyncJobRunner(
 
     private async Task<PhaseStats> RunPushPhaseAsync(
         SyncJobConfig job, int jobIndex, string masterPath, Dictionary<string, string> serials,
-        ExcludeMatcher exclude, SyncCheckpoint? resumeFrom, CancellationToken ct)
+        ExcludeMatcher exclude, SyncCheckpoint? resumeFrom, EffectiveJobSettings eff, CancellationToken ct)
     {
         var startIndex = resumeFrom is { Phase: SyncPhase.Push } r ? r.DeviceIndex : 0;
         var filesCopied = 0;
@@ -241,7 +262,7 @@ public sealed class SyncJobRunner(
             var serial = serials[binding.DeviceName];
 
             events.PhaseChanged(job.Name, SyncPhase.Push, binding.DeviceName);
-            var pushResult = await transfer.PushMirrorAsync(serial, masterPath, binding.RemotePath, exclude, ct);
+            var pushResult = await transfer.PushMirrorAsync(serial, masterPath, binding.RemotePath, exclude, eff.ToTransferPolicy(), ct);
             _logger.LogInformation(
                 "Job '{Job}' pushed to '{Device}': {Copied} copied, {Deleted} deleted, {Errors} error(s)",
                 job.Name, binding.DeviceName, pushResult.FilesCopied, pushResult.FilesDeleted, pushResult.Errors.Count);

@@ -18,6 +18,7 @@ public static class RunOutcomeDisplay
             JobRunOutcome.CompletedNoChanges => "Brush.Accent",
             JobRunOutcome.Skipped or JobRunOutcome.SkippedAppRunning => "Brush.Warning",
             JobRunOutcome.Failed => "Brush.Danger",
+            JobRunOutcome.DryRunCompleted => "Brush.Accent",
             _ => "Brush.Text.Secondary",
         };
         return (Brush)Application.Current.Resources[key];
@@ -30,6 +31,7 @@ public static class RunOutcomeDisplay
         JobRunOutcome.Skipped => "Skipped",
         JobRunOutcome.SkippedAppRunning => "App running",
         JobRunOutcome.Failed => "Failed",
+        JobRunOutcome.DryRunCompleted => "Dry run",
         _ => outcome.ToString(),
     };
 }

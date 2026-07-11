@@ -4,5 +4,5 @@ namespace AdbSync.Core.Services.Transfer;
 
 public interface IRemoteFileSystemFactory
 {
-    IRemoteFileSystem Create(string serial);
+    IRemoteFileSystem Create(string serial, TransferPolicy? policy = null);
 }

@@ -135,7 +135,8 @@ SyncJobRunner BuildRunner(bool useNativeTransfer)
         : new AdbExeTransferEngine(new AdbProcessRunner(), new MirrorDiffer());
 
     // Not disposed here - the CLI process is short-lived, and the runner returned below keeps using this logger.
-    var loggerFactory = LoggerFactory.Create(b => b.AddSerilog(AdbSyncLogging.CreateFileLogger(paths, retentionDays: 30), dispose: true));
+    var loggerFactory = LoggerFactory.Create(b => b.AddSerilog(
+        AdbSyncLogging.CreateFileLogger(paths, retentionDays: 30, maxBytesPerFile: 5 * 1024 * 1024), dispose: true));
 
     return new SyncJobRunner(
         new AdbDeviceResolver(adbClient, new MdnsBrowser(), new AdbServer(), logger: loggerFactory.CreateLogger<AdbDeviceResolver>()),

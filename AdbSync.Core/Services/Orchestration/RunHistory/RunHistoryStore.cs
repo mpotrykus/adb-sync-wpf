@@ -9,8 +9,6 @@ namespace AdbSync.Core.Services.Orchestration.RunHistory;
 
 public sealed class RunHistoryStore : IRunHistoryStore
 {
-    private const int MaxRunsPerJob = 50;
-
     private readonly string _connectionString;
     private readonly SemaphoreSlim _schemaGate = new(1, 1);
     private bool _schemaReady;
@@ -23,7 +21,7 @@ public sealed class RunHistoryStore : IRunHistoryStore
         _connectionString = $"Data Source={paths.RunHistoryDbFile};Pooling=False";
     }
 
-    public async Task SaveRunAsync(JobRunRecord record, string logText, CancellationToken ct = default)
+    public async Task SaveRunAsync(JobRunRecord record, string logText, int maxRuns, CancellationToken ct = default)
     {
         await using var connection = await OpenAsync(ct);
         await using var transaction = connection.BeginTransaction();
@@ -67,7 +65,7 @@ public sealed class RunHistoryStore : IRunHistoryStore
                     SELECT RunId FROM Runs WHERE JobName = @jobName ORDER BY StartedAt DESC LIMIT @maxRuns);
                 """;
             trim.Parameters.AddWithValue("@jobName", record.JobName);
-            trim.Parameters.AddWithValue("@maxRuns", MaxRunsPerJob);
+            trim.Parameters.AddWithValue("@maxRuns", maxRuns);
             await trim.ExecuteNonQueryAsync(ct);
         }
 

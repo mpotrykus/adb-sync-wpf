@@ -65,14 +65,11 @@
                             <DataGridTemplateColumn Header="STATUS" Width="180">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
-                                        <StackPanel>
-                                            <StackPanel Orientation="Horizontal">
-                                                <Ellipse Style="{StaticResource StatusDot}" Fill="{Binding PhaseText, Converter={StaticResource PhaseToBrushConverter}}"/>
-                                                <TextBlock Text="{Binding PhaseText}" VerticalAlignment="Center"
-                                                           Foreground="{Binding PhaseText, Converter={StaticResource PhaseToBrushConverter}}"/>
-                                            </StackPanel>
-                                            <TextBlock Text="{Binding WatchStatusText}" FontSize="11" Margin="0,2,0,0"
-                                                       TextTrimming="CharacterEllipsis" Foreground="{StaticResource Brush.Text.Secondary}"/>
+                                        <StackPanel Orientation="Horizontal">
+                                            <Ellipse Style="{StaticResource StatusDot}" Fill="{Binding DisplayStatusText, Converter={StaticResource PhaseToBrushConverter}}"/>
+                                            <TextBlock Text="{Binding DisplayStatusText}" VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       Foreground="{Binding DisplayStatusText, Converter={StaticResource PhaseToBrushConverter}}"/>
                                         </StackPanel>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
@@ -109,7 +106,7 @@
                                                 <TextBlock Text="&#xE7BA;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="12"/>
                                             </Button>
                                             <Button Style="{StaticResource RowButton}" Margin="0,0,4,0" Click="Checkpoint_Click" ToolTip="Checkpoint (back up current device state)">
-                                                <TextBlock Text="&#xE7B8;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="12"/>
+                                                <TextBlock Text="&#xE722;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="12"/>
                                             </Button>
                                             <Button Style="{StaticResource RowButton}" Margin="0,0,4,0" Click="RunNow_Click" ToolTip="Run Now">
                                                 <TextBlock Text="&#xE768;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="12"/>

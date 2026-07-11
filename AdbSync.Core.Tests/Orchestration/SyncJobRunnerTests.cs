@@ -456,4 +456,60 @@ public class SyncJobRunnerTests : IDisposable
         Assert.False(File.Exists(stalePath), "Expected the 40-day-old backup to be pruned.");
         Assert.True(File.Exists(freshPath), "Expected the 1-day-old backup to survive.");
     }
+
+    [Fact]
+    public async Task RunAsync_DryRun_NeverWritesMasterOrPushesAndReportsDryRunCompleted()
+    {
+        WriteDeviceFile("DeviceA", "photo.jpg", "content");
+        var device = new DeviceConfig { Name = "DeviceA", Serial = "DeviceA" };
+        var job = new SyncJobConfig
+        {
+            Name = "JobDryRun",
+            DryRun = true,
+            Devices = [new JobDeviceBinding { DeviceName = "DeviceA", RemotePath = "/sdcard/app" }],
+        };
+        var checkpoints = new CheckpointManager(_appPaths);
+        var runner = new SyncJobRunner(
+            new FakeDeviceResolver(),
+            new FakeAppRunningGuard(),
+            new SyncLockManager(),
+            new FakeAdbTransferEngine(new Dictionary<string, string> { ["DeviceA"] = DeviceFolder("DeviceA") }),
+            new TwoWayMergeEngine(),
+            new ManifestStore(_appPaths),
+            new PushSafetyGuard(_appPaths),
+            checkpoints,
+            NullSyncEventSink.Instance,
+            new RunHistoryStore(_appPaths));
+
+        var result = await runner.RunAsync(job, 0, [device], _settings, resumeFrom: null);
+
+        Assert.Equal(JobRunOutcome.DryRunCompleted, result.Outcome);
+        var masterPath = Path.Combine(_projectsDirectory, "JobDryRun", "master");
+        Assert.Empty(Directory.EnumerateFiles(masterPath, "*", SearchOption.AllDirectories));
+        Assert.Null(await checkpoints.LoadAsync());
+    }
+
+    [Fact]
+    public async Task RunAsync_PushSafetyMinimumPercentOverride_UsesJobValueInsteadOfGlobalDefault()
+    {
+        var pushSafety = new PushSafetyGuard(_appPaths);
+        await pushSafety.RecordDeviceSnapshotAsync("JobPercentOverride", "DeviceA", 100);
+
+        // 24 files is below the global default (25%) but at/above a job-level override of 20%.
+        WriteDeviceFile("DeviceA", "one.txt", "content");
+        for (var i = 1; i < 24; i++)
+            WriteDeviceFile("DeviceA", $"file{i}.txt", "content");
+        var device = new DeviceConfig { Name = "DeviceA", Serial = "DeviceA" };
+        var job = new SyncJobConfig
+        {
+            Name = "JobPercentOverride",
+            PushSafetyMinimumPercent = 20,
+            Devices = [new JobDeviceBinding { DeviceName = "DeviceA", RemotePath = "/sdcard/app" }],
+        };
+        var runner = CreateRunner(new Dictionary<string, string> { ["DeviceA"] = DeviceFolder("DeviceA") }, pushSafety: pushSafety);
+
+        var result = await runner.RunAsync(job, 0, [device], _settings, resumeFrom: null);
+
+        Assert.Equal(JobRunOutcome.CompletedNoChanges, result.Outcome);
+    }
 }

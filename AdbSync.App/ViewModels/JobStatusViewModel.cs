@@ -12,6 +12,7 @@ public sealed partial class JobStatusViewModel(string name) : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsRunning))]
+    [NotifyPropertyChangedFor(nameof(DisplayStatusText))]
     private string _phaseText = "Idle";
 
     [ObservableProperty]
@@ -24,11 +25,16 @@ public sealed partial class JobStatusViewModel(string name) : ObservableObject
     /// <summary>True while a sync is actively in progress for this job - drives the row's running shimmer.</summary>
     public bool IsRunning => PhaseText != "Idle";
 
+    /// <summary>The single line shown in the STATUS column - the active phase while a sync is running, otherwise
+    /// the watch status (e.g. "Watching (live)") in place of "Idle" when the job's watcher is active.</summary>
+    public string DisplayStatusText => IsRunning ? PhaseText : (WatchStatusText ?? PhaseText);
+
     /// <summary>True when the failure was a <see cref="AdbSync.Core.Orchestration.PushSafetyException"/>, which can be resolved via the Force Push action.</summary>
     [ObservableProperty]
     private bool _canForcePush;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DisplayStatusText))]
     private string? _watchStatusText;
 
     [ObservableProperty]

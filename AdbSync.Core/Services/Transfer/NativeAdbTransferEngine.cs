@@ -9,9 +9,9 @@ namespace AdbSync.Core.Services.Transfer;
 /// </summary>
 public sealed class NativeAdbTransferEngine(IRemoteFileSystemFactory remoteFactory, IMirrorDiffer differ) : IAdbTransferEngine
 {
-    public async Task<TransferResult> PullMirrorAsync(string serial, string remotePath, string localPath, IExcludeMatcher exclude, CancellationToken ct = default)
+    public async Task<TransferResult> PullMirrorAsync(string serial, string remotePath, string localPath, IExcludeMatcher exclude, TransferPolicy? policy = null, CancellationToken ct = default)
     {
-        var remote = remoteFactory.Create(serial);
+        var remote = remoteFactory.Create(serial, policy);
         var remoteEntries = await RemoteFileTreeScanner.ScanAsync(remote, remotePath, exclude, ct);
 
         Directory.CreateDirectory(localPath);
@@ -70,9 +70,9 @@ public sealed class NativeAdbTransferEngine(IRemoteFileSystemFactory remoteFacto
         return new TransferResult(copied, deleted, bytesCopied, errors, copiedPaths, deletedPaths);
     }
 
-    public async Task<TransferResult> PushMirrorAsync(string serial, string localPath, string remotePath, IExcludeMatcher exclude, CancellationToken ct = default)
+    public async Task<TransferResult> PushMirrorAsync(string serial, string localPath, string remotePath, IExcludeMatcher exclude, TransferPolicy? policy = null, CancellationToken ct = default)
     {
-        var remote = remoteFactory.Create(serial);
+        var remote = remoteFactory.Create(serial, policy);
         await remote.CreateDirectoryAsync(remotePath, ct);
 
         Directory.CreateDirectory(localPath);

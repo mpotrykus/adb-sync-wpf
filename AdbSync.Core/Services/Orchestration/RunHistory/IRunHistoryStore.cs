@@ -5,7 +5,8 @@ namespace AdbSync.Core.Services.Orchestration.RunHistory;
 
 public interface IRunHistoryStore
 {
-    Task SaveRunAsync(JobRunRecord record, string logText, CancellationToken ct = default);
+    /// <summary>Saves the run and trims the job's history down to <paramref name="maxRuns"/> most-recent rows.</summary>
+    Task SaveRunAsync(JobRunRecord record, string logText, int maxRuns, CancellationToken ct = default);
 
     Task<IReadOnlyList<JobRunRecord>> ListRunsAsync(string jobName, CancellationToken ct = default);
 

@@ -103,6 +103,7 @@ public partial class DashboardWindow : Window
         JobRunOutcome.Skipped => "Skipped: already running",
         JobRunOutcome.SkippedAppRunning => "Skipped: app running",
         JobRunOutcome.Failed => $"Error: {record.ErrorMessage}",
+        JobRunOutcome.DryRunCompleted => "Dry run completed",
         _ => record.Outcome.ToString(),
     };
 
