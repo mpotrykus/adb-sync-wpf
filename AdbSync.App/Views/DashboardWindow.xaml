@@ -100,13 +100,16 @@
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
-                            <DataGridTemplateColumn Header="" Width="196">
+                            <DataGridTemplateColumn Header="" Width="230">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                                             <Button Style="{StaticResource RowDangerButton}" Margin="0,0,4,0" Click="ForcePush_Click" ToolTip="Force Push (bypass safety check)"
                                                     Visibility="{Binding CanForcePush, Converter={StaticResource BoolToVisibility}}">
                                                 <TextBlock Text="&#xE7BA;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="12"/>
+                                            </Button>
+                                            <Button Style="{StaticResource RowButton}" Margin="0,0,4,0" Click="Checkpoint_Click" ToolTip="Checkpoint (back up current device state)">
+                                                <TextBlock Text="&#xE7B8;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="12"/>
                                             </Button>
                                             <Button Style="{StaticResource RowButton}" Margin="0,0,4,0" Click="RunNow_Click" ToolTip="Run Now">
                                                 <TextBlock Text="&#xE768;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="12"/>

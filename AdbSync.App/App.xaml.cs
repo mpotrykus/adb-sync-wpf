@@ -167,6 +167,7 @@ public partial class App : Application
         services.AddSingleton<IManifestStore, ManifestStore>();
         services.AddSingleton<IPushSafetyGuard, PushSafetyGuard>();
         services.AddSingleton<ICheckpointManager, CheckpointManager>();
+        services.AddSingleton<IDeviceSnapshotService, DeviceSnapshotService>();
         services.AddSingleton<IRunHistoryStore, RunHistoryStore>();
 
         services.AddSingleton<DashboardViewModel>();

@@ -6,7 +6,7 @@
         xmlns:controls="clr-namespace:AdbSync.App.Controls"
         interop:AcrylicEffect.Enabled="True"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
-        Icon="/Assets/app.ico" SizeToContent="Height" Width="420" WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
+        Icon="/Assets/app.ico" SizeToContent="Height" Width="460" WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
         ShowInTaskbar="False">
     <shell:WindowChrome.WindowChrome>
         <shell:WindowChrome CaptionHeight="36" ResizeBorderThickness="0" GlassFrameThickness="0" CornerRadius="8" UseAeroCaptionButtons="False"/>
@@ -35,6 +35,7 @@
 
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                     <Button x:Name="CancelButton" Content="Cancel" Width="90" Margin="0,0,8,0" Click="Cancel_Click" IsCancel="True"/>
+                    <Button x:Name="SecondaryButton" Width="150" Margin="0,0,8,0" Click="Secondary_Click" Visibility="Collapsed"/>
                     <Button x:Name="ConfirmButton" Width="110" Style="{StaticResource DangerButton}" Click="Confirm_Click" IsDefault="True"/>
                 </StackPanel>
             </StackPanel>

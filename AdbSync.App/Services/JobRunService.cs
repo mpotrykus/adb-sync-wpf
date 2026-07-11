@@ -9,7 +9,7 @@ namespace AdbSync.App.Services;
 /// "Run Now" triggers so LastRunAt/LastSuccessAt bookkeeping only lives in one spot. Serializes runs (matches
 /// the default MaxConcurrentJobs=1 - two jobs sharing a physical device would otherwise contend on one adb connection).
 /// </summary>
-public sealed class JobRunService(AppConfigService configService, SyncJobRunner runner)
+public sealed class JobRunService(AppConfigService configService, SyncJobRunner runner, IDeviceSnapshotService snapshotService)
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
 
@@ -30,6 +30,49 @@ public sealed class JobRunService(AppConfigService configService, SyncJobRunner 
             await configService.SaveAsync();
 
             return result;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <summary>Pulls the current state of every device bound to the job into a new timestamped backup folder,
+    /// without touching master/staging/devices. Shares <see cref="_gate"/> with RunJobAsync so it can't race a
+    /// sync run over the same device's adb connection.</summary>
+    public async Task<SnapshotResult> CreateSnapshotAsync(int jobIndex, CancellationToken ct = default)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            var config = await configService.GetAsync();
+            var job = config.Jobs[jobIndex];
+            return await snapshotService.CreateSnapshotAsync(job, config.Devices, config.Settings, ct);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <summary>Lists this job's stored checkpoints, most recent first. Read-only - doesn't need <see cref="_gate"/>.</summary>
+    public async Task<IReadOnlyList<SnapshotInfo>> ListSnapshotsAsync(int jobIndex, CancellationToken ct = default)
+    {
+        var config = await configService.GetAsync();
+        var job = config.Jobs[jobIndex];
+        return snapshotService.ListSnapshots(job, config.Settings);
+    }
+
+    /// <summary>Pushes a stored checkpoint back out to the job's devices. Shares <see cref="_gate"/> with
+    /// RunJobAsync/CreateSnapshotAsync so it can't race a sync run over the same device's adb connection.</summary>
+    public async Task<SnapshotResult> RestoreSnapshotAsync(int jobIndex, string snapshotPath, CancellationToken ct = default)
+    {
+        await _gate.WaitAsync(ct);
+        try
+        {
+            var config = await configService.GetAsync();
+            var job = config.Jobs[jobIndex];
+            return await snapshotService.RestoreSnapshotAsync(job, config.Devices, config.Settings, snapshotPath, ct);
         }
         finally
         {

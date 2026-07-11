@@ -227,6 +227,95 @@ public partial class DashboardWindow : Window
             _ = _jobRunService.RunJobAsync(index, forcePush: true); // fire-and-forget; live status flows back via ISyncEventSink
     }
 
+    private async void Checkpoint_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: JobStatusViewModel vm })
+            return;
+
+        var config = await _configService.GetAsync();
+        var index = config.Jobs.FindIndex(j => j.Name == vm.Name);
+        if (index < 0)
+            return;
+
+        var choice = ConfirmDialog.ShowWithResult(this, "Checkpoint",
+            $"This pulls the current contents of every device in '{vm.Name}' into a new, timestamped backup folder inside its project directory. " +
+            "It does not touch the sync master, staging, or the devices themselves, so it won't be modified or removed by future sync runs - " +
+            "use it to snapshot device state before running a job you're unsure about.",
+            confirmText: "Checkpoint", secondaryText: "Restore Checkpoint...");
+
+        switch (choice)
+        {
+            case ConfirmDialogResult.Confirm:
+                await CreateCheckpointAsync(vm, index);
+                break;
+            case ConfirmDialogResult.Secondary:
+                await RestoreCheckpointAsync(vm, index);
+                break;
+        }
+    }
+
+    private async Task CreateCheckpointAsync(JobStatusViewModel vm, int index)
+    {
+        // No SyncJobRunner/ISyncEventSink involved here, so this handler drives the row's phase/outcome text itself.
+        vm.PhaseText = "Checkpoint";
+        try
+        {
+            var result = await _jobRunService.CreateSnapshotAsync(index);
+            vm.ReportOutcome(result.Errors == 0
+                ? $"Checkpoint saved ({result.TotalFiles} file(s))"
+                : $"Checkpoint saved with {result.Errors} error(s)");
+        }
+        catch (Exception ex)
+        {
+            vm.NeedsAttention = true;
+            vm.ReportOutcome($"Error: {ex.Message}");
+        }
+        finally
+        {
+            vm.PhaseText = "Idle";
+        }
+    }
+
+    private async Task RestoreCheckpointAsync(JobStatusViewModel vm, int index)
+    {
+        var snapshots = await _jobRunService.ListSnapshotsAsync(index);
+        if (snapshots.Count == 0)
+        {
+            MessageBox.Show(this, $"No checkpoints found for '{vm.Name}'.", "Restore Checkpoint", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var picker = new RestoreCheckpointWindow(vm.Name, snapshots) { Owner = this };
+        if (picker.ShowDialog() != true || picker.SelectedSnapshot is not { } snapshot)
+            return;
+
+        var confirmed = ConfirmDialog.Show(this, "Restore Checkpoint",
+            $"This pushes the checkpoint from {snapshot.CreatedAt.LocalDateTime:g} back out to every matching device in '{vm.Name}', " +
+            "overwriting current device files and deleting any device file that isn't in the checkpoint. This cannot be undone.",
+            confirmText: "Restore");
+        if (!confirmed)
+            return;
+
+        vm.PhaseText = "Restoring";
+        try
+        {
+            var result = await _jobRunService.RestoreSnapshotAsync(index, snapshot.Path);
+            var skippedNote = result.SkippedDevices is { Count: > 0 } skipped ? $", skipped {skipped.Count} unmatched device(s)" : "";
+            vm.ReportOutcome(result.Errors == 0
+                ? $"Checkpoint restored ({result.TotalFiles} file(s)){skippedNote}"
+                : $"Checkpoint restored with {result.Errors} error(s){skippedNote}");
+        }
+        catch (Exception ex)
+        {
+            vm.NeedsAttention = true;
+            vm.ReportOutcome($"Error: {ex.Message}");
+        }
+        finally
+        {
+            vm.PhaseText = "Idle";
+        }
+    }
+
     private void ViewLogs_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: JobStatusViewModel vm })
