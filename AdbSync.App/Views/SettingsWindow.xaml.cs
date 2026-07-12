@@ -19,26 +19,42 @@ public partial class SettingsWindow : Window
         _config = config;
 
         ProjectsDirectoryBox.Text = config.Settings.ProjectsDirectory;
-        StartAtLoginBox.IsChecked = config.Settings.StartAtLogin;
-        ShowInfoNotificationsBox.IsChecked = config.Settings.ShowInfoNotifications;
-        ShowErrorNotificationsBox.IsChecked = config.Settings.ShowErrorNotifications;
+        LoadFromSettings(config.Settings);
+    }
 
-        QuietHoursEnabledBox.IsChecked = config.Settings.QuietHoursEnabled;
-        QuietHoursStartBox.Text = config.Settings.QuietHoursStart.ToString("HH:mm");
-        QuietHoursEndBox.Text = config.Settings.QuietHoursEnd.ToString("HH:mm");
+    /// <summary>Populates every field except Projects Directory, which is left to the caller.</summary>
+    private void LoadFromSettings(GlobalSettings settings)
+    {
+        StartAtLoginBox.IsChecked = settings.StartAtLogin;
+        ShowInfoNotificationsBox.IsChecked = settings.ShowInfoNotifications;
+        ShowErrorNotificationsBox.IsChecked = settings.ShowErrorNotifications;
 
-        StaleLockHoursBox.Text = config.Settings.StaleLockHours.ToString();
-        LogRetentionDaysBox.Text = config.Settings.LogRetentionDays.ToString();
-        PerLogFileMaxMegabytesBox.Text = (config.Settings.PerLogFileMaxBytes / (1024 * 1024)).ToString();
-        ConflictRetentionDaysBox.Text = config.Settings.ConflictRetentionDays.ToString();
-        CheckpointRetentionDaysBox.Text = config.Settings.CheckpointRetentionDays.ToString();
-        MaxRunHistoryEntriesBox.Text = config.Settings.MaxRunHistoryEntries.ToString();
-        BandwidthThrottleKBpsBox.Text = config.Settings.BandwidthThrottleKBps?.ToString() ?? "";
-        RetryMaxAttemptsBox.Text = config.Settings.RetryMaxAttempts.ToString();
-        RetryBackoffSecondsBox.Text = config.Settings.RetryBackoffSeconds.ToString();
-        PushSafetyMinimumPercentBox.Text = config.Settings.PushSafetyMinimumPercent.ToString();
-        MaxConcurrentJobsBox.Text = config.Settings.MaxConcurrentJobs.ToString();
-        BackupConflictLosersBox.IsChecked = config.Settings.BackupConflictLosers;
+        QuietHoursEnabledBox.IsChecked = settings.QuietHoursEnabled;
+        QuietHoursStartBox.Text = settings.QuietHoursStart.ToString("HH:mm");
+        QuietHoursEndBox.Text = settings.QuietHoursEnd.ToString("HH:mm");
+
+        RunMissedSchedulesBox.IsChecked = settings.RunMissedSchedules;
+
+        StaleLockHoursBox.Text = settings.StaleLockHours.ToString();
+        LogRetentionDaysBox.Text = settings.LogRetentionDays.ToString();
+        PerLogFileMaxMegabytesBox.Text = (settings.PerLogFileMaxBytes / (1024 * 1024)).ToString();
+        ConflictRetentionDaysBox.Text = settings.ConflictRetentionDays.ToString();
+        CheckpointRetentionDaysBox.Text = settings.CheckpointRetentionDays.ToString();
+        MaxRunHistoryEntriesBox.Text = settings.MaxRunHistoryEntries.ToString();
+        BandwidthThrottleKBpsBox.Text = settings.BandwidthThrottleKBps?.ToString() ?? "";
+        RetryMaxAttemptsBox.Text = settings.RetryMaxAttempts.ToString();
+        RetryBackoffSecondsBox.Text = settings.RetryBackoffSeconds.ToString();
+        PushSafetyMinimumPercentBox.Text = settings.PushSafetyMinimumPercent.ToString();
+        MaxConcurrentJobsBox.Text = settings.MaxConcurrentJobs.ToString();
+        BackupConflictLosersBox.IsChecked = settings.BackupConflictLosers;
+    }
+
+    private void SetToDefault_Click(object sender, RoutedEventArgs e)
+    {
+        if (ConfirmDialog.Show(this, "Set to Default",
+            "This resets every setting on this page to its default value. Your changes won't be saved unless you click Save afterward.",
+            confirmText: "Set to Default"))
+            LoadFromSettings(new GlobalSettings());
     }
 
     private void Browse_Click(object sender, RoutedEventArgs e)
@@ -69,6 +85,8 @@ public partial class SettingsWindow : Window
             _config.Settings.QuietHoursStart = quietStart;
         if (TimeOnly.TryParse(QuietHoursEndBox.Text, out var quietEnd))
             _config.Settings.QuietHoursEnd = quietEnd;
+
+        _config.Settings.RunMissedSchedules = RunMissedSchedulesBox.IsChecked == true;
 
         if (int.TryParse(StaleLockHoursBox.Text, out var staleHours) && staleHours > 0)
             _config.Settings.StaleLockHours = staleHours;

@@ -27,7 +27,7 @@ public sealed class DashboardViewModel : ISyncEventSink
             foreach (var job in config.Jobs)
             {
                 seen.Add(job.Name);
-                var nextRun = ScheduleCalculator.NextDueUtc(job.Schedule, now);
+                var nextRun = ScheduleCalculator.NextDueUtc(job.Schedule, now, config.Settings.RunMissedSchedules);
 
                 if (existingByName.TryGetValue(job.Name, out var vm))
                 {

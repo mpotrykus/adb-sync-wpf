@@ -41,6 +41,10 @@ public sealed class GlobalSettings
     /// <summary>Default for whether a losing side of a merge conflict is backed up before being overwritten.</summary>
     public bool BackupConflictLosers { get; set; } = true;
 
+    /// <summary>When enabled, a job whose Interval/DailyAt schedule came due while AdbSync wasn't running fires
+    /// once at the next opportunity instead of silently rolling forward to the next scheduled occurrence.</summary>
+    public bool RunMissedSchedules { get; set; } = true;
+
     /// <summary>True if the given time falls within the configured quiet hours window.</summary>
     public bool IsQuietNow(TimeOnly? nowOverride = null)
     {

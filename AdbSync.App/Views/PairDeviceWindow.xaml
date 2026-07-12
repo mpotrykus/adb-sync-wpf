@@ -4,7 +4,7 @@
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         xmlns:interop="clr-namespace:AdbSync.App.Interop"
         xmlns:controls="clr-namespace:AdbSync.App.Controls"
-        interop:AcrylicEffect.Enabled="True"
+        interop:AcrylicEffect.Enabled="True" interop:WindowHeightLimit.Enabled="True"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         Title="Pair Device" Icon="/Assets/app.ico" SizeToContent="Height" Width="420" WindowStartupLocation="CenterOwner" ResizeMode="NoResize">
     <shell:WindowChrome.WindowChrome>

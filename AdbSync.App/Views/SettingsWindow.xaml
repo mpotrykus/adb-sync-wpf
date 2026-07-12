@@ -4,9 +4,9 @@
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         xmlns:interop="clr-namespace:AdbSync.App.Interop"
         xmlns:controls="clr-namespace:AdbSync.App.Controls"
-        interop:AcrylicEffect.Enabled="True"
+        interop:AcrylicEffect.Enabled="True" interop:WindowHeightLimit.Enabled="True"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
-        Title="Settings" Icon="/Assets/app.ico" SizeToContent="Height" Width="520" MaxHeight="820"
+        Title="Settings" Icon="/Assets/app.ico" SizeToContent="Height" Width="520"
         WindowStartupLocation="CenterOwner" ResizeMode="NoResize">
     <shell:WindowChrome.WindowChrome>
         <shell:WindowChrome CaptionHeight="36" ResizeBorderThickness="0" GlassFrameThickness="0" CornerRadius="8" UseAeroCaptionButtons="False"/>
@@ -16,11 +16,12 @@
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
             <controls:TitleBar Grid.Row="0" ShowMinMax="False"/>
 
-            <ScrollViewer Grid.Row="1" Margin="20" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <ScrollViewer Grid.Row="1" Margin="20,20,20,0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <StackPanel>
                     <Border Style="{StaticResource CardBorder}">
                         <StackPanel>
@@ -67,94 +68,134 @@
                     </Border>
 
                     <Border Style="{StaticResource CardBorder}">
+                        <StackPanel>
+                            <TextBlock Text="Scheduling" Style="{StaticResource SectionLabel}"/>
+                            <CheckBox x:Name="RunMissedSchedulesBox" Content="Run scheduled jobs that were missed while AdbSync was closed"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource CardBorder}">
                         <Expander Header="Advanced" IsExpanded="False">
                             <StackPanel>
-                                <TextBlock Text="LOCKING &amp; CONCURRENCY" Style="{StaticResource SubSectionLabel}" Margin="0,4,0,8"/>
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="90"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition/>
-                                        <RowDefinition/>
-                                    </Grid.RowDefinitions>
-                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Stale lock timeout (hours)" VerticalAlignment="Center"/>
-                                    <TextBox Grid.Row="0" Grid.Column="1" x:Name="StaleLockHoursBox" controls:TextBoxHelper.Placeholder="4"/>
-                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Max concurrent jobs" VerticalAlignment="Center" Margin="0,10,0,0"/>
-                                    <TextBox Grid.Row="1" Grid.Column="1" x:Name="MaxConcurrentJobsBox" Margin="0,10,0,0" controls:TextBoxHelper.Placeholder="1"/>
-                                </Grid>
+                                <Border Style="{StaticResource NestedSection}">
+                                    <StackPanel>
+                                        <TextBlock Text="LOCKING &amp; CONCURRENCY" Style="{StaticResource SubSectionLabel}"/>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="90"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition/>
+                                                <RowDefinition/>
+                                            </Grid.RowDefinitions>
+                                            <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center">
+                                                <Run Text="Stale lock timeout "/><Run Text="(hours)" Style="{StaticResource DescriptorRun}"/>
+                                            </TextBlock>
+                                            <TextBox Grid.Row="0" Grid.Column="1" x:Name="StaleLockHoursBox" controls:TextBoxHelper.Placeholder="4"/>
+                                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Max concurrent jobs" VerticalAlignment="Center" Margin="0,10,0,0"/>
+                                            <TextBox Grid.Row="1" Grid.Column="1" x:Name="MaxConcurrentJobsBox" Margin="0,10,0,0" controls:TextBoxHelper.Placeholder="1"/>
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
 
-                                <Border Height="1" Background="{StaticResource Brush.Divider}" Margin="0,16,0,14"/>
+                                <Border Style="{StaticResource NestedSection}">
+                                    <StackPanel>
+                                        <TextBlock Text="RETENTION" Style="{StaticResource SubSectionLabel}"/>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="90"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition/>
+                                                <RowDefinition/>
+                                                <RowDefinition/>
+                                                <RowDefinition/>
+                                                <RowDefinition/>
+                                            </Grid.RowDefinitions>
+                                            <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center">
+                                                <Run Text="Log retention "/><Run Text="(days)" Style="{StaticResource DescriptorRun}"/>
+                                            </TextBlock>
+                                            <TextBox Grid.Row="0" Grid.Column="1" x:Name="LogRetentionDaysBox" controls:TextBoxHelper.Placeholder="30"/>
+                                            <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,10,0,0">
+                                                <Run Text="Max log file size "/><Run Text="(MB)" Style="{StaticResource DescriptorRun}"/>
+                                            </TextBlock>
+                                            <TextBox Grid.Row="1" Grid.Column="1" x:Name="PerLogFileMaxMegabytesBox" Margin="0,10,0,0" controls:TextBoxHelper.Placeholder="5"/>
+                                            <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Margin="0,10,0,0">
+                                                <Run Text="Conflict backup retention "/><Run Text="(days)" Style="{StaticResource DescriptorRun}"/>
+                                            </TextBlock>
+                                            <TextBox Grid.Row="2" Grid.Column="1" x:Name="ConflictRetentionDaysBox" Margin="0,10,0,0" controls:TextBoxHelper.Placeholder="30"/>
+                                            <TextBlock Grid.Row="3" Grid.Column="0" VerticalAlignment="Center" Margin="0,10,0,0">
+                                                <Run Text="Checkpoint retention "/><Run Text="(days)" Style="{StaticResource DescriptorRun}"/>
+                                            </TextBlock>
+                                            <TextBox Grid.Row="3" Grid.Column="1" x:Name="CheckpointRetentionDaysBox" Margin="0,10,0,0" controls:TextBoxHelper.Placeholder="30"/>
+                                            <TextBlock Grid.Row="4" Grid.Column="0" Text="Run history entries kept per job" VerticalAlignment="Center" Margin="0,10,0,0"/>
+                                            <TextBox Grid.Row="4" Grid.Column="1" x:Name="MaxRunHistoryEntriesBox" Margin="0,10,0,0" controls:TextBoxHelper.Placeholder="50"/>
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
 
-                                <TextBlock Text="RETENTION" Style="{StaticResource SubSectionLabel}"/>
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="90"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition/>
-                                        <RowDefinition/>
-                                        <RowDefinition/>
-                                        <RowDefinition/>
-                                        <RowDefinition/>
-                                    </Grid.RowDefinitions>
-                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Log retention (days)" VerticalAlignment="Center"/>
-                                    <TextBox Grid.Row="0" Grid.Column="1" x:Name="LogRetentionDaysBox" controls:TextBoxHelper.Placeholder="30"/>
-                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Max log file size (MB)" VerticalAlignment="Center" Margin="0,10,0,0"/>
-                                    <TextBox Grid.Row="1" Grid.Column="1" x:Name="PerLogFileMaxMegabytesBox" Margin="0,10,0,0" controls:TextBoxHelper.Placeholder="5"/>
-                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Conflict backup retention (days)" VerticalAlignment="Center" Margin="0,10,0,0"/>
-                                    <TextBox Grid.Row="2" Grid.Column="1" x:Name="ConflictRetentionDaysBox" Margin="0,10,0,0" controls:TextBoxHelper.Placeholder="30"/>
-                                    <TextBlock Grid.Row="3" Grid.Column="0" Text="Checkpoint retention (days)" VerticalAlignment="Center" Margin="0,10,0,0"/>
-                                    <TextBox Grid.Row="3" Grid.Column="1" x:Name="CheckpointRetentionDaysBox" Margin="0,10,0,0" controls:TextBoxHelper.Placeholder="30"/>
-                                    <TextBlock Grid.Row="4" Grid.Column="0" Text="Run history entries kept per job" VerticalAlignment="Center" Margin="0,10,0,0"/>
-                                    <TextBox Grid.Row="4" Grid.Column="1" x:Name="MaxRunHistoryEntriesBox" Margin="0,10,0,0" controls:TextBoxHelper.Placeholder="50"/>
-                                </Grid>
+                                <Border Style="{StaticResource NestedSection}">
+                                    <StackPanel>
+                                        <TextBlock Text="TRANSFER" Style="{StaticResource SubSectionLabel}"/>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="90"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition/>
+                                                <RowDefinition/>
+                                                <RowDefinition/>
+                                            </Grid.RowDefinitions>
+                                            <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center">
+                                                <Run Text="Bandwidth throttle "/><Run Text="(KB/s, blank = unlimited)" Style="{StaticResource DescriptorRun}"/>
+                                            </TextBlock>
+                                            <TextBox Grid.Row="0" Grid.Column="1" x:Name="BandwidthThrottleKBpsBox" controls:TextBoxHelper.Placeholder="unlimited"/>
+                                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Transfer retry attempts" VerticalAlignment="Center" Margin="0,10,0,0"/>
+                                            <TextBox Grid.Row="1" Grid.Column="1" x:Name="RetryMaxAttemptsBox" Margin="0,10,0,0" controls:TextBoxHelper.Placeholder="3"/>
+                                            <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Margin="0,10,0,0">
+                                                <Run Text="Retry backoff "/><Run Text="(seconds)" Style="{StaticResource DescriptorRun}"/>
+                                            </TextBlock>
+                                            <TextBox Grid.Row="2" Grid.Column="1" x:Name="RetryBackoffSecondsBox" Margin="0,10,0,0" controls:TextBoxHelper.Placeholder="5"/>
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
 
-                                <Border Height="1" Background="{StaticResource Brush.Divider}" Margin="0,16,0,14"/>
-
-                                <TextBlock Text="TRANSFER" Style="{StaticResource SubSectionLabel}"/>
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="90"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition/>
-                                        <RowDefinition/>
-                                        <RowDefinition/>
-                                    </Grid.RowDefinitions>
-                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Bandwidth throttle (KB/s, blank = unlimited)" VerticalAlignment="Center"/>
-                                    <TextBox Grid.Row="0" Grid.Column="1" x:Name="BandwidthThrottleKBpsBox" controls:TextBoxHelper.Placeholder="unlimited"/>
-                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Transfer retry attempts" VerticalAlignment="Center" Margin="0,10,0,0"/>
-                                    <TextBox Grid.Row="1" Grid.Column="1" x:Name="RetryMaxAttemptsBox" Margin="0,10,0,0" controls:TextBoxHelper.Placeholder="3"/>
-                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Retry backoff (seconds)" VerticalAlignment="Center" Margin="0,10,0,0"/>
-                                    <TextBox Grid.Row="2" Grid.Column="1" x:Name="RetryBackoffSecondsBox" Margin="0,10,0,0" controls:TextBoxHelper.Placeholder="5"/>
-                                </Grid>
-
-                                <Border Height="1" Background="{StaticResource Brush.Divider}" Margin="0,16,0,14"/>
-
-                                <TextBlock Text="SAFETY &amp; CONFLICTS" Style="{StaticResource SubSectionLabel}"/>
-                                <Grid Margin="0,0,0,10">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="90"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="Push safety minimum (% of baseline)" VerticalAlignment="Center"/>
-                                    <TextBox Grid.Column="1" x:Name="PushSafetyMinimumPercentBox" controls:TextBoxHelper.Placeholder="25"/>
-                                </Grid>
-                                <CheckBox x:Name="BackupConflictLosersBox" Content="Back up the losing side of a merge conflict before overwriting it"/>
+                                <Border Style="{StaticResource NestedSection}" Margin="0">
+                                    <StackPanel>
+                                        <TextBlock Text="SAFETY &amp; CONFLICTS" Style="{StaticResource SubSectionLabel}"/>
+                                        <Grid Margin="0,0,0,10">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="90"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" VerticalAlignment="Center">
+                                                <Run Text="Push safety minimum "/><Run Text="(% of baseline)" Style="{StaticResource DescriptorRun}"/>
+                                            </TextBlock>
+                                            <TextBox Grid.Column="1" x:Name="PushSafetyMinimumPercentBox" controls:TextBoxHelper.Placeholder="25"/>
+                                        </Grid>
+                                        <CheckBox x:Name="BackupConflictLosersBox" Content="Back up the losing side of a merge conflict before overwriting it"/>
+                                    </StackPanel>
+                                </Border>
                             </StackPanel>
                         </Expander>
                     </Border>
-
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                        <Button Content="Cancel" Width="90" Margin="0,0,8,0" Click="Cancel_Click" IsCancel="True"/>
-                        <Button Content="Save" Width="90" Style="{StaticResource PrimaryButton}" Click="Save_Click" IsDefault="True"/>
-                    </StackPanel>
                 </StackPanel>
             </ScrollViewer>
+
+            <Grid Grid.Row="2" Margin="20,12,20,20">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Button Grid.Column="0" Content="Set to Default" Width="110" Click="SetToDefault_Click"/>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button Content="Cancel" Width="90" Margin="0,0,8,0" Click="Cancel_Click" IsCancel="True"/>
+                    <Button Content="Save" Width="90" Style="{StaticResource PrimaryButton}" Click="Save_Click" IsDefault="True"/>
+                </StackPanel>
+            </Grid>
         </Grid>
     </Border>
 </Window>

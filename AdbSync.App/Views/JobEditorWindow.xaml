@@ -4,23 +4,29 @@
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         xmlns:interop="clr-namespace:AdbSync.App.Interop"
         xmlns:controls="clr-namespace:AdbSync.App.Controls"
-        interop:AcrylicEffect.Enabled="True"
+        xmlns:conv="clr-namespace:AdbSync.App.Converters"
+        interop:AcrylicEffect.Enabled="True" interop:WindowHeightLimit.Enabled="True"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
-        Title="Job" Icon="/Assets/app.ico" Width="960" SizeToContent="Height" MaxHeight="900"
+        Title="Job" Icon="/Assets/app.ico" Width="960" SizeToContent="Height"
         WindowStartupLocation="CenterOwner" ResizeMode="NoResize">
     <shell:WindowChrome.WindowChrome>
         <shell:WindowChrome CaptionHeight="36" ResizeBorderThickness="0" GlassFrameThickness="0" CornerRadius="8" UseAeroCaptionButtons="False"/>
     </shell:WindowChrome.WindowChrome>
+    <Window.Resources>
+        <conv:StringNotEmptyToVisibilityConverter x:Key="StringNotEmptyToVisibilityConverter"/>
+        <conv:NullableBoolToOverrideStateConverter x:Key="NullableBoolToOverrideStateConverter"/>
+    </Window.Resources>
     <Border Style="{StaticResource WindowRootBorder}">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
             <controls:TitleBar Grid.Row="0" ShowMinMax="False"/>
 
-            <ScrollViewer Grid.Row="1" Margin="20" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <ScrollViewer Grid.Row="1" Margin="20,20,20,0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <StackPanel>
                     <Border Style="{StaticResource CardBorder}">
                         <Grid>
@@ -172,100 +178,181 @@
                     <Border Style="{StaticResource CardBorder}">
                         <Expander Header="Advanced (overrides)" IsExpanded="False">
                             <StackPanel>
-                                <TextBlock Text="Blank fields inherit the global default from Settings." Style="{StaticResource CaptionText}" Margin="0,0,0,4"/>
+                                <TextBlock Text="Blank fields inherit the global default from Settings. A filled field shows an accent bar to mark it as an explicit override."
+                                           Style="{StaticResource CaptionText}" Margin="0,0,0,12"/>
 
-                                <TextBlock Text="LOCATION" Style="{StaticResource SubSectionLabel}" Margin="0,12,0,8"/>
-                                <TextBlock Text="Project directory override" Margin="0,0,0,4"/>
-                                <Grid Margin="0,0,0,10">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBox x:Name="ProjectDirectoryBox" Grid.Column="0" Margin="0,0,8,0" controls:TextBoxHelper.Placeholder="Default: Settings > Projects directory"/>
-                                    <Button Grid.Column="1" Content="Browse..." Click="BrowseProjectDirectory_Click"/>
-                                </Grid>
+                                <Border Style="{StaticResource NestedSection}">
+                                    <StackPanel>
+                                        <TextBlock Text="LOCATION" Style="{StaticResource SubSectionLabel}"/>
+                                        <TextBlock Text="Project directory override" Margin="0,0,0,4"/>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Grid Grid.Column="0" Margin="0,0,8,0">
+                                                <TextBox x:Name="ProjectDirectoryBox" controls:TextBoxHelper.Placeholder="Default: Settings > Projects directory"/>
+                                                <Rectangle Style="{StaticResource OverrideIndicatorBar}"
+                                                           Visibility="{Binding Text, ElementName=ProjectDirectoryBox, Converter={StaticResource StringNotEmptyToVisibilityConverter}}"/>
+                                            </Grid>
+                                            <Button Grid.Column="1" Content="Browse..." Click="BrowseProjectDirectory_Click"/>
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
 
-                                <Border Height="1" Background="{StaticResource Brush.Divider}" Margin="0,4,0,14"/>
+                                <Border Style="{StaticResource NestedSection}">
+                                    <StackPanel>
+                                        <TextBlock Text="LOCKING &amp; RETENTION" Style="{StaticResource SubSectionLabel}"/>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="90"/>
+                                                <ColumnDefinition Width="24"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="90"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition/>
+                                                <RowDefinition/>
+                                            </Grid.RowDefinitions>
 
-                                <TextBlock Text="LOCKING &amp; RETENTION" Style="{StaticResource SubSectionLabel}"/>
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="90"/>
-                                        <ColumnDefinition Width="24"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="90"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition/>
-                                        <RowDefinition/>
-                                    </Grid.RowDefinitions>
+                                            <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center">
+                                                <Run Text="Stale lock timeout "/><Run Text="(hours)" Style="{StaticResource DescriptorRun}"/>
+                                            </TextBlock>
+                                            <Grid Grid.Row="0" Grid.Column="1">
+                                                <TextBox x:Name="StaleLockHoursOverrideBox" controls:TextBoxHelper.Placeholder="inherit"/>
+                                                <Rectangle Style="{StaticResource OverrideIndicatorBar}"
+                                                           Visibility="{Binding Text, ElementName=StaleLockHoursOverrideBox, Converter={StaticResource StringNotEmptyToVisibilityConverter}}"/>
+                                            </Grid>
+                                            <TextBlock Grid.Row="0" Grid.Column="3" VerticalAlignment="Center">
+                                                <Run Text="Conflict backup retention "/><Run Text="(days)" Style="{StaticResource DescriptorRun}"/>
+                                            </TextBlock>
+                                            <Grid Grid.Row="0" Grid.Column="4">
+                                                <TextBox x:Name="ConflictRetentionDaysOverrideBox" controls:TextBoxHelper.Placeholder="inherit"/>
+                                                <Rectangle Style="{StaticResource OverrideIndicatorBar}"
+                                                           Visibility="{Binding Text, ElementName=ConflictRetentionDaysOverrideBox, Converter={StaticResource StringNotEmptyToVisibilityConverter}}"/>
+                                            </Grid>
 
-                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Stale lock timeout (hours)" VerticalAlignment="Center"/>
-                                    <TextBox Grid.Row="0" Grid.Column="1" x:Name="StaleLockHoursOverrideBox" controls:TextBoxHelper.Placeholder="inherit"/>
-                                    <TextBlock Grid.Row="0" Grid.Column="3" Text="Conflict backup retention (days)" VerticalAlignment="Center"/>
-                                    <TextBox Grid.Row="0" Grid.Column="4" x:Name="ConflictRetentionDaysOverrideBox" controls:TextBoxHelper.Placeholder="inherit"/>
+                                            <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,10,0,0">
+                                                <Run Text="Checkpoint retention "/><Run Text="(days)" Style="{StaticResource DescriptorRun}"/>
+                                            </TextBlock>
+                                            <Grid Grid.Row="1" Grid.Column="1" Margin="0,10,0,0">
+                                                <TextBox x:Name="CheckpointRetentionDaysOverrideBox" controls:TextBoxHelper.Placeholder="inherit"/>
+                                                <Rectangle Style="{StaticResource OverrideIndicatorBar}"
+                                                           Visibility="{Binding Text, ElementName=CheckpointRetentionDaysOverrideBox, Converter={StaticResource StringNotEmptyToVisibilityConverter}}"/>
+                                            </Grid>
+                                            <TextBlock Grid.Row="1" Grid.Column="3" Text="Run history entries kept" VerticalAlignment="Center" Margin="0,10,0,0"/>
+                                            <Grid Grid.Row="1" Grid.Column="4" Margin="0,10,0,0">
+                                                <TextBox x:Name="MaxRunHistoryEntriesOverrideBox" controls:TextBoxHelper.Placeholder="inherit"/>
+                                                <Rectangle Style="{StaticResource OverrideIndicatorBar}"
+                                                           Visibility="{Binding Text, ElementName=MaxRunHistoryEntriesOverrideBox, Converter={StaticResource StringNotEmptyToVisibilityConverter}}"/>
+                                            </Grid>
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
 
-                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Checkpoint retention (days)" VerticalAlignment="Center" Margin="0,10,0,0"/>
-                                    <TextBox Grid.Row="1" Grid.Column="1" x:Name="CheckpointRetentionDaysOverrideBox" Margin="0,10,0,0" controls:TextBoxHelper.Placeholder="inherit"/>
-                                    <TextBlock Grid.Row="1" Grid.Column="3" Text="Run history entries kept" VerticalAlignment="Center" Margin="0,10,0,0"/>
-                                    <TextBox Grid.Row="1" Grid.Column="4" x:Name="MaxRunHistoryEntriesOverrideBox" Margin="0,10,0,0" controls:TextBoxHelper.Placeholder="inherit"/>
-                                </Grid>
+                                <Border Style="{StaticResource NestedSection}">
+                                    <StackPanel>
+                                        <TextBlock Text="TRANSFER" Style="{StaticResource SubSectionLabel}"/>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="90"/>
+                                                <ColumnDefinition Width="24"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="90"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition/>
+                                                <RowDefinition/>
+                                            </Grid.RowDefinitions>
 
-                                <Border Height="1" Background="{StaticResource Brush.Divider}" Margin="0,16,0,14"/>
+                                            <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center">
+                                                <Run Text="Bandwidth throttle "/><Run Text="(kb/s)" Style="{StaticResource DescriptorRun}"/>
+                                            </TextBlock>
+                                            <Grid Grid.Row="0" Grid.Column="1">
+                                                <TextBox x:Name="BandwidthThrottleKBpsOverrideBox" controls:TextBoxHelper.Placeholder="inherit"/>
+                                                <Rectangle Style="{StaticResource OverrideIndicatorBar}"
+                                                           Visibility="{Binding Text, ElementName=BandwidthThrottleKBpsOverrideBox, Converter={StaticResource StringNotEmptyToVisibilityConverter}}"/>
+                                            </Grid>
+                                            <TextBlock Grid.Row="0" Grid.Column="3" Text="Retry attempts" VerticalAlignment="Center"/>
+                                            <Grid Grid.Row="0" Grid.Column="4">
+                                                <TextBox x:Name="RetryMaxAttemptsOverrideBox" controls:TextBoxHelper.Placeholder="inherit"/>
+                                                <Rectangle Style="{StaticResource OverrideIndicatorBar}"
+                                                           Visibility="{Binding Text, ElementName=RetryMaxAttemptsOverrideBox, Converter={StaticResource StringNotEmptyToVisibilityConverter}}"/>
+                                            </Grid>
 
-                                <TextBlock Text="TRANSFER" Style="{StaticResource SubSectionLabel}"/>
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="90"/>
-                                        <ColumnDefinition Width="24"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="90"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition/>
-                                        <RowDefinition/>
-                                    </Grid.RowDefinitions>
+                                            <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,10,0,0">
+                                                <Run Text="Retry backoff "/><Run Text="(seconds)" Style="{StaticResource DescriptorRun}"/>
+                                            </TextBlock>
+                                            <Grid Grid.Row="1" Grid.Column="1" Margin="0,10,0,0">
+                                                <TextBox x:Name="RetryBackoffSecondsOverrideBox" controls:TextBoxHelper.Placeholder="inherit"/>
+                                                <Rectangle Style="{StaticResource OverrideIndicatorBar}"
+                                                           Visibility="{Binding Text, ElementName=RetryBackoffSecondsOverrideBox, Converter={StaticResource StringNotEmptyToVisibilityConverter}}"/>
+                                            </Grid>
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
 
-                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Bandwidth throttle (KB/s)" VerticalAlignment="Center"/>
-                                    <TextBox Grid.Row="0" Grid.Column="1" x:Name="BandwidthThrottleKBpsOverrideBox" controls:TextBoxHelper.Placeholder="inherit"/>
-                                    <TextBlock Grid.Row="0" Grid.Column="3" Text="Retry attempts" VerticalAlignment="Center"/>
-                                    <TextBox Grid.Row="0" Grid.Column="4" x:Name="RetryMaxAttemptsOverrideBox" controls:TextBoxHelper.Placeholder="inherit"/>
+                                <Border Style="{StaticResource NestedSection}">
+                                    <StackPanel>
+                                        
+                                        <TextBlock Text="SAFETY &amp; NOTIFICATIONS" Style="{StaticResource SubSectionLabel}"/>
+                                        
+                                        <Grid Margin="0,0,0,12">
+                                            
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="315"/>
+                                                <ColumnDefinition Width="90"/>
+                                            </Grid.ColumnDefinitions>
 
-                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Retry backoff (seconds)" VerticalAlignment="Center" Margin="0,10,0,0"/>
-                                    <TextBox Grid.Row="1" Grid.Column="1" x:Name="RetryBackoffSecondsOverrideBox" Margin="0,10,0,0" controls:TextBoxHelper.Placeholder="inherit"/>
-                                </Grid>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition/>
+                                                <RowDefinition/>
+                                                <RowDefinition/>
+                                                <RowDefinition/>
+                                            </Grid.RowDefinitions>
+                                            
+                                            <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center">
+                                                <Run Text="Push safety minimum "/><Run Text="(%)" Style="{StaticResource DescriptorRun}"/>
+                                            </TextBlock>
+                                            <Grid Grid.Row="0" Grid.Column="1">
+                                                <TextBox x:Name="PushSafetyMinimumPercentOverrideBox" controls:TextBoxHelper.Placeholder="inherit"/>
+                                                <Rectangle Style="{StaticResource OverrideIndicatorBar}"
+                                                           Visibility="{Binding Text, ElementName=PushSafetyMinimumPercentOverrideBox, Converter={StaticResource StringNotEmptyToVisibilityConverter}}"/>
+                                            </Grid>
 
-                                <Border Height="1" Background="{StaticResource Brush.Divider}" Margin="0,16,0,14"/>
+                                            <CheckBox Grid.Row="1" Grid.Column="0" x:Name="ShowInfoNotificationsOverrideBox" IsThreeState="True" Content="Show notifications for successful syncs"/>
+                                            <TextBlock Grid.Row="1" Grid.Column="1" Style="{StaticResource CaptionText}" Margin="12,0,0,0" HorizontalAlignment="Left" VerticalAlignment="Center"
+                                                       Text="{Binding IsChecked, ElementName=ShowInfoNotificationsOverrideBox, Converter={StaticResource NullableBoolToOverrideStateConverter}}"/>
 
-                                <TextBlock Text="SAFETY &amp; NOTIFICATIONS" Style="{StaticResource SubSectionLabel}"/>
-                                <Grid Margin="0,0,0,10">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="90"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="Push safety minimum (%)" VerticalAlignment="Center"/>
-                                    <TextBox Grid.Column="1" x:Name="PushSafetyMinimumPercentOverrideBox" controls:TextBoxHelper.Placeholder="inherit"/>
-                                </Grid>
-                                <CheckBox x:Name="ShowInfoNotificationsOverrideBox" IsThreeState="True" Content="Show notifications for successful syncs (unset = inherit)" Margin="0,0,0,10"/>
-                                <CheckBox x:Name="ShowErrorNotificationsOverrideBox" IsThreeState="True" Content="Show notifications for sync errors (unset = inherit)" Margin="0,0,0,10"/>
-                                <CheckBox x:Name="BackupConflictLosersOverrideBox" IsThreeState="True" Content="Back up the losing side of a merge conflict (unset = inherit)"/>
+                                            <CheckBox Grid.Row="2" Grid.Column="0" x:Name="ShowErrorNotificationsOverrideBox" IsThreeState="True" Content="Show notifications for sync errors"/>
+                                            <TextBlock Grid.Row="2" Grid.Column="1" Style="{StaticResource CaptionText}" Margin="12,0,0,0" HorizontalAlignment="Left" VerticalAlignment="Center"
+                                                       Text="{Binding IsChecked, ElementName=ShowErrorNotificationsOverrideBox, Converter={StaticResource NullableBoolToOverrideStateConverter}}"/>
 
-                                <Border Height="1" Background="{StaticResource Brush.Divider}" Margin="0,14,0,14"/>
+                                            <CheckBox Grid.Row="3" Grid.Column="0" x:Name="BackupConflictLosersOverrideBox" IsThreeState="True" Content="Back up the losing side of a merge conflict"/>
+                                            <TextBlock Grid.Row="3" Grid.Column="1" Style="{StaticResource CaptionText}" Margin="12,0,0,0" HorizontalAlignment="Left" VerticalAlignment="Center"
+                                                       Text="{Binding IsChecked, ElementName=BackupConflictLosersOverrideBox, Converter={StaticResource NullableBoolToOverrideStateConverter}}"/>
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
 
-                                <TextBlock Text="TESTING" Style="{StaticResource SubSectionLabel}"/>
-                                <CheckBox x:Name="DryRunBox" Content="Dry run - rehearse this job without writing to master or pushing to devices"/>
+                                <Border Style="{StaticResource NestedSection}" Margin="0">
+                                    <StackPanel>
+                                        <TextBlock Text="TESTING" Style="{StaticResource SubSectionLabel}"/>
+                                        <CheckBox x:Name="DryRunBox" Content="Dry run - rehearse this job without writing to master or pushing to devices"/>
+                                    </StackPanel>
+                                </Border>
                             </StackPanel>
                         </Expander>
                     </Border>
-
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,4,0,0">
-                        <Button Content="Cancel" Width="90" Margin="0,0,8,0" Click="Cancel_Click" IsCancel="True"/>
-                        <Button Content="Save" Width="90" Style="{StaticResource PrimaryButton}" Click="Save_Click" IsDefault="True"/>
-                    </StackPanel>
                 </StackPanel>
             </ScrollViewer>
+
+            <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="20,12,20,20">
+                <Button Content="Cancel" Width="90" Margin="0,0,8,0" Click="Cancel_Click" IsCancel="True"/>
+                <Button Content="Save" Width="90" Style="{StaticResource PrimaryButton}" Click="Save_Click" IsDefault="True"/>
+            </StackPanel>
         </Grid>
     </Border>
 </Window>

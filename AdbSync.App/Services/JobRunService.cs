@@ -94,7 +94,7 @@ public sealed class JobRunService(AppConfigService configService, SyncJobRunner 
             if (!job.Enabled)
                 continue;
 
-            var due = ScheduleCalculator.NextDueUtc(job.Schedule, now);
+            var due = ScheduleCalculator.NextDueUtc(job.Schedule, now, config.Settings.RunMissedSchedules);
             if (due is not null && due <= now)
                 await RunJobAsync(i, ct: ct);
         }

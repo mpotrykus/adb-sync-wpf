@@ -5,7 +5,7 @@
         xmlns:interop="clr-namespace:AdbSync.App.Interop"
         xmlns:controls="clr-namespace:AdbSync.App.Controls"
         xmlns:conv="clr-namespace:AdbSync.App.Converters"
-        interop:AcrylicEffect.Enabled="True"
+        interop:AcrylicEffect.Enabled="True" interop:WindowHeightLimit.Enabled="True"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         Title="Run History" Icon="/Assets/app.ico" Height="820" Width="1080" MinHeight="660" MinWidth="820" WindowStartupLocation="CenterOwner">
     <shell:WindowChrome.WindowChrome>
