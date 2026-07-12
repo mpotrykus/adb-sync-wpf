@@ -225,50 +225,17 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <Border x:Name="Chrome" CornerRadius="6" BorderThickness="1" SnapsToDevicePixels="True">
-                        <Border.Background>
-                            <SolidColorBrush x:Name="Fill" Color="#14FFFFFF"/>
-                        </Border.Background>
-                        <Border.BorderBrush>
-                            <SolidColorBrush x:Name="Stroke" Color="#26FFFFFF"/>
-                        </Border.BorderBrush>
+                    <Border x:Name="Chrome" Background="#14FFFFFF" BorderBrush="#26FFFFFF" CornerRadius="6" BorderThickness="1" SnapsToDevicePixels="True">
                         <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
                                           Margin="{TemplateBinding Padding}" RecognizesAccessKey="True"/>
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Trigger.EnterActions>
-                                <BeginStoryboard>
-                                    <Storyboard>
-                                        <ColorAnimation Storyboard.TargetName="Fill" Storyboard.TargetProperty="Color" To="#26FFFFFF" Duration="0:0:0.12"/>
-                                        <ColorAnimation Storyboard.TargetName="Stroke" Storyboard.TargetProperty="Color" To="#40FFFFFF" Duration="0:0:0.12"/>
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </Trigger.EnterActions>
-                            <Trigger.ExitActions>
-                                <BeginStoryboard>
-                                    <Storyboard>
-                                        <ColorAnimation Storyboard.TargetName="Fill" Storyboard.TargetProperty="Color" To="#14FFFFFF" Duration="0:0:0.16"/>
-                                        <ColorAnimation Storyboard.TargetName="Stroke" Storyboard.TargetProperty="Color" To="#26FFFFFF" Duration="0:0:0.16"/>
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </Trigger.ExitActions>
+                            <Setter TargetName="Chrome" Property="Background" Value="#26FFFFFF"/>
+                            <Setter TargetName="Chrome" Property="BorderBrush" Value="#40FFFFFF"/>
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
-                            <Trigger.EnterActions>
-                                <BeginStoryboard>
-                                    <Storyboard>
-                                        <ColorAnimation Storyboard.TargetName="Fill" Storyboard.TargetProperty="Color" To="#33FFFFFF" Duration="0:0:0.08"/>
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </Trigger.EnterActions>
-                            <Trigger.ExitActions>
-                                <BeginStoryboard>
-                                    <Storyboard>
-                                        <ColorAnimation Storyboard.TargetName="Fill" Storyboard.TargetProperty="Color" To="#26FFFFFF" Duration="0:0:0.08"/>
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </Trigger.ExitActions>
+                            <Setter TargetName="Chrome" Property="Background" Value="#33FFFFFF"/>
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Foreground" Value="{StaticResource Brush.Disabled.Foreground}"/>
@@ -296,54 +263,38 @@
                     <Border x:Name="Chrome" CornerRadius="6" SnapsToDevicePixels="True">
                         <Border.Background>
                             <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                <GradientStop x:Name="Stop0" Color="#7C5CFF" Offset="0"/>
-                                <GradientStop x:Name="Stop1" Color="#4C6FFF" Offset="1"/>
+                                <GradientStop Color="#7C5CFF" Offset="0"/>
+                                <GradientStop Color="#4C6FFF" Offset="1"/>
                             </LinearGradientBrush>
                         </Border.Background>
-                        <Border.Effect>
-                            <DropShadowEffect x:Name="Glow" BlurRadius="16" ShadowDepth="0" Opacity="0.0" Color="#6C63FF"/>
-                        </Border.Effect>
                         <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
                                           Margin="{TemplateBinding Padding}" RecognizesAccessKey="True"/>
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Trigger.EnterActions>
-                                <BeginStoryboard>
-                                    <Storyboard>
-                                        <ColorAnimation Storyboard.TargetName="Stop0" Storyboard.TargetProperty="Color" To="#8E72FF" Duration="0:0:0.14"/>
-                                        <ColorAnimation Storyboard.TargetName="Stop1" Storyboard.TargetProperty="Color" To="#5C7DFF" Duration="0:0:0.14"/>
-                                        <DoubleAnimation Storyboard.TargetName="Glow" Storyboard.TargetProperty="Opacity" To="0.55" Duration="0:0:0.14"/>
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </Trigger.EnterActions>
-                            <Trigger.ExitActions>
-                                <BeginStoryboard>
-                                    <Storyboard>
-                                        <ColorAnimation Storyboard.TargetName="Stop0" Storyboard.TargetProperty="Color" To="#7C5CFF" Duration="0:0:0.18"/>
-                                        <ColorAnimation Storyboard.TargetName="Stop1" Storyboard.TargetProperty="Color" To="#4C6FFF" Duration="0:0:0.18"/>
-                                        <DoubleAnimation Storyboard.TargetName="Glow" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.18"/>
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </Trigger.ExitActions>
+                            <Setter TargetName="Chrome" Property="Background">
+                                <Setter.Value>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                        <GradientStop Color="#8E72FF" Offset="0"/>
+                                        <GradientStop Color="#5C7DFF" Offset="1"/>
+                                    </LinearGradientBrush>
+                                </Setter.Value>
+                            </Setter>
+                            <Setter TargetName="Chrome" Property="Effect">
+                                <Setter.Value>
+                                    <DropShadowEffect BlurRadius="16" ShadowDepth="0" Opacity="0.55" Color="#6C63FF"/>
+                                </Setter.Value>
+                            </Setter>
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
-                            <Trigger.EnterActions>
-                                <BeginStoryboard>
-                                    <Storyboard>
-                                        <ColorAnimation Storyboard.TargetName="Stop0" Storyboard.TargetProperty="Color" To="#6647E0" Duration="0:0:0.08"/>
-                                        <ColorAnimation Storyboard.TargetName="Stop1" Storyboard.TargetProperty="Color" To="#3D59D6" Duration="0:0:0.08"/>
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </Trigger.EnterActions>
-                            <Trigger.ExitActions>
-                                <BeginStoryboard>
-                                    <Storyboard>
-                                        <ColorAnimation Storyboard.TargetName="Stop0" Storyboard.TargetProperty="Color" To="#8E72FF" Duration="0:0:0.08"/>
-                                        <ColorAnimation Storyboard.TargetName="Stop1" Storyboard.TargetProperty="Color" To="#5C7DFF" Duration="0:0:0.08"/>
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </Trigger.ExitActions>
+                            <Setter TargetName="Chrome" Property="Background">
+                                <Setter.Value>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                        <GradientStop Color="#6647E0" Offset="0"/>
+                                        <GradientStop Color="#3D59D6" Offset="1"/>
+                                    </LinearGradientBrush>
+                                </Setter.Value>
+                            </Setter>
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter TargetName="Chrome" Property="Opacity" Value="0.45"/>
@@ -359,50 +310,17 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <Border x:Name="Chrome" CornerRadius="6" BorderThickness="1" SnapsToDevicePixels="True">
-                        <Border.Background>
-                            <SolidColorBrush x:Name="Fill" Color="#33FF6B6B"/>
-                        </Border.Background>
-                        <Border.BorderBrush>
-                            <SolidColorBrush x:Name="Stroke" Color="#66FF6B6B"/>
-                        </Border.BorderBrush>
+                    <Border x:Name="Chrome" Background="#33FF6B6B" BorderBrush="#66FF6B6B" CornerRadius="6" BorderThickness="1" SnapsToDevicePixels="True">
                         <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
                                           Margin="{TemplateBinding Padding}" RecognizesAccessKey="True"/>
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Trigger.EnterActions>
-                                <BeginStoryboard>
-                                    <Storyboard>
-                                        <ColorAnimation Storyboard.TargetName="Fill" Storyboard.TargetProperty="Color" To="#59FF6B6B" Duration="0:0:0.12"/>
-                                        <ColorAnimation Storyboard.TargetName="Stroke" Storyboard.TargetProperty="Color" To="#FF6B6B" Duration="0:0:0.12"/>
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </Trigger.EnterActions>
-                            <Trigger.ExitActions>
-                                <BeginStoryboard>
-                                    <Storyboard>
-                                        <ColorAnimation Storyboard.TargetName="Fill" Storyboard.TargetProperty="Color" To="#33FF6B6B" Duration="0:0:0.16"/>
-                                        <ColorAnimation Storyboard.TargetName="Stroke" Storyboard.TargetProperty="Color" To="#66FF6B6B" Duration="0:0:0.16"/>
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </Trigger.ExitActions>
+                            <Setter TargetName="Chrome" Property="Background" Value="#59FF6B6B"/>
+                            <Setter TargetName="Chrome" Property="BorderBrush" Value="#FF6B6B"/>
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
-                            <Trigger.EnterActions>
-                                <BeginStoryboard>
-                                    <Storyboard>
-                                        <ColorAnimation Storyboard.TargetName="Fill" Storyboard.TargetProperty="Color" To="#80FF6B6B" Duration="0:0:0.08"/>
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </Trigger.EnterActions>
-                            <Trigger.ExitActions>
-                                <BeginStoryboard>
-                                    <Storyboard>
-                                        <ColorAnimation Storyboard.TargetName="Fill" Storyboard.TargetProperty="Color" To="#59FF6B6B" Duration="0:0:0.08"/>
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </Trigger.ExitActions>
+                            <Setter TargetName="Chrome" Property="Background" Value="#80FF6B6B"/>
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Foreground" Value="{StaticResource Brush.Disabled.Foreground}"/>
@@ -1160,51 +1078,18 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <Border x:Name="Chrome" CornerRadius="5" BorderThickness="1" SnapsToDevicePixels="True">
-                        <Border.Background>
-                            <SolidColorBrush x:Name="Fill" Color="#14FFFFFF"/>
-                        </Border.Background>
-                        <Border.BorderBrush>
-                            <SolidColorBrush x:Name="Stroke" Color="#20FFFFFF"/>
-                        </Border.BorderBrush>
+                    <Border x:Name="Chrome" Background="#14FFFFFF" BorderBrush="#20FFFFFF" CornerRadius="5" BorderThickness="1" SnapsToDevicePixels="True">
                         <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
                                           Margin="{TemplateBinding Padding}" RecognizesAccessKey="True"/>
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Trigger.EnterActions>
-                                <BeginStoryboard>
-                                    <Storyboard>
-                                        <ColorAnimation Storyboard.TargetName="Fill" Storyboard.TargetProperty="Color" To="#26FFFFFF" Duration="0:0:0.1"/>
-                                        <ColorAnimation Storyboard.TargetName="Stroke" Storyboard.TargetProperty="Color" To="#40FFFFFF" Duration="0:0:0.1"/>
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </Trigger.EnterActions>
-                            <Trigger.ExitActions>
-                                <BeginStoryboard>
-                                    <Storyboard>
-                                        <ColorAnimation Storyboard.TargetName="Fill" Storyboard.TargetProperty="Color" To="#14FFFFFF" Duration="0:0:0.15"/>
-                                        <ColorAnimation Storyboard.TargetName="Stroke" Storyboard.TargetProperty="Color" To="#20FFFFFF" Duration="0:0:0.15"/>
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </Trigger.ExitActions>
+                            <Setter TargetName="Chrome" Property="Background" Value="#26FFFFFF"/>
+                            <Setter TargetName="Chrome" Property="BorderBrush" Value="#40FFFFFF"/>
                             <Setter Property="Foreground" Value="{StaticResource Brush.Text.Primary}"/>
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
-                            <Trigger.EnterActions>
-                                <BeginStoryboard>
-                                    <Storyboard>
-                                        <ColorAnimation Storyboard.TargetName="Fill" Storyboard.TargetProperty="Color" To="#33FFFFFF" Duration="0:0:0.05"/>
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </Trigger.EnterActions>
-                            <Trigger.ExitActions>
-                                <BeginStoryboard>
-                                    <Storyboard>
-                                        <ColorAnimation Storyboard.TargetName="Fill" Storyboard.TargetProperty="Color" To="#26FFFFFF" Duration="0:0:0.05"/>
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </Trigger.ExitActions>
+                            <Setter TargetName="Chrome" Property="Background" Value="#33FFFFFF"/>
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Foreground" Value="{StaticResource Brush.Disabled.Foreground}"/>
@@ -1220,51 +1105,45 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <Border x:Name="Chrome" CornerRadius="5" BorderThickness="1" SnapsToDevicePixels="True">
-                        <Border.Background>
-                            <SolidColorBrush x:Name="Fill" Color="#1FFF6B6B"/>
-                        </Border.Background>
-                        <Border.BorderBrush>
-                            <SolidColorBrush x:Name="Stroke" Color="#33FF6B6B"/>
-                        </Border.BorderBrush>
+                    <Border x:Name="Chrome" Background="#1FFF6B6B" BorderBrush="#33FF6B6B" CornerRadius="5" BorderThickness="1" SnapsToDevicePixels="True">
                         <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
                                           Margin="{TemplateBinding Padding}" RecognizesAccessKey="True"/>
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Trigger.EnterActions>
-                                <BeginStoryboard>
-                                    <Storyboard>
-                                        <ColorAnimation Storyboard.TargetName="Fill" Storyboard.TargetProperty="Color" To="#40FF6B6B" Duration="0:0:0.1"/>
-                                        <ColorAnimation Storyboard.TargetName="Stroke" Storyboard.TargetProperty="Color" To="#80FF6B6B" Duration="0:0:0.1"/>
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </Trigger.EnterActions>
-                            <Trigger.ExitActions>
-                                <BeginStoryboard>
-                                    <Storyboard>
-                                        <ColorAnimation Storyboard.TargetName="Fill" Storyboard.TargetProperty="Color" To="#1FFF6B6B" Duration="0:0:0.15"/>
-                                        <ColorAnimation Storyboard.TargetName="Stroke" Storyboard.TargetProperty="Color" To="#33FF6B6B" Duration="0:0:0.15"/>
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </Trigger.ExitActions>
+                            <Setter TargetName="Chrome" Property="Background" Value="#40FF6B6B"/>
+                            <Setter TargetName="Chrome" Property="BorderBrush" Value="#80FF6B6B"/>
                             <Setter Property="Foreground" Value="{StaticResource Brush.Danger}"/>
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
-                            <Trigger.EnterActions>
-                                <BeginStoryboard>
-                                    <Storyboard>
-                                        <ColorAnimation Storyboard.TargetName="Fill" Storyboard.TargetProperty="Color" To="#59FF6B6B" Duration="0:0:0.05"/>
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </Trigger.EnterActions>
-                            <Trigger.ExitActions>
-                                <BeginStoryboard>
-                                    <Storyboard>
-                                        <ColorAnimation Storyboard.TargetName="Fill" Storyboard.TargetProperty="Color" To="#40FF6B6B" Duration="0:0:0.05"/>
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </Trigger.ExitActions>
+                            <Setter TargetName="Chrome" Property="Background" Value="#59FF6B6B"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Foreground" Value="{StaticResource Brush.Disabled.Foreground}"/>
+                            <Setter TargetName="Chrome" Property="Opacity" Value="0.5"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="RowSuccessButton" TargetType="Button" BasedOn="{StaticResource RowButton}">
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Chrome" Background="#1F5BD98A" BorderBrush="#335BD98A" CornerRadius="5" BorderThickness="1" SnapsToDevicePixels="True">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                          Margin="{TemplateBinding Padding}" RecognizesAccessKey="True"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Chrome" Property="Background" Value="#405BD98A"/>
+                            <Setter TargetName="Chrome" Property="BorderBrush" Value="#805BD98A"/>
+                            <Setter Property="Foreground" Value="{StaticResource Brush.Success}"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Chrome" Property="Background" Value="#595BD98A"/>
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Foreground" Value="{StaticResource Brush.Disabled.Foreground}"/>

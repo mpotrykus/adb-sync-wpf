@@ -19,9 +19,6 @@ public partial class DeviceEditorWindow : Window
     public DeviceEditorWindow(AppConfig config)
     {
         InitializeComponent();
-        // See DashboardWindow's Activated handler for why this is needed: the Pair button's owned
-        // dialog leaves this window's IsMouseOver stuck once it closes.
-        Activated += (_, _) => System.Windows.Input.Mouse.Synchronize();
         _config = config;
         RefreshList();
     }
