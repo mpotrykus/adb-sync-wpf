@@ -29,6 +29,9 @@ public partial class JobEditorWindow : Window
         IRemoteFileSystemFactory remoteFileSystemFactory)
     {
         InitializeComponent();
+        // See DashboardWindow's Activated handler for why this is needed: a button-opened owned
+        // dialog (Browse.../Save confirm) leaves this window's IsMouseOver stuck once it closes.
+        Activated += (_, _) => System.Windows.Input.Mouse.Synchronize();
         _originalJob = job;
         _devices = config.Devices;
         _deviceResolver = deviceResolver;

@@ -59,7 +59,7 @@
         <Setter Property="Foreground" Value="{StaticResource Brush.Text.Secondary}"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="FontSize" Value="11"/>
-        <Setter Property="Margin" Value="0,0,0,8"/>
+        <Setter Property="Margin" Value="0,0,0,10"/>
     </Style>
 
     <Style x:Key="CardBorder" TargetType="Border">
@@ -81,8 +81,8 @@
     <Style x:Key="NestedSection" TargetType="Border">
         <Setter Property="Background" Value="#0AFFFFFF"/>
         <Setter Property="CornerRadius" Value="8"/>
-        <Setter Property="Padding" Value="14,12"/>
-        <Setter Property="Margin" Value="0,0,0,12"/>
+        <Setter Property="Padding" Value="16,14"/>
+        <Setter Property="Margin" Value="0,0,0,16"/>
     </Style>
 
     <!-- Thin accent bar overlaid on the left edge of an override field, shown only while the field
@@ -753,7 +753,7 @@
                                 </ControlTemplate>
                             </ToggleButton.Template>
                         </ToggleButton>
-                        <ContentPresenter x:Name="ExpandSite" ContentSource="Content" Margin="18,10,0,0" Visibility="Collapsed"/>
+                        <ContentPresenter x:Name="ExpandSite" ContentSource="Content" Margin="0,10,0,0" Visibility="Collapsed"/>
                     </StackPanel>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsExpanded" Value="True">

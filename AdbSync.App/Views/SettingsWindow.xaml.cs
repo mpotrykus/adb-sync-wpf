@@ -16,6 +16,9 @@ public partial class SettingsWindow : Window
     public SettingsWindow(AppConfig config)
     {
         InitializeComponent();
+        // See DashboardWindow's Activated handler for why this is needed: the Browse/confirm
+        // dialogs opened from this window leave it with a stuck IsMouseOver once they close.
+        Activated += (_, _) => System.Windows.Input.Mouse.Synchronize();
         _config = config;
 
         ProjectsDirectoryBox.Text = config.Settings.ProjectsDirectory;

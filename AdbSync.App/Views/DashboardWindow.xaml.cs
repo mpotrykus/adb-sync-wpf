@@ -62,6 +62,12 @@ public partial class DashboardWindow : Window
         Loaded += async (_, _) => await RefreshAsync();
         _configService.ConfigChanged += async (_, _) => await Dispatcher.InvokeAsync(RefreshAsync);
         PreviewKeyDown += (_, e) => { if (e.Key == System.Windows.Input.Key.F12) Application.Current.Shutdown(); };
+
+        // When an owned dialog opens directly over a button and steals input, this window stops
+        // receiving mouse messages entirely while covered, so WPF never learns the mouse left that
+        // button - IsMouseOver (and its hover-style Fill/Stroke) stays stuck true even after the
+        // dialog closes. Forcing a hit-test re-check on reactivation clears any stale hover state.
+        Activated += (_, _) => System.Windows.Input.Mouse.Synchronize();
     }
 
     private async Task RefreshAsync()

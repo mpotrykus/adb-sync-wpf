@@ -233,16 +233,16 @@
                                                            Visibility="{Binding Text, ElementName=ConflictRetentionDaysOverrideBox, Converter={StaticResource StringNotEmptyToVisibilityConverter}}"/>
                                             </Grid>
 
-                                            <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,10,0,0">
+                                            <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,12,0,0">
                                                 <Run Text="Checkpoint retention "/><Run Text="(days)" Style="{StaticResource DescriptorRun}"/>
                                             </TextBlock>
-                                            <Grid Grid.Row="1" Grid.Column="1" Margin="0,10,0,0">
+                                            <Grid Grid.Row="1" Grid.Column="1" Margin="0,12,0,0">
                                                 <TextBox x:Name="CheckpointRetentionDaysOverrideBox" controls:TextBoxHelper.Placeholder="inherit"/>
                                                 <Rectangle Style="{StaticResource OverrideIndicatorBar}"
                                                            Visibility="{Binding Text, ElementName=CheckpointRetentionDaysOverrideBox, Converter={StaticResource StringNotEmptyToVisibilityConverter}}"/>
                                             </Grid>
-                                            <TextBlock Grid.Row="1" Grid.Column="3" Text="Run history entries kept" VerticalAlignment="Center" Margin="0,10,0,0"/>
-                                            <Grid Grid.Row="1" Grid.Column="4" Margin="0,10,0,0">
+                                            <TextBlock Grid.Row="1" Grid.Column="3" Text="Run history entries kept" VerticalAlignment="Center" Margin="0,12,0,0"/>
+                                            <Grid Grid.Row="1" Grid.Column="4" Margin="0,12,0,0">
                                                 <TextBox x:Name="MaxRunHistoryEntriesOverrideBox" controls:TextBoxHelper.Placeholder="inherit"/>
                                                 <Rectangle Style="{StaticResource OverrideIndicatorBar}"
                                                            Visibility="{Binding Text, ElementName=MaxRunHistoryEntriesOverrideBox, Converter={StaticResource StringNotEmptyToVisibilityConverter}}"/>
@@ -282,10 +282,10 @@
                                                            Visibility="{Binding Text, ElementName=RetryMaxAttemptsOverrideBox, Converter={StaticResource StringNotEmptyToVisibilityConverter}}"/>
                                             </Grid>
 
-                                            <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,10,0,0">
+                                            <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,12,0,0">
                                                 <Run Text="Retry backoff "/><Run Text="(seconds)" Style="{StaticResource DescriptorRun}"/>
                                             </TextBlock>
-                                            <Grid Grid.Row="1" Grid.Column="1" Margin="0,10,0,0">
+                                            <Grid Grid.Row="1" Grid.Column="1" Margin="0,12,0,0">
                                                 <TextBox x:Name="RetryBackoffSecondsOverrideBox" controls:TextBoxHelper.Placeholder="inherit"/>
                                                 <Rectangle Style="{StaticResource OverrideIndicatorBar}"
                                                            Visibility="{Binding Text, ElementName=RetryBackoffSecondsOverrideBox, Converter={StaticResource StringNotEmptyToVisibilityConverter}}"/>
@@ -322,16 +322,16 @@
                                                            Visibility="{Binding Text, ElementName=PushSafetyMinimumPercentOverrideBox, Converter={StaticResource StringNotEmptyToVisibilityConverter}}"/>
                                             </Grid>
 
-                                            <CheckBox Grid.Row="1" Grid.Column="0" x:Name="ShowInfoNotificationsOverrideBox" IsThreeState="True" Content="Show notifications for successful syncs"/>
-                                            <TextBlock Grid.Row="1" Grid.Column="1" Style="{StaticResource CaptionText}" Margin="12,0,0,0" HorizontalAlignment="Left" VerticalAlignment="Center"
+                                            <CheckBox Grid.Row="1" Grid.Column="0" x:Name="ShowInfoNotificationsOverrideBox" IsThreeState="True" Content="Show notifications for successful syncs" Margin="0,12,0,0"/>
+                                            <TextBlock Grid.Row="1" Grid.Column="1" Style="{StaticResource CaptionText}" Margin="12,12,0,0" HorizontalAlignment="Left" VerticalAlignment="Center"
                                                        Text="{Binding IsChecked, ElementName=ShowInfoNotificationsOverrideBox, Converter={StaticResource NullableBoolToOverrideStateConverter}}"/>
 
-                                            <CheckBox Grid.Row="2" Grid.Column="0" x:Name="ShowErrorNotificationsOverrideBox" IsThreeState="True" Content="Show notifications for sync errors"/>
-                                            <TextBlock Grid.Row="2" Grid.Column="1" Style="{StaticResource CaptionText}" Margin="12,0,0,0" HorizontalAlignment="Left" VerticalAlignment="Center"
+                                            <CheckBox Grid.Row="2" Grid.Column="0" x:Name="ShowErrorNotificationsOverrideBox" IsThreeState="True" Content="Show notifications for sync errors" Margin="0,12,0,0"/>
+                                            <TextBlock Grid.Row="2" Grid.Column="1" Style="{StaticResource CaptionText}" Margin="12,12,0,0" HorizontalAlignment="Left" VerticalAlignment="Center"
                                                        Text="{Binding IsChecked, ElementName=ShowErrorNotificationsOverrideBox, Converter={StaticResource NullableBoolToOverrideStateConverter}}"/>
 
-                                            <CheckBox Grid.Row="3" Grid.Column="0" x:Name="BackupConflictLosersOverrideBox" IsThreeState="True" Content="Back up the losing side of a merge conflict"/>
-                                            <TextBlock Grid.Row="3" Grid.Column="1" Style="{StaticResource CaptionText}" Margin="12,0,0,0" HorizontalAlignment="Left" VerticalAlignment="Center"
+                                            <CheckBox Grid.Row="3" Grid.Column="0" x:Name="BackupConflictLosersOverrideBox" IsThreeState="True" Content="Back up the losing side of a merge conflict" Margin="0,12,0,0"/>
+                                            <TextBlock Grid.Row="3" Grid.Column="1" Style="{StaticResource CaptionText}" Margin="12,12,0,0" HorizontalAlignment="Left" VerticalAlignment="Center"
                                                        Text="{Binding IsChecked, ElementName=BackupConflictLosersOverrideBox, Converter={StaticResource NullableBoolToOverrideStateConverter}}"/>
                                         </Grid>
                                     </StackPanel>
@@ -340,7 +340,10 @@
                                 <Border Style="{StaticResource NestedSection}" Margin="0">
                                     <StackPanel>
                                         <TextBlock Text="TESTING" Style="{StaticResource SubSectionLabel}"/>
-                                        <CheckBox x:Name="DryRunBox" Content="Dry run - rehearse this job without writing to master or pushing to devices"/>
+                                        <StackPanel Orientation="Horizontal">
+                                            <CheckBox x:Name="DryRunBox" Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"/>
+                                            <TextBlock Text="Dry run - rehearse this job without writing to master or pushing to devices" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                                        </StackPanel>
                                     </StackPanel>
                                 </Border>
                             </StackPanel>
