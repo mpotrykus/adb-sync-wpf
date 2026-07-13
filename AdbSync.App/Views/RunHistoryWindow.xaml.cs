@@ -140,6 +140,4 @@ public partial class RunHistoryWindow : Window
 
         LogTextBox.Text = await _historyStore.GetRunLogAsync(_jobName, row.RunId) ?? "(no log captured for this run)";
     }
-
-    private void Close_Click(object sender, RoutedEventArgs e) => Close();
 }

@@ -17,7 +17,7 @@
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
-            <controls:TitleBar Grid.Row="0"/>
+            <controls:TitleBar Grid.Row="0" ShowMinMax="False" ShowClose="False"/>
 
             <Grid Grid.Row="1" Margin="20">
                 <Grid.ColumnDefinitions>
@@ -30,7 +30,38 @@
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
-                <ListBox x:Name="DeviceList" Grid.Row="0" Grid.Column="0" SelectionChanged="DeviceList_SelectionChanged"/>
+                <ListBox x:Name="DeviceList" Grid.Row="0" Grid.Column="0" SelectionChanged="DeviceList_SelectionChanged">
+                    <ListBox.Resources>
+                        <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
+                    </ListBox.Resources>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal" Margin="2,3">
+                                <Ellipse Width="9" Height="9" StrokeThickness="1.5" VerticalAlignment="Center" Margin="0,0,8,0"
+                                         ToolTip="Disconnected">
+                                    <Ellipse.Style>
+                                        <Style TargetType="Ellipse">
+                                            <Setter Property="Fill" Value="Transparent"/>
+                                            <Setter Property="Stroke" Value="#888888"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsConnected}" Value="True">
+                                                    <Setter Property="Fill" Value="#4CAF50"/>
+                                                    <Setter Property="Stroke" Value="#4CAF50"/>
+                                                    <Setter Property="ToolTip" Value="Connected"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Ellipse.Style>
+                                </Ellipse>
+                                <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
+                                <TextBlock Text="&#xE71B;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="11"
+                                           Foreground="#888888" Margin="6,0,0,0" VerticalAlignment="Center"
+                                           Visibility="{Binding IsPaired, Converter={StaticResource BoolToVisibility}}"
+                                           ToolTip="Paired (connected at least once over WiFi)"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
 
                 <Border Grid.Row="0" Grid.Column="2" Style="{StaticResource CardBorder}" Margin="0">
                     <StackPanel>

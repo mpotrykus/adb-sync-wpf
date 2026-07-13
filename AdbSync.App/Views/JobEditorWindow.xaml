@@ -24,7 +24,7 @@
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <controls:TitleBar Grid.Row="0" ShowMinMax="False"/>
+            <controls:TitleBar Grid.Row="0" ShowMinMax="False" ShowClose="False"/>
 
             <ScrollViewer Grid.Row="1" Margin="20,20,20,0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <StackPanel>

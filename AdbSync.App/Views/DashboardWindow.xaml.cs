@@ -30,6 +30,13 @@ public partial class DashboardWindow : Window
     private readonly IDevicePackageLister _packageLister;
     private readonly DispatcherTimer _relativeTimeTimer;
 
+    // Keyed by job name; the "Add Job" editor uses this sentinel since it has no job name yet.
+    private const string NewJobKey = "\0new-job";
+    private readonly Dictionary<string, JobEditorWindow> _openJobEditors = new();
+    private readonly Dictionary<string, RunHistoryWindow> _openRunHistoryWindows = new();
+    private DeviceEditorWindow? _deviceEditorWindow;
+    private SettingsWindow? _settingsWindow;
+
     public DashboardWindow(
         AppConfigService configService, JobRunService jobRunService, DashboardViewModel viewModel, IRunHistoryStore historyStore,
         IAdbDeviceResolver deviceResolver, IDeviceChangeWatcher changeWatcher, IRemoteFileSystemFactory remoteFileSystemFactory,
@@ -126,10 +133,18 @@ public partial class DashboardWindow : Window
 
     private async void AddJob_Click(object sender, RoutedEventArgs e)
     {
+        if (_openJobEditors.TryGetValue(NewJobKey, out var existing))
+        {
+            existing.Activate();
+            return;
+        }
+
         var config = await _configService.GetAsync();
         var editor = new JobEditorWindow(config, job: null, _deviceResolver, _changeWatcher, _remoteFileSystemFactory, _packageLister) { Owner = this };
+        _openJobEditors[NewJobKey] = editor;
         editor.Closed += async (_, _) =>
         {
+            _openJobEditors.Remove(NewJobKey);
             if (editor.Result is null)
                 return;
             config.Jobs.Add(editor.Result);
@@ -137,6 +152,7 @@ public partial class DashboardWindow : Window
             await RefreshAsync();
         };
         editor.Show();
+        editor.Activate();
     }
 
     private async void EditJob_Click(object sender, RoutedEventArgs e)
@@ -144,14 +160,22 @@ public partial class DashboardWindow : Window
         if (sender is not FrameworkElement { DataContext: JobStatusViewModel vm })
             return;
 
+        if (_openJobEditors.TryGetValue(vm.Name, out var existing))
+        {
+            existing.Activate();
+            return;
+        }
+
         var config = await _configService.GetAsync();
         var job = config.Jobs.FirstOrDefault(j => j.Name == vm.Name);
         if (job is null)
             return;
 
         var editor = new JobEditorWindow(config, job, _deviceResolver, _changeWatcher, _remoteFileSystemFactory, _packageLister) { Owner = this };
+        _openJobEditors[vm.Name] = editor;
         editor.Closed += async (_, _) =>
         {
+            _openJobEditors.Remove(vm.Name);
             if (editor.Result is null)
                 return;
             var index = config.Jobs.IndexOf(job);
@@ -162,6 +186,7 @@ public partial class DashboardWindow : Window
             await RefreshAsync();
         };
         editor.Show();
+        editor.Activate();
     }
 
     private async void RemoveJob_Click(object sender, RoutedEventArgs e)
@@ -325,27 +350,57 @@ public partial class DashboardWindow : Window
         if (sender is not FrameworkElement { DataContext: JobStatusViewModel vm })
             return;
 
-        new RunHistoryWindow(_historyStore, vm.Name) { Owner = this }.Show();
+        if (_openRunHistoryWindows.TryGetValue(vm.Name, out var existing))
+        {
+            existing.Activate();
+            return;
+        }
+
+        var window = new RunHistoryWindow(_historyStore, vm.Name) { Owner = this };
+        _openRunHistoryWindows[vm.Name] = window;
+        window.Closed += (_, _) => _openRunHistoryWindows.Remove(vm.Name);
+        window.Show();
+        window.Activate();
     }
 
     private async void ManageDevices_Click(object sender, RoutedEventArgs e)
     {
+        if (_deviceEditorWindow is not null)
+        {
+            _deviceEditorWindow.Activate();
+            return;
+        }
+
         var config = await _configService.GetAsync();
         var window = new DeviceEditorWindow(config) { Owner = this };
+        _deviceEditorWindow = window;
         window.Closed += async (_, _) =>
         {
+            _deviceEditorWindow = null;
             if (window.Changed)
                 await _configService.SaveAsync();
         };
         window.Show();
+        window.Activate();
     }
 
-    private async void Settings_Click(object sender, RoutedEventArgs e)
+    private async void Settings_Click(object sender, RoutedEventArgs e) => await OpenSettingsAsync();
+
+    // Public so other entry points (e.g. the tray icon menu) reuse this window instead of spawning their own.
+    public async Task OpenSettingsAsync()
     {
+        if (_settingsWindow is not null)
+        {
+            _settingsWindow.Activate();
+            return;
+        }
+
         var config = await _configService.GetAsync();
         var window = new SettingsWindow(config) { Owner = this };
+        _settingsWindow = window;
         window.Closed += async (_, _) =>
         {
+            _settingsWindow = null;
             if (window.Saved)
             {
                 await _configService.SaveAsync();
@@ -353,5 +408,6 @@ public partial class DashboardWindow : Window
             }
         };
         window.Show();
+        window.Activate();
     }
 }

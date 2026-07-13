@@ -14,6 +14,15 @@ public partial class TitleBar : UserControl
         set => SetValue(ShowMinMaxProperty, value);
     }
 
+    public static readonly DependencyProperty ShowCloseProperty = DependencyProperty.Register(
+        nameof(ShowClose), typeof(bool), typeof(TitleBar), new PropertyMetadata(true, OnShowCloseChanged));
+
+    public bool ShowClose
+    {
+        get => (bool)GetValue(ShowCloseProperty);
+        set => SetValue(ShowCloseProperty, value);
+    }
+
     public TitleBar()
     {
         InitializeComponent();
@@ -25,6 +34,12 @@ public partial class TitleBar : UserControl
         var visibility = (bool)e.NewValue ? Visibility.Visible : Visibility.Collapsed;
         bar.MinimizeButton.Visibility = visibility;
         bar.MaximizeButton.Visibility = visibility;
+    }
+
+    private static void OnShowCloseChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        var bar = (TitleBar)d;
+        bar.CloseButton.Visibility = (bool)e.NewValue ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void Minimize_Click(object sender, RoutedEventArgs e) => Window.GetWindow(this)!.WindowState = WindowState.Minimized;

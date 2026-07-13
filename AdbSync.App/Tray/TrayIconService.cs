@@ -141,14 +141,8 @@ public sealed class TrayIconService(
         menu.Items.Add(MakeItem("Open Logs Folder", (_, _) => OpenFolder(paths.LogsDir)));
         menu.Items.Add(MakeItem("Settings...", async (_, _) =>
         {
-            var config = await configService.GetAsync();
-            var window = new SettingsWindow(config) { Owner = _dashboardWindow };
-            window.Closed += async (_, _) =>
-            {
-                if (window.Saved)
-                    await configService.SaveAsync();
-            };
-            window.Show();
+            _dashboardWindow ??= services.GetRequiredService<DashboardWindow>();
+            await _dashboardWindow.OpenSettingsAsync();
         }));
         menu.Items.Add(new Separator());
         menu.Items.Add(MakeItem("Exit", async (_, _) =>
