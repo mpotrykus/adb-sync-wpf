@@ -161,6 +161,7 @@ public partial class App : Application
         services.AddSingleton<IAdbDeviceResolver, AdbDeviceResolver>();
         services.AddSingleton<IDeviceChangeWatcher, DeviceChangeWatcher>();
         services.AddSingleton<IAppRunningGuard, AppRunningGuard>();
+        services.AddSingleton<IDevicePackageLister, AdbDevicePackageLister>();
         services.AddSingleton<ISyncLockManager, SyncLockManager>();
         services.AddSingleton<IAdbProcessRunner>(_ => new AdbProcessRunner());
         services.AddSingleton<IMirrorDiffer, MirrorDiffer>();

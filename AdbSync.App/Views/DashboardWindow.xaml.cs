@@ -27,11 +27,13 @@ public partial class DashboardWindow : Window
     private readonly IAdbDeviceResolver _deviceResolver;
     private readonly IDeviceChangeWatcher _changeWatcher;
     private readonly IRemoteFileSystemFactory _remoteFileSystemFactory;
+    private readonly IDevicePackageLister _packageLister;
     private readonly DispatcherTimer _relativeTimeTimer;
 
     public DashboardWindow(
         AppConfigService configService, JobRunService jobRunService, DashboardViewModel viewModel, IRunHistoryStore historyStore,
-        IAdbDeviceResolver deviceResolver, IDeviceChangeWatcher changeWatcher, IRemoteFileSystemFactory remoteFileSystemFactory)
+        IAdbDeviceResolver deviceResolver, IDeviceChangeWatcher changeWatcher, IRemoteFileSystemFactory remoteFileSystemFactory,
+        IDevicePackageLister packageLister)
     {
         InitializeComponent();
         _configService = configService;
@@ -41,6 +43,7 @@ public partial class DashboardWindow : Window
         _deviceResolver = deviceResolver;
         _changeWatcher = changeWatcher;
         _remoteFileSystemFactory = remoteFileSystemFactory;
+        _packageLister = packageLister;
         DataContext = viewModel;
 
         // Only ticks while the window is visible - it's tray-resident and hidden (not closed) most of the time,
@@ -124,7 +127,7 @@ public partial class DashboardWindow : Window
     private async void AddJob_Click(object sender, RoutedEventArgs e)
     {
         var config = await _configService.GetAsync();
-        var editor = new JobEditorWindow(config, job: null, _deviceResolver, _changeWatcher, _remoteFileSystemFactory) { Owner = this };
+        var editor = new JobEditorWindow(config, job: null, _deviceResolver, _changeWatcher, _remoteFileSystemFactory, _packageLister) { Owner = this };
         editor.Closed += async (_, _) =>
         {
             if (editor.Result is null)
@@ -146,7 +149,7 @@ public partial class DashboardWindow : Window
         if (job is null)
             return;
 
-        var editor = new JobEditorWindow(config, job, _deviceResolver, _changeWatcher, _remoteFileSystemFactory) { Owner = this };
+        var editor = new JobEditorWindow(config, job, _deviceResolver, _changeWatcher, _remoteFileSystemFactory, _packageLister) { Owner = this };
         editor.Closed += async (_, _) =>
         {
             if (editor.Result is null)

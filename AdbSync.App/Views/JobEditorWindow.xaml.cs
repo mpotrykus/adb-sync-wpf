@@ -21,12 +21,13 @@ public partial class JobEditorWindow : Window
     private readonly IAdbDeviceResolver _deviceResolver;
     private readonly IDeviceChangeWatcher _changeWatcher;
     private readonly IRemoteFileSystemFactory _remoteFileSystemFactory;
+    private readonly IDevicePackageLister _packageLister;
 
     public SyncJobConfig? Result { get; private set; }
 
     public JobEditorWindow(
         AppConfig config, SyncJobConfig? job, IAdbDeviceResolver deviceResolver, IDeviceChangeWatcher changeWatcher,
-        IRemoteFileSystemFactory remoteFileSystemFactory)
+        IRemoteFileSystemFactory remoteFileSystemFactory, IDevicePackageLister packageLister)
     {
         InitializeComponent();
         _originalJob = job;
@@ -34,10 +35,11 @@ public partial class JobEditorWindow : Window
         _deviceResolver = deviceResolver;
         _changeWatcher = changeWatcher;
         _remoteFileSystemFactory = remoteFileSystemFactory;
+        _packageLister = packageLister;
 
         DevicePicker.ItemsSource = config.Devices.Select(d => d.Name).ToList();
         DeviceBindingsList.ItemsSource = _bindings;
-        _bindings.CollectionChanged += (_, _) => UpdateNoDevicesText();
+        _bindings.CollectionChanged += (_, _) => UpdateDeviceDependentUi();
 
         if (job is not null)
         {
@@ -99,7 +101,7 @@ public partial class JobEditorWindow : Window
             BackupConflictLosersOverrideBox.IsChecked = null;
         }
 
-        UpdateNoDevicesText();
+        UpdateDeviceDependentUi();
     }
 
     private void AddBinding_Click(object sender, RoutedEventArgs e)
@@ -168,8 +170,54 @@ public partial class JobEditorWindow : Window
             _bindings.Remove(row);
     }
 
-    private void UpdateNoDevicesText() =>
+    private void UpdateDeviceDependentUi()
+    {
         NoDevicesText.Visibility = _bindings.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        BrowseAppPackageButton.IsEnabled = _bindings.Count > 0;
+    }
+
+    private async void BrowseAppPackage_Click(object sender, RoutedEventArgs e)
+    {
+        var deviceNames = _bindings.Select(b => b.DeviceName).Distinct().ToList();
+        if (deviceNames.Count == 0)
+            return;
+
+        string deviceName;
+        if (deviceNames.Count == 1)
+        {
+            deviceName = deviceNames[0];
+        }
+        else
+        {
+            var picker = new SelectDeviceWindow(deviceNames) { Owner = this };
+            if (picker.ShowDialog() != true || picker.SelectedDeviceName is null)
+                return;
+            deviceName = picker.SelectedDeviceName;
+        }
+
+        var device = _devices.FirstOrDefault(d => d.Name == deviceName);
+        if (device is null)
+            return;
+
+        var button = (Button)sender;
+        button.IsEnabled = false;
+        try
+        {
+            var serial = await _deviceResolver.EnsureConnectedAsync(device);
+            var packages = await _packageLister.ListInstalledPackagesAsync(serial);
+            var browser = new PackageBrowserWindow(packages, deviceName) { Owner = this };
+            if (browser.ShowDialog() == true)
+                AppPackageBox.Text = browser.SelectedPackage;
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, $"Could not list packages - {ex.Message}", "AdbSync", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            button.IsEnabled = true;
+        }
+    }
 
     private void Save_Click(object sender, RoutedEventArgs e)
     {

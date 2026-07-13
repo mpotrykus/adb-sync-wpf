@@ -56,7 +56,14 @@
 
                                 <TextBlock Text="App package" Style="{StaticResource SectionLabel}"/>
                                 <TextBlock Style="{StaticResource CaptionText}" Text="Optional. The job is skipped while this app is running on any device."/>
-                                <TextBox x:Name="AppPackageBox" controls:TextBoxHelper.Placeholder="com.example.app"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox Grid.Column="0" x:Name="AppPackageBox" Margin="0,0,8,0" controls:TextBoxHelper.Placeholder="com.example.app"/>
+                                    <Button Grid.Column="1" x:Name="BrowseAppPackageButton" Content="Browse..." IsEnabled="False" Click="BrowseAppPackage_Click"/>
+                                </Grid>
                             </StackPanel>
                         </Border>
 
