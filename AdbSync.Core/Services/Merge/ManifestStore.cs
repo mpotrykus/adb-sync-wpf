@@ -25,7 +25,7 @@ public sealed class ManifestStore(AppPaths paths) : IManifestStore
         var entries = new Dictionary<string, ManifestEntry>(StringComparer.Ordinal);
         foreach (var s in staging)
         {
-            if (masterByPath.TryGetValue(s.RelativePath, out var m) && IsSame(s, m))
+            if (masterByPath.TryGetValue(s.RelativePath, out var m) && IsSame(stagingPath, masterPath, s, m))
                 entries[s.RelativePath] = new ManifestEntry(s.Size, s.ModifiedUtc);
         }
 
@@ -38,6 +38,9 @@ public sealed class ManifestStore(AppPaths paths) : IManifestStore
     private string GetManifestPath(string jobName, string deviceName) =>
         Path.Combine(paths.ManifestsDir, jobName, $"{deviceName}.manifest.json");
 
-    private static bool IsSame(FileEntry a, FileEntry b) =>
-        a.Size == b.Size && (a.ModifiedUtc - b.ModifiedUtc).Duration() <= ModifiedTolerance;
+    private static bool IsSame(string stagingPath, string masterPath, FileEntry staging, FileEntry master) =>
+        staging.Size == master.Size
+        && (staging.ModifiedUtc - master.ModifiedUtc).Duration() <= ModifiedTolerance
+        // size + mtime match is not proof of identical content - hash to rule out a coincidental match
+        && ContentHasher.FilesAreIdentical(Path.Combine(stagingPath, staging.RelativePath), Path.Combine(masterPath, master.RelativePath));
 }

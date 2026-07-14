@@ -34,38 +34,51 @@ public class AppRunningGuardTests
     }
 
     [Fact]
-    public async Task IsRunningAnywhereAsync_NoDeviceHasOutput_ReturnsFalse()
+    public async Task FindRunningSerialAsync_NoDeviceHasOutput_ReturnsNull()
     {
         SetPidofOutput("192.168.0.40:41000");
 
-        var running = await _guard.IsRunningAnywhereAsync("com.example.app", ["192.168.0.40:41000"]);
+        var running = await _guard.FindRunningSerialAsync("com.example.app", ["192.168.0.40:41000"]);
 
-        Assert.False(running);
+        Assert.Null(running);
     }
 
     [Fact]
-    public async Task IsRunningAnywhereAsync_SecondDeviceHasPid_ReturnsTrue()
+    public async Task FindRunningSerialAsync_SecondDeviceHasPid_ReturnsItsSerial()
     {
         SetPidofOutput("device-a");
         SetPidofOutput("device-b", "12345");
 
-        var running = await _guard.IsRunningAnywhereAsync("com.example.app", ["device-a", "device-b"]);
+        var running = await _guard.FindRunningSerialAsync("com.example.app", ["device-a", "device-b"]);
 
-        Assert.True(running);
+        Assert.Equal("device-b", running);
     }
 
     [Fact]
-    public async Task IsRunningAnywhereAsync_StopsAfterFirstMatch_DoesNotQueryRemainingDevices()
+    public async Task FindRunningSerialAsync_StopsAfterFirstMatch_DoesNotQueryRemainingDevices()
     {
         SetPidofOutput("device-a", "12345");
         SetPidofOutput("device-b", "should-not-be-checked");
 
-        var running = await _guard.IsRunningAnywhereAsync("com.example.app", ["device-a", "device-b"]);
+        var running = await _guard.FindRunningSerialAsync("com.example.app", ["device-a", "device-b"]);
 
-        Assert.True(running);
+        Assert.Equal("device-a", running);
         await _adbClient.DidNotReceive().ExecuteRemoteCommandAsync(
             Arg.Any<string>(),
             Arg.Is<DeviceData>(d => d.Serial == "device-b"),
+            Arg.Any<IShellOutputReceiver>(),
+            Arg.Any<Encoding>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task WaitUntilStoppedAsync_RunsABlockingPollLoopOnTheDevice()
+    {
+        await _guard.WaitUntilStoppedAsync("com.example.app", "device-a");
+
+        await _adbClient.Received(1).ExecuteRemoteCommandAsync(
+            Arg.Is<string>(cmd => cmd.Contains("pidof com.example.app") && cmd.Contains("sleep")),
+            Arg.Is<DeviceData>(d => d.Serial == "device-a"),
             Arg.Any<IShellOutputReceiver>(),
             Arg.Any<Encoding>(),
             Arg.Any<CancellationToken>());

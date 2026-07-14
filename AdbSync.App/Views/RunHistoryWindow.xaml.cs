@@ -9,25 +9,31 @@ using AdbSync.Core.Models.Orchestration;
 using AdbSync.Core.Services.Orchestration;
 using AdbSync.Core.Models.Orchestration.RunHistory;
 using AdbSync.Core.Services.Orchestration.RunHistory;
+using AdbSync.Core.Services.Logging;
 
 namespace AdbSync.App.Views;
 
 public partial class RunHistoryWindow : Window
 {
-    private static readonly TimeSpan AutoRefreshInterval = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan IdleRefreshInterval = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan LiveRefreshInterval = TimeSpan.FromSeconds(1);
 
     private readonly IRunHistoryStore _historyStore;
     private readonly string _jobName;
+    private readonly DashboardViewModel _dashboard;
+    private readonly ILiveRunLogSink _liveLog;
     private readonly DispatcherTimer _autoRefreshTimer;
 
-    public RunHistoryWindow(IRunHistoryStore historyStore, string jobName)
+    public RunHistoryWindow(IRunHistoryStore historyStore, string jobName, DashboardViewModel dashboard, ILiveRunLogSink liveLog)
     {
         InitializeComponent();
         _historyStore = historyStore;
         _jobName = jobName;
+        _dashboard = dashboard;
+        _liveLog = liveLog;
         Title = $"Run History - {jobName}";
 
-        _autoRefreshTimer = new DispatcherTimer { Interval = AutoRefreshInterval };
+        _autoRefreshTimer = new DispatcherTimer { Interval = IdleRefreshInterval };
         _autoRefreshTimer.Tick += async (_, _) => await RefreshAsync();
 
         Loaded += async (_, _) =>
@@ -38,12 +44,23 @@ public partial class RunHistoryWindow : Window
         Closed += (_, _) => _autoRefreshTimer.Stop();
     }
 
+    private bool IsJobRunning() => _dashboard.Jobs.FirstOrDefault(j => j.Name == _jobName)?.IsRunning ?? false;
+
     private async Task RefreshAsync()
     {
         var selectedRunId = (RunsGrid.SelectedItem as RunHistoryRowViewModel)?.RunId;
 
         var runs = await _historyStore.ListRunsAsync(_jobName);
         var rows = runs.Select(r => new RunHistoryRowViewModel(r)).ToList();
+
+        var runningJob = _dashboard.Jobs.FirstOrDefault(j => j.Name == _jobName);
+        var isRunning = runningJob?.IsRunning ?? false;
+        if (isRunning && _liveLog.TryGet(_jobName, out var startedAt, out _))
+        {
+            rows.Insert(0, new RunHistoryRowViewModel(runningJob!.PhaseText, startedAt));
+        }
+        _autoRefreshTimer.Interval = isRunning ? LiveRefreshInterval : IdleRefreshInterval;
+
         RunsGrid.ItemsSource = rows;
 
         if (selectedRunId is not null)
@@ -69,11 +86,16 @@ public partial class RunHistoryWindow : Window
         }
 
         var succeeded = runs.Count(r => r.Outcome != JobRunOutcome.Failed);
-        var avgDuration = TimeSpan.FromTicks((long)runs.Average(r => (r.CompletedAt - r.StartedAt).Ticks));
+        // Skipped runs return before any pull/push work starts, so their near-zero duration would drag the
+        // average down without reflecting how long the job actually takes when it runs.
+        var ranRuns = runs.Where(r => r.Outcome is not (JobRunOutcome.Skipped or JobRunOutcome.SkippedAppRunning)).ToList();
+        var avgDuration = ranRuns.Count > 0
+            ? TimeSpan.FromTicks((long)ranRuns.Average(r => (r.CompletedAt - r.StartedAt).Ticks))
+            : (TimeSpan?)null;
 
         TotalRunsValue.Text = runs.Count.ToString();
         SuccessRateValue.Text = $"{succeeded * 100.0 / runs.Count:0}%";
-        AvgDurationValue.Text = RunHistoryRowViewModel.FormatDuration(avgDuration);
+        AvgDurationValue.Text = avgDuration is null ? "-" : RunHistoryRowViewModel.FormatDuration(avgDuration.Value);
         DataTransferredValue.Text = RunHistoryRowViewModel.FormatSize(runs.Sum(r => r.BytesCopied));
         ErrorsValue.Text = runs.Sum(r => r.ErrorCount).ToString();
     }
@@ -135,6 +157,14 @@ public partial class RunHistoryWindow : Window
         if (RunsGrid.SelectedItem is not RunHistoryRowViewModel row)
         {
             LogTextBox.Text = "Select a run above to view its log.";
+            return;
+        }
+
+        if (row.IsRunning)
+        {
+            LogTextBox.Text = _liveLog.TryGet(_jobName, out _, out var liveText)
+                ? (liveText.Length == 0 ? "(waiting for log output...)" : liveText)
+                : "(run just finished - refreshing...)";
             return;
         }
 

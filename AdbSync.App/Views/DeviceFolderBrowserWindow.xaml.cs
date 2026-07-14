@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using AdbSync.Core.Models.Transfer;
 using AdbSync.Core.Services.Transfer;
@@ -9,6 +10,7 @@ public partial class DeviceFolderBrowserWindow : Window
 {
     private readonly IRemoteFileSystem _remoteFileSystem;
     private string _currentPath;
+    private List<RemoteFolderRow> _allFolders = new();
 
     public string SelectedPath { get; private set; } = "/";
 
@@ -25,11 +27,11 @@ public partial class DeviceFolderBrowserWindow : Window
 
     private async void FoldersList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
-        if ((e.OriginalSource as FrameworkElement)?.DataContext is RemoteFolderRow row)
-            await NavigateAsync(JoinPath(_currentPath, row.Name));
-    }
+        if ((e.OriginalSource as FrameworkElement)?.DataContext is not RemoteFolderRow row)
+            return;
 
-    private async void Up_Click(object sender, RoutedEventArgs e) => await NavigateAsync(GetParentPath(_currentPath));
+        await NavigateAsync(row.IsParent ? GetParentPath(_currentPath) : JoinPath(_currentPath, row.Name));
+    }
 
     private async void Go_Click(object sender, RoutedEventArgs e) => await NavigateAsync(PathBox.Text);
 
@@ -57,9 +59,9 @@ public partial class DeviceFolderBrowserWindow : Window
 
             _currentPath = normalized;
             PathBox.Text = normalized;
-            UpButton.IsEnabled = normalized != "/";
-            FoldersList.ItemsSource = folders;
-            EmptyText.Visibility = folders.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            _allFolders = folders;
+            FilterBox.Text = "";
+            ApplyFilter();
         }
         catch (Exception ex)
         {
@@ -70,6 +72,25 @@ public partial class DeviceFolderBrowserWindow : Window
         {
             FoldersList.IsEnabled = true;
         }
+    }
+
+    private void FilterBox_TextChanged(object sender, TextChangedEventArgs e) => ApplyFilter();
+
+    private void ApplyFilter()
+    {
+        var filter = FilterBox.Text.Trim();
+        var filtered = filter.Length == 0
+            ? _allFolders
+            : _allFolders.Where(f => f.Name.Contains(filter, StringComparison.OrdinalIgnoreCase)).ToList();
+
+        var display = new List<RemoteFolderRow>();
+        if (_currentPath != "/")
+            display.Add(new RemoteFolderRow("..", IsParent: true));
+        display.AddRange(filtered);
+
+        FoldersList.ItemsSource = display;
+        EmptyText.Visibility = filtered.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        EmptyText.Text = _allFolders.Count == 0 ? "No subfolders." : "No matching folders.";
     }
 
     private void SetStatus(string? message)
@@ -105,4 +126,4 @@ public partial class DeviceFolderBrowserWindow : Window
     }
 }
 
-public sealed record RemoteFolderRow(string Name);
+public sealed record RemoteFolderRow(string Name, bool IsParent = false);

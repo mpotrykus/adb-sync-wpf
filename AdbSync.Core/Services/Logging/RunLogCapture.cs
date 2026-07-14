@@ -10,10 +10,12 @@ internal static class RunLogCapture
 {
     private static readonly AsyncLocal<RunLogScope?> _current = new();
 
-    public static RunLogScope Begin()
+    public static RunLogScope Begin(string? jobName = null, ILiveRunLogSink? liveSink = null)
     {
-        var scope = new RunLogScope();
+        var scope = new RunLogScope(jobName, liveSink);
         _current.Value = scope;
+        if (jobName is not null)
+            liveSink?.Begin(jobName);
         return scope;
     }
 

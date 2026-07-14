@@ -8,9 +8,9 @@ public sealed class NullableBoolToOverrideStateConverter : IValueConverter
 {
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => value switch
     {
-        true => "on",
-        false => "off",
-        _ => "inherit",
+        true => "On",
+        false => "Off",
+        _ => "Inherit",
     };
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>

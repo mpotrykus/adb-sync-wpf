@@ -72,7 +72,8 @@ For every relative path across the union of staging, master, and the manifest ba
 |---|---|---|---|
 | new | — | — | copy to master |
 | — | new | — | copy to staging |
-| new | new | — | **conflict** — newer `ModifiedUtc` wins |
+| new | new, already identical | — | no-op — manifest seeded, not treated as a conflict |
+| new | new, genuinely different | — | **conflict** — newer `ModifiedUtc` wins |
 | present, unchanged | deleted | had baseline | delete propagates to staging |
 | present, edited | deleted | had baseline | **conflict** — edit wins |
 | deleted | present, unchanged | had baseline | delete propagates to master |
@@ -80,11 +81,14 @@ For every relative path across the union of staging, master, and the manifest ba
 | deleted | deleted | had baseline | dropped from manifest, no-op |
 | unchanged both sides | | present | no-op |
 | changed one side only | | present | copy the changed side over |
-| changed both sides | | present | **conflict** — newer `ModifiedUtc` wins |
+| both look changed, but already identical | | present but stale | reconciled quietly — baseline refreshed, not a conflict |
+| changed both sides, genuinely different | | present | **conflict** — newer `ModifiedUtc` wins |
 
 **Conflict resolution is last-write-wins by modification time.** The losing file's content is backed up first (default on) to a `.conflicts` folder as `<filename>.<UTC timestamp>.conflict`, so a conflict never silently destroys data. Conflicts are counted and reported ("N conflict(s) resolved") through both the CLI and the Dashboard.
 
 **First sync for a device**: if no manifest exists yet, one is bootstrapped from whatever staging and master files already agree on (same size+mtime) — so a first-time sync doesn't manufacture spurious conflicts out of files that already happen to match; files that differ are treated as newly created on one side.
+
+**"Agreement" is size+mtime, then a content hash.** Any time the merge is about to call two sides equal (bootstrap, a fresh appearance on both sides, or a stale baseline where both sides *look* changed), size and mtime matching within a 2-second tolerance isn't taken as final proof — the files are hashed to rule out a coincidental match with different content. This also covers the case where a device's on-disk file was already updated by an earlier run's push phase (which mirrors master out to every device, not just the one whose merge changed it) before that device's own manifest had a chance to catch up: without this check, the stale baseline would make staging and master both look "changed" even though they'd already converged, manufacturing a conflict — and every one-sided ancestor comparison after that would keep comparing against the same stale baseline.
 
 ## Exclusions
 
@@ -93,7 +97,7 @@ Each job has an `Exclude` list, matched identically during pull and push:
 - A bare name with no `/` (e.g. `Cache`) excludes anything with that name **at any depth**.
 - A path-shaped pattern with a `/` (e.g. `Painter/Cache`) is anchored to the sync root and excludes that path and everything under it.
 
-There's no glob support (`*`, `?`) — matching is literal path-segment/path comparison. Excluded directories are never even listed/recursed into during the remote/local tree walk.
+Either shape may use glob wildcards: `*` matches zero or more characters within a path segment, `?` matches exactly one — neither crosses a `/`. For example `*.tmp` excludes any file with that extension at any depth, and `*/.thumbnails/*` excludes a `.thumbnails` folder one level under the sync root and everything inside it. Patterns with no wildcard are matched as a literal path-segment/path comparison. Excluded directories are never even listed/recursed into during the remote/local tree walk.
 
 ## ADB device handling
 

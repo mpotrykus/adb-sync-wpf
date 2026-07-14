@@ -15,6 +15,7 @@
     <Window.Resources>
         <conv:StringNotEmptyToVisibilityConverter x:Key="StringNotEmptyToVisibilityConverter"/>
         <conv:NullableBoolToOverrideStateConverter x:Key="NullableBoolToOverrideStateConverter"/>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
     </Window.Resources>
     <Border Style="{StaticResource WindowRootBorder}">
         <Grid>
@@ -52,7 +53,8 @@
                         <Border Style="{StaticResource CardBorder}">
                             <StackPanel>
                                 <TextBlock Text="Name" Style="{StaticResource SectionLabel}"/>
-                                <TextBox x:Name="NameBox" Margin="0,0,0,14" controls:TextBoxHelper.Placeholder="e.g. Photos Backup"/>
+                                <TextBox x:Name="NameBox" Margin="0,0,0,4" controls:TextBoxHelper.Placeholder="e.g. Photos Backup"/>
+                                <TextBlock x:Name="NameErrorText" Style="{StaticResource ValidationErrorText}"/>
 
                                 <TextBlock Text="App package" Style="{StaticResource SectionLabel}"/>
                                 <TextBlock Style="{StaticResource CaptionText}" Text="Optional. The job is skipped while this app is running on any device."/>
@@ -95,6 +97,7 @@
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
                                 <TextBlock x:Name="NoDevicesText" Text="No devices added yet." Style="{StaticResource CaptionText}" Margin="0,0,0,10"/>
+                                <TextBlock x:Name="DevicesErrorText" Style="{StaticResource ValidationErrorText}"/>
 
                                 <Border Height="1" Background="{StaticResource Brush.Divider}" Margin="0,0,0,14"/>
 
@@ -153,9 +156,18 @@
 
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
                                     <RadioButton x:Name="ScheduleInterval" Content="Every" GroupName="Schedule" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                                    <TextBox x:Name="IntervalHoursBox" Width="50" Margin="0,0,6,0" controls:TextBoxHelper.Placeholder="4"
+                                    <TextBox x:Name="IntervalValueBox" Width="50" Margin="0,0,6,0" controls:TextBoxHelper.Placeholder="4"
                                              IsEnabled="{Binding IsChecked, ElementName=ScheduleInterval}"/>
-                                    <TextBlock Text="hours" VerticalAlignment="Center" Foreground="{StaticResource Brush.Text.Secondary}"/>
+                                    <ComboBox x:Name="IntervalUnitCombo" Width="90"
+                                              IsEnabled="{Binding IsChecked, ElementName=ScheduleInterval}">
+                                        <ComboBoxItem Content="Seconds"/>
+                                        <ComboBoxItem Content="Minutes"/>
+                                        <ComboBoxItem Content="Hours"/>
+                                        <ComboBoxItem Content="Days"/>
+                                        <ComboBoxItem Content="Weeks"/>
+                                        <ComboBoxItem Content="Months"/>
+                                        <ComboBoxItem Content="Years"/>
+                                    </ComboBox>
                                 </StackPanel>
 
                                 <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
@@ -164,19 +176,36 @@
                                              IsEnabled="{Binding IsChecked, ElementName=ScheduleDailyAt}"/>
                                 </StackPanel>
 
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                                    <RadioButton x:Name="ScheduleOnChange" Content="On device change" GroupName="Schedule" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                                    <TextBlock Text="debounce" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="{StaticResource Brush.Text.Secondary}"/>
-                                    <TextBox x:Name="DebounceSecondsBox" Width="50" Margin="0,0,6,0" controls:TextBoxHelper.Placeholder="10"
-                                             IsEnabled="{Binding IsChecked, ElementName=ScheduleOnChange}"/>
-                                    <TextBlock Text="sec" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="{StaticResource Brush.Text.Secondary}"/>
-                                    <TextBlock Text="rescan every" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="{StaticResource Brush.Text.Secondary}"/>
-                                    <TextBox x:Name="RescanIntervalMinutesBox" Width="50" Margin="0,0,6,0" controls:TextBoxHelper.Placeholder="15"
-                                             IsEnabled="{Binding IsChecked, ElementName=ScheduleOnChange}"/>
-                                    <TextBlock Text="min" VerticalAlignment="Center" Foreground="{StaticResource Brush.Text.Secondary}"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                    <RadioButton x:Name="ScheduleOnChange" Content="On device change" GroupName="Schedule" VerticalAlignment="Center"/>
                                 </StackPanel>
-                                <TextBlock Text="Use Test Watch Availability to confirm this device and path support live watching."
-                                           Style="{StaticResource CaptionText}" Margin="26,0,0,0"/>
+
+                                <StackPanel Orientation="Horizontal" Margin="0,12"
+                                            Visibility="{Binding IsChecked, ElementName=ScheduleOnChange, Converter={StaticResource BoolToVisibility}}">
+                                    <StackPanel Orientation="Horizontal" Margin="26,8,0,16">
+                                        <TextBlock Text="Debounce" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="{StaticResource Brush.Text.Secondary}"
+                                                   ToolTip="Quiet period after the last detected change before the job actually runs, so a burst of writes triggers one sync instead of many."/>
+                                        <TextBox x:Name="DebounceSecondsBox" Width="50" Margin="0,0,6,0" controls:TextBoxHelper.Placeholder="10"
+                                                 IsEnabled="{Binding IsChecked, ElementName=ScheduleOnChange}"
+                                                 ToolTip="Quiet period after the last detected change before the job actually runs, so a burst of writes triggers one sync instead of many."/>
+                                        <TextBlock Text="sec" VerticalAlignment="Center" Foreground="{StaticResource Brush.Text.Secondary}"/>
+
+                                        <TextBlock Text="|" Margin="12,0" VerticalAlignment="Center" Foreground="{StaticResource Brush.Text.Secondary}"/>
+
+                                        <TextBlock Text="Rescan folders every" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="{StaticResource Brush.Text.Secondary}"
+                                                   ToolTip="Changes are detected instantly via a live watch. This interval only controls how often that watch re-checks for newly created subfolders, since it isn't recursive by default."/>
+                                        <TextBox x:Name="RescanIntervalMinutesBox" Width="50" Margin="0,0,6,0" controls:TextBoxHelper.Placeholder="15"
+                                                 IsEnabled="{Binding IsChecked, ElementName=ScheduleOnChange}"
+                                                 ToolTip="Changes are detected instantly via a live watch. This interval only controls how often that watch re-checks for newly created subfolders, since it isn't recursive by default."/>
+                                        <TextBlock Text="min" VerticalAlignment="Center" Foreground="{StaticResource Brush.Text.Secondary}"/>
+                                    </StackPanel>
+                                </StackPanel>
+                                <TextBlock Text="* Use 'Test Watch Availability' to confirm that this device and path support live-watching."
+                                           Style="{StaticResource CaptionText}" Margin="26,0,0,0" TextWrapping="Wrap"
+                                           Visibility="{Binding IsChecked, ElementName=ScheduleOnChange, Converter={StaticResource BoolToVisibility}}"/>
+                                <TextBlock Text="Changes are detected instantly; the rescan interval only refreshes which subfolders are being watched."
+                                           Style="{StaticResource CaptionText}" Margin="26,12,0,12" TextWrapping="Wrap"
+                                           Visibility="{Binding IsChecked, ElementName=ScheduleOnChange, Converter={StaticResource BoolToVisibility}}"/>
                             </StackPanel>
                         </Border>
                         </StackPanel>
@@ -227,7 +256,7 @@
                                                 <Run Text="Stale lock timeout "/><Run Text="(hours)" Style="{StaticResource DescriptorRun}"/>
                                             </TextBlock>
                                             <Grid Grid.Row="0" Grid.Column="1">
-                                                <TextBox x:Name="StaleLockHoursOverrideBox" controls:TextBoxHelper.Placeholder="inherit"/>
+                                                <TextBox x:Name="StaleLockHoursOverrideBox" controls:TextBoxHelper.Placeholder="Inherit"/>
                                                 <Rectangle Style="{StaticResource OverrideIndicatorBar}"
                                                            Visibility="{Binding Text, ElementName=StaleLockHoursOverrideBox, Converter={StaticResource StringNotEmptyToVisibilityConverter}}"/>
                                             </Grid>
@@ -235,7 +264,7 @@
                                                 <Run Text="Conflict backup retention "/><Run Text="(days)" Style="{StaticResource DescriptorRun}"/>
                                             </TextBlock>
                                             <Grid Grid.Row="0" Grid.Column="4">
-                                                <TextBox x:Name="ConflictRetentionDaysOverrideBox" controls:TextBoxHelper.Placeholder="inherit"/>
+                                                <TextBox x:Name="ConflictRetentionDaysOverrideBox" controls:TextBoxHelper.Placeholder="Inherit"/>
                                                 <Rectangle Style="{StaticResource OverrideIndicatorBar}"
                                                            Visibility="{Binding Text, ElementName=ConflictRetentionDaysOverrideBox, Converter={StaticResource StringNotEmptyToVisibilityConverter}}"/>
                                             </Grid>
@@ -244,13 +273,13 @@
                                                 <Run Text="Checkpoint retention "/><Run Text="(days)" Style="{StaticResource DescriptorRun}"/>
                                             </TextBlock>
                                             <Grid Grid.Row="1" Grid.Column="1" Margin="0,12,0,0">
-                                                <TextBox x:Name="CheckpointRetentionDaysOverrideBox" controls:TextBoxHelper.Placeholder="inherit"/>
+                                                <TextBox x:Name="CheckpointRetentionDaysOverrideBox" controls:TextBoxHelper.Placeholder="Inherit"/>
                                                 <Rectangle Style="{StaticResource OverrideIndicatorBar}"
                                                            Visibility="{Binding Text, ElementName=CheckpointRetentionDaysOverrideBox, Converter={StaticResource StringNotEmptyToVisibilityConverter}}"/>
                                             </Grid>
                                             <TextBlock Grid.Row="1" Grid.Column="3" Text="Run history entries kept" VerticalAlignment="Center" Margin="0,12,0,0"/>
                                             <Grid Grid.Row="1" Grid.Column="4" Margin="0,12,0,0">
-                                                <TextBox x:Name="MaxRunHistoryEntriesOverrideBox" controls:TextBoxHelper.Placeholder="inherit"/>
+                                                <TextBox x:Name="MaxRunHistoryEntriesOverrideBox" controls:TextBoxHelper.Placeholder="Inherit"/>
                                                 <Rectangle Style="{StaticResource OverrideIndicatorBar}"
                                                            Visibility="{Binding Text, ElementName=MaxRunHistoryEntriesOverrideBox, Converter={StaticResource StringNotEmptyToVisibilityConverter}}"/>
                                             </Grid>
@@ -278,13 +307,13 @@
                                                 <Run Text="Bandwidth throttle "/><Run Text="(kb/s)" Style="{StaticResource DescriptorRun}"/>
                                             </TextBlock>
                                             <Grid Grid.Row="0" Grid.Column="1">
-                                                <TextBox x:Name="BandwidthThrottleKBpsOverrideBox" controls:TextBoxHelper.Placeholder="inherit"/>
+                                                <TextBox x:Name="BandwidthThrottleKBpsOverrideBox" controls:TextBoxHelper.Placeholder="Inherit"/>
                                                 <Rectangle Style="{StaticResource OverrideIndicatorBar}"
                                                            Visibility="{Binding Text, ElementName=BandwidthThrottleKBpsOverrideBox, Converter={StaticResource StringNotEmptyToVisibilityConverter}}"/>
                                             </Grid>
                                             <TextBlock Grid.Row="0" Grid.Column="3" Text="Retry attempts" VerticalAlignment="Center"/>
                                             <Grid Grid.Row="0" Grid.Column="4">
-                                                <TextBox x:Name="RetryMaxAttemptsOverrideBox" controls:TextBoxHelper.Placeholder="inherit"/>
+                                                <TextBox x:Name="RetryMaxAttemptsOverrideBox" controls:TextBoxHelper.Placeholder="Inherit"/>
                                                 <Rectangle Style="{StaticResource OverrideIndicatorBar}"
                                                            Visibility="{Binding Text, ElementName=RetryMaxAttemptsOverrideBox, Converter={StaticResource StringNotEmptyToVisibilityConverter}}"/>
                                             </Grid>
@@ -293,7 +322,7 @@
                                                 <Run Text="Retry backoff "/><Run Text="(seconds)" Style="{StaticResource DescriptorRun}"/>
                                             </TextBlock>
                                             <Grid Grid.Row="1" Grid.Column="1" Margin="0,12,0,0">
-                                                <TextBox x:Name="RetryBackoffSecondsOverrideBox" controls:TextBoxHelper.Placeholder="inherit"/>
+                                                <TextBox x:Name="RetryBackoffSecondsOverrideBox" controls:TextBoxHelper.Placeholder="Inherit"/>
                                                 <Rectangle Style="{StaticResource OverrideIndicatorBar}"
                                                            Visibility="{Binding Text, ElementName=RetryBackoffSecondsOverrideBox, Converter={StaticResource StringNotEmptyToVisibilityConverter}}"/>
                                             </Grid>
@@ -324,7 +353,7 @@
                                                 <Run Text="Push safety minimum "/><Run Text="(%)" Style="{StaticResource DescriptorRun}"/>
                                             </TextBlock>
                                             <Grid Grid.Row="0" Grid.Column="1">
-                                                <TextBox x:Name="PushSafetyMinimumPercentOverrideBox" controls:TextBoxHelper.Placeholder="inherit"/>
+                                                <TextBox x:Name="PushSafetyMinimumPercentOverrideBox" controls:TextBoxHelper.Placeholder="Inherit"/>
                                                 <Rectangle Style="{StaticResource OverrideIndicatorBar}"
                                                            Visibility="{Binding Text, ElementName=PushSafetyMinimumPercentOverrideBox, Converter={StaticResource StringNotEmptyToVisibilityConverter}}"/>
                                             </Grid>

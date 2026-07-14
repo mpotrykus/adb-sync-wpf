@@ -27,7 +27,8 @@ public sealed class SyncJobRunner(
     ICheckpointManager checkpoints,
     ISyncEventSink events,
     IRunHistoryStore runHistory,
-    ILogger<SyncJobRunner>? logger = null)
+    ILogger<SyncJobRunner>? logger = null,
+    ILiveRunLogSink? liveLog = null)
 {
     private readonly ILogger<SyncJobRunner> _logger = new RunCapturingLogger<SyncJobRunner>(logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<SyncJobRunner>.Instance);
 
@@ -37,7 +38,7 @@ public sealed class SyncJobRunner(
     {
         var runId = Guid.NewGuid();
         var startedAt = DateTimeOffset.UtcNow;
-        using var runLog = RunLogCapture.Begin();
+        using var runLog = RunLogCapture.Begin(job.Name, liveLog);
 
         var totalFilesCopied = 0;
         var totalFilesDeleted = 0;
@@ -85,11 +86,16 @@ public sealed class SyncJobRunner(
                 serials[binding.DeviceName] = await deviceResolver.EnsureConnectedAsync(device, ct);
             }
 
-            if (job.AppPackage is not null && await appGuard.IsRunningAnywhereAsync(job.AppPackage, serials.Values, ct))
+            if (job.AppPackage is not null)
             {
-                _logger.LogInformation("Job '{Job}' skipped - {Package} is running on a device", job.Name, job.AppPackage);
-                events.JobSkipped(job.Name, $"{job.AppPackage} is running on a device");
-                return await FinishAsync(JobRunOutcome.SkippedAppRunning);
+                var runningSerial = await appGuard.FindRunningSerialAsync(job.AppPackage, serials.Values, ct);
+                if (runningSerial is not null)
+                {
+                    var deviceName = serials.FirstOrDefault(kv => kv.Value == runningSerial).Key ?? runningSerial;
+                    _logger.LogInformation("Job '{Job}' skipped - {Package} is currently running on {Device}", job.Name, job.AppPackage, deviceName);
+                    events.JobSkipped(job.Name, $"{job.AppPackage} is currently running on {deviceName}");
+                    return await FinishAsync(JobRunOutcome.SkippedAppRunning);
+                }
             }
 
             var anyChange = resumeFrom is { Phase: SyncPhase.Push };

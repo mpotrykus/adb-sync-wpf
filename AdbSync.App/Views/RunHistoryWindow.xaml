@@ -133,8 +133,8 @@
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="STARTED" Binding="{Binding StartedAtText}" Width="150"/>
                         <DataGridTextColumn Header="DURATION" Binding="{Binding DurationText}" Width="90"/>
-                        <DataGridTextColumn Header="PULL" Binding="{Binding PullDurationText}" Width="60"/>
-                        <DataGridTextColumn Header="PUSH" Binding="{Binding PushDurationText}" Width="60"/>
+                        <DataGridTextColumn Header="PULL" Binding="{Binding PullDurationText}" Width="80"/>
+                        <DataGridTextColumn Header="PUSH" Binding="{Binding PushDurationText}" Width="80"/>
                         <DataGridTemplateColumn Header="FILES" Width="120">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
@@ -155,10 +155,17 @@
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
                                     <StackPanel Orientation="Horizontal">
-                                        <Ellipse Style="{StaticResource StatusDot}" Fill="{Binding Outcome, Converter={StaticResource RunOutcomeToBrushConverter}}"/>
-                                        <TextBlock Text="{Binding OutcomeText}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                        <Ellipse x:Name="OutcomeDot" Style="{StaticResource StatusDot}" Fill="{Binding Outcome, Converter={StaticResource RunOutcomeToBrushConverter}}"/>
+                                        <TextBlock x:Name="OutcomeLabel" Text="{Binding OutcomeText}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                                                    Foreground="{Binding Outcome, Converter={StaticResource RunOutcomeToBrushConverter}}"/>
                                     </StackPanel>
+                                    <DataTemplate.Triggers>
+                                        <!-- The in-progress row has no real JobRunOutcome yet - color it as the shimmer's accent instead of whatever RunOutcomeToBrushConverter falls back to. -->
+                                        <DataTrigger Binding="{Binding IsRunning}" Value="True">
+                                            <Setter TargetName="OutcomeDot" Property="Fill" Value="{StaticResource Brush.Accent}"/>
+                                            <Setter TargetName="OutcomeLabel" Property="Foreground" Value="{StaticResource Brush.Accent}"/>
+                                        </DataTrigger>
+                                    </DataTemplate.Triggers>
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>

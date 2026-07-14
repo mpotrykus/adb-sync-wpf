@@ -43,7 +43,7 @@ What code a job hits when it runs, from any of the four trigger points down thro
            │  2. events.PhaseChanged(PreConnect)                      │
            │  3. deviceResolver.EnsureConnectedAsync (per device) ──  │
            │        └─ IAdbDeviceResolver → AdbDeviceResolver         │
-           │  4. appGuard.IsRunningAnywhereAsync ── IAppRunningGuard  │
+           │  4. appGuard.FindRunningSerialAsync ── IAppRunningGuard  │
            │                                                          │
            │  5. RunPullPhaseAsync (per device) ─┐                    │
            │     events.PhaseChanged(Pull)       │                    │

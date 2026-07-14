@@ -14,6 +14,7 @@ public sealed class AppPaths(string root)
     public string LogsDir => Path.Combine(Root, "logs");
     public string CheckpointFile => Path.Combine(Root, ".sync_checkpoint.json");
     public string RunHistoryDbFile => Path.Combine(Root, "run-history.db");
+    public string LocalStateFile => Path.Combine(Root, "local-state.json");
 
     public static AppPaths Default { get; } = new(
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AdbSync"));

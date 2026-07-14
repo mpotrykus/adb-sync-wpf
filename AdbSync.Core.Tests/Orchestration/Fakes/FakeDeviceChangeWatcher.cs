@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using AdbSync.Core.Models.Devices;
 using AdbSync.Core.Services.Devices;
+using AdbSync.Core.Services.Transfer;
 
 namespace AdbSync.Core.Tests.Orchestration.Fakes;
 
@@ -19,13 +20,13 @@ public sealed class FakeDeviceChangeWatcher : IDeviceChangeWatcher
     public int CheckAvailabilityCallCount { get; private set; }
     private int _snapshotCallCount;
 
-    public Task<WatchAvailability> CheckAvailabilityAsync(string serial, string remotePath, CancellationToken ct = default)
+    public Task<WatchAvailability> CheckAvailabilityAsync(string serial, string remotePath, IExcludeMatcher exclude, CancellationToken ct = default)
     {
         CheckAvailabilityCallCount++;
         return Task.FromResult(Availability);
     }
 
-    public Task<IReadOnlyList<string>> EnumerateSubdirectoriesAsync(string serial, string remotePath, CancellationToken ct = default) =>
+    public Task<IReadOnlyList<string>> EnumerateSubdirectoriesAsync(string serial, string remotePath, IExcludeMatcher exclude, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<string>>([remotePath]);
 
     public Task<string> SnapshotAsync(string serial, string remotePath, CancellationToken ct = default) =>

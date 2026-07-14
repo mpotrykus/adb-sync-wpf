@@ -53,11 +53,14 @@ public partial class JobEditorWindow : Window
                 _bindings.Add(new JobDeviceBindingRow(binding.DeviceName, binding.RemotePath));
             EnabledCheckBox.IsChecked = job.Enabled;
 
+            IntervalUnitCombo.SelectedIndex = 2; // Hours
             switch (job.Schedule.Kind)
             {
                 case ScheduleKind.Interval:
                     ScheduleInterval.IsChecked = true;
-                    IntervalHoursBox.Text = job.Schedule.Interval.TotalHours.ToString("0.##");
+                    var (intervalValue, intervalUnitIndex) = DecomposeInterval(job.Schedule.Interval);
+                    IntervalValueBox.Text = intervalValue.ToString("0.##");
+                    IntervalUnitCombo.SelectedIndex = intervalUnitIndex;
                     break;
                 case ScheduleKind.DailyAt:
                     ScheduleDailyAt.IsChecked = true;
@@ -91,7 +94,8 @@ public partial class JobEditorWindow : Window
             Title = "New Job";
             EnabledCheckBox.IsChecked = true;
             ScheduleManual.IsChecked = true;
-            IntervalHoursBox.Text = "4";
+            IntervalValueBox.Text = "4";
+            IntervalUnitCombo.SelectedIndex = 2; // Hours
             DebounceSecondsBox.Text = "10";
             RescanIntervalMinutesBox.Text = "15";
             // Indeterminate = inherit the global default - CheckBox's own default (unchecked/false) would
@@ -174,6 +178,8 @@ public partial class JobEditorWindow : Window
     {
         NoDevicesText.Visibility = _bindings.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         BrowseAppPackageButton.IsEnabled = _bindings.Count > 0;
+        if (_bindings.Count > 0)
+            DevicesErrorText.Visibility = Visibility.Collapsed;
     }
 
     private async void BrowseAppPackage_Click(object sender, RoutedEventArgs e)
@@ -221,16 +227,24 @@ public partial class JobEditorWindow : Window
 
     private void Save_Click(object sender, RoutedEventArgs e)
     {
+        NameErrorText.Visibility = Visibility.Collapsed;
+        DevicesErrorText.Visibility = Visibility.Collapsed;
+
+        var hasError = false;
         if (string.IsNullOrWhiteSpace(NameBox.Text))
         {
-            MessageBox.Show(this, "Name is required.", "AdbSync", MessageBoxButton.OK, MessageBoxImage.Warning);
-            return;
+            NameErrorText.Text = "Name is required.";
+            NameErrorText.Visibility = Visibility.Visible;
+            hasError = true;
         }
         if (_bindings.Count == 0)
         {
-            MessageBox.Show(this, "Add at least one device.", "AdbSync", MessageBoxButton.OK, MessageBoxImage.Warning);
-            return;
+            DevicesErrorText.Text = "Add at least one device.";
+            DevicesErrorText.Visibility = Visibility.Visible;
+            hasError = true;
         }
+        if (hasError)
+            return;
 
         var schedule = BuildSchedule();
         // Preserve run history across edits - otherwise editing a job resets its interval clock to "due now".
@@ -242,11 +256,7 @@ public partial class JobEditorWindow : Window
             Name = NameBox.Text.Trim(),
             AppPackage = string.IsNullOrWhiteSpace(AppPackageBox.Text) ? null : AppPackageBox.Text.Trim(),
             ProjectDirectory = string.IsNullOrWhiteSpace(ProjectDirectoryBox.Text) ? null : ProjectDirectoryBox.Text.Trim(),
-            Exclude = ExcludeBox.Text
-                .Split('\n', StringSplitOptions.RemoveEmptyEntries)
-                .Select(s => s.Trim())
-                .Where(s => s.Length > 0)
-                .ToList(),
+            Exclude = ParseExcludePatterns(),
             Devices = _bindings.Select(b => new JobDeviceBinding { DeviceName = b.DeviceName, RemotePath = b.RemotePath }).ToList(),
             Schedule = schedule,
             Enabled = EnabledCheckBox.IsChecked == true,
@@ -268,12 +278,30 @@ public partial class JobEditorWindow : Window
 
     private static int? ParseIntOrNull(string text) => int.TryParse(text, out var value) ? value : null;
 
+    // Seconds, Minutes, Hours, Days, Weeks, Months, Years - indices match IntervalUnitCombo's items.
+    // Months/years are fixed-length approximations (30/365 days) since JobSchedule.Interval is a plain TimeSpan.
+    private static readonly double[] IntervalUnitSeconds = [1, 60, 3600, 86400, 604800, 2_592_000, 31_536_000];
+
+    private static (double Value, int UnitIndex) DecomposeInterval(TimeSpan interval)
+    {
+        var totalSeconds = interval.TotalSeconds;
+        for (var i = IntervalUnitSeconds.Length - 1; i >= 0; i--)
+        {
+            var value = totalSeconds / IntervalUnitSeconds[i];
+            if (Math.Abs(value - Math.Round(value)) < 0.0001)
+                return (Math.Round(value), i);
+        }
+        return (totalSeconds, 0);
+    }
+
     private JobSchedule BuildSchedule()
     {
         if (ScheduleInterval.IsChecked == true)
         {
-            var hours = double.TryParse(IntervalHoursBox.Text, out var h) && h > 0 ? h : 4;
-            return new JobSchedule { Kind = ScheduleKind.Interval, Interval = TimeSpan.FromHours(hours) };
+            var value = double.TryParse(IntervalValueBox.Text, out var v) && v > 0 ? v : 4;
+            var unitIndex = IntervalUnitCombo.SelectedIndex >= 0 ? IntervalUnitCombo.SelectedIndex : 2;
+            var interval = TimeSpan.FromSeconds(value * IntervalUnitSeconds[unitIndex]);
+            return new JobSchedule { Kind = ScheduleKind.Interval, Interval = interval };
         }
 
         if (ScheduleDailyAt.IsChecked == true)
@@ -314,6 +342,7 @@ public partial class JobEditorWindow : Window
         TestResultsList.ItemsSource = null;
         try
         {
+            var exclude = new ExcludeMatcher(ParseExcludePatterns());
             var results = new List<WatchTestResultRow>();
             foreach (var binding in _bindings)
             {
@@ -328,10 +357,15 @@ public partial class JobEditorWindow : Window
                 try
                 {
                     var serial = await _deviceResolver.EnsureConnectedAsync(device);
-                    var availability = await _changeWatcher.CheckAvailabilityAsync(serial, binding.RemotePath);
-                    results.Add(availability.LiveWatchSupported
-                        ? new WatchTestResultRow(header, "Live watch supported.", SuccessBrush)
-                        : new WatchTestResultRow(header, $"Not supported - {availability.Detail}. Will use 60s polling instead.", WarningBrush));
+                    var availability = await _changeWatcher.CheckAvailabilityAsync(serial, binding.RemotePath, exclude);
+                    results.Add(availability switch
+                    {
+                        { LiveWatchSupported: false } =>
+                            new WatchTestResultRow(header, $"Not supported - {availability.Detail}. Will use 60s polling instead.", WarningBrush),
+                        { Warning: not null } =>
+                            new WatchTestResultRow(header, $"Live watch supported, but {availability.Warning}", WarningBrush),
+                        _ => new WatchTestResultRow(header, "Live watch supported.", SuccessBrush),
+                    });
                 }
                 catch (Exception ex)
                 {
@@ -346,6 +380,12 @@ public partial class JobEditorWindow : Window
             TestWatchButton.IsEnabled = true;
         }
     }
+
+    private List<string> ParseExcludePatterns() => ExcludeBox.Text
+        .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+        .Select(s => s.Trim())
+        .Where(s => s.Length > 0)
+        .ToList();
 
     private static Brush SuccessBrush => (Brush)Application.Current.Resources["Brush.Success"];
     private static Brush WarningBrush => (Brush)Application.Current.Resources["Brush.Warning"];

@@ -46,6 +46,15 @@
         <Setter Property="Margin" Value="0,2,0,10"/>
     </Style>
 
+    <Style x:Key="ValidationErrorText" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{StaticResource Brush.Danger}"/>
+        <Setter Property="FontFamily" Value="Segoe UI Variable Small, Segoe UI"/>
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="TextWrapping" Value="Wrap"/>
+        <Setter Property="Margin" Value="0,-4,0,10"/>
+        <Setter Property="Visibility" Value="Collapsed"/>
+    </Style>
+
     <!-- Trailing unit/qualifier on a field label, e.g. the "(seconds)" in "Retry backoff (seconds)" -
          de-emphasized so the label reads as one phrase without competing with the noun that matters. -->
     <Style x:Key="DescriptorRun" TargetType="Run">
@@ -937,13 +946,38 @@
         <Setter Property="BorderBrush" Value="{StaticResource Brush.Accent}"/>
         <Setter Property="BorderThickness" Value="0,0,0,2"/>
         <Setter Property="HorizontalContentAlignment" Value="Left"/>
+        <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="DataGridColumnHeader">
                     <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
                             BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}">
-                        <ContentPresenter VerticalAlignment="Center"/>
+                        <DockPanel LastChildFill="True">
+                            <TextBlock x:Name="SortArrow" DockPanel.Dock="Right" VerticalAlignment="Center" Margin="6,0,0,0"
+                                       FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="10" Text="&#xE70E;"
+                                       Foreground="{StaticResource Brush.Accent}" Visibility="Collapsed"
+                                       RenderTransformOrigin="0.5,0.5">
+                                <TextBlock.RenderTransform>
+                                    <RotateTransform x:Name="SortArrowRotate" Angle="0"/>
+                                </TextBlock.RenderTransform>
+                            </TextBlock>
+                            <ContentPresenter VerticalAlignment="Center"/>
+                        </DockPanel>
                     </Border>
+                    <ControlTemplate.Triggers>
+                        <!-- Visibility only - the rotate angle itself is driven from code (DashboardWindow.ApplySort)
+                             via RotateTransform.BeginAnimation, since Trigger.EnterActions/BeginStoryboard only
+                             reliably fires the FIRST time a given trigger becomes active; re-entering the same
+                             trigger a second time (e.g. toggling Ascending -> Descending -> Ascending) leaves the
+                             arrow stuck, and pairing it with StopStoryboard on exit trades that for an instant
+                             snap-to-base-value glitch instead. BeginAnimation has no such lifecycle ambiguity. -->
+                        <Trigger Property="SortDirection" Value="Ascending">
+                            <Setter TargetName="SortArrow" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                        <Trigger Property="SortDirection" Value="Descending">
+                            <Setter TargetName="SortArrow" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>

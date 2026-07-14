@@ -20,7 +20,7 @@
 
             <controls:TitleBar Grid.Row="0" ShowMinMax="False"/>
 
-            <StackPanel Grid.Row="1" Margin="20">
+            <StackPanel Grid.Row="1" Margin="30,15,30,30">
                 <Border Style="{StaticResource CardBorder}">
                     <Grid>
                         <Grid.ColumnDefinitions>
@@ -28,12 +28,12 @@
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
                         <TextBlock x:Name="IconText" Grid.Column="0" Text="&#xE7BA;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="22"
-                                   Foreground="{StaticResource Brush.Warning}" VerticalAlignment="Top" Margin="0,2,14,0"/>
-                        <TextBlock x:Name="MessageText" Grid.Column="1" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                   Foreground="{StaticResource Brush.Warning}" VerticalAlignment="Top" Margin="10,14,10,20"/>
+                        <TextBlock x:Name="MessageText" Grid.Column="1" TextWrapping="Wrap" Margin="10,10,20,10" VerticalAlignment="Center"/>
                     </Grid>
                 </Border>
 
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
                     <Button x:Name="CancelButton" Content="Cancel" Width="90" Margin="0,0,8,0" Click="Cancel_Click" IsCancel="True"/>
                     <Button x:Name="SecondaryButton" Width="150" Margin="0,0,8,0" Click="Secondary_Click" Visibility="Collapsed"/>
                     <Button x:Name="ConfirmButton" Width="110" Style="{StaticResource DangerButton}" Click="Confirm_Click" IsDefault="True"/>

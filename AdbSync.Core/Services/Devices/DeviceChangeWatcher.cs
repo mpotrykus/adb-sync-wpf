@@ -1,4 +1,5 @@
 using AdbSync.Core.Models.Devices;
+using AdbSync.Core.Services.Transfer;
 using System.Runtime.CompilerServices;
 using System.Text;
 using AdvancedSharpAdbClient;
@@ -15,7 +16,14 @@ namespace AdbSync.Core.Services.Devices;
 /// </summary>
 public sealed class DeviceChangeWatcher(IAdbClient adbClient) : IDeviceChangeWatcher
 {
-    public async Task<WatchAvailability> CheckAvailabilityAsync(string serial, string remotePath, CancellationToken ct = default)
+    // inotifyd isn't recursive - watching a large tree means registering one inotify watch per directory in a
+    // single command. Past a few hundred, registering them all at once floods the adb shell connection with
+    // self-triggered events (each new watch looks like an "access" event to its already-registered parent), which
+    // *can* break the connection outright under load (e.g. over a slower Wi-Fi hop). This is a recommendation,
+    // not a hard requirement - trees past it have been observed to work fine - so it only produces a warning.
+    private const int RecommendedMaxWatchedDirectories = 200;
+
+    public async Task<WatchAvailability> CheckAvailabilityAsync(string serial, string remotePath, IExcludeMatcher exclude, CancellationToken ct = default)
     {
         var device = new DeviceData { Serial = serial, State = DeviceState.Online };
 
@@ -27,7 +35,14 @@ public sealed class DeviceChangeWatcher(IAdbClient adbClient) : IDeviceChangeWat
         if (!readable.Contains("OK", StringComparison.Ordinal))
             return new WatchAvailability(false, "path not readable by adb shell (scoped storage - likely an app-private folder)");
 
-        return new WatchAvailability(true, "Live watch supported");
+        var dirs = await EnumerateSubdirectoriesAsync(serial, remotePath, exclude, ct);
+        var warning = dirs.Count > RecommendedMaxWatchedDirectories
+            ? $"watching {dirs.Count} directories (recommended limit is {RecommendedMaxWatchedDirectories}) - " +
+              "inotifyd needs one watch per directory, and a tree this large may flood the connection and drop it under load. " +
+              "Consider narrowing the path or excluding more of it."
+            : null;
+
+        return new WatchAvailability(true, "Live watch supported", warning);
     }
 
     public async IAsyncEnumerable<ChangeSignal> WatchAsync(
@@ -45,15 +60,22 @@ public sealed class DeviceChangeWatcher(IAdbClient adbClient) : IDeviceChangeWat
             yield return new ChangeSignal();
     }
 
-    public async Task<IReadOnlyList<string>> EnumerateSubdirectoriesAsync(string serial, string remotePath, CancellationToken ct = default)
+    public async Task<IReadOnlyList<string>> EnumerateSubdirectoriesAsync(string serial, string remotePath, IExcludeMatcher exclude, CancellationToken ct = default)
     {
         var device = new DeviceData { Serial = serial, State = DeviceState.Online };
         var output = await RunAsync(device, $"find {Quote(remotePath)} -type d", ct);
+        var root = remotePath.TrimEnd('/');
         return output
             .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Distinct()
+            .Where(path => !exclude.IsExcluded(RelativeToRoot(root, path), isDirectory: true))
             .ToList();
     }
+
+    /// <summary>"/root/sub/dir" relative to root "/root" is "sub/dir"; the root itself is "" - <see cref="IExcludeMatcher"/>
+    /// patterns are always expressed relative to the sync root, same as the transfer engine already does.</summary>
+    private static string RelativeToRoot(string root, string path) =>
+        path == root ? "" : path.StartsWith(root + "/", StringComparison.Ordinal) ? path[(root.Length + 1)..] : path;
 
     public async Task<string> SnapshotAsync(string serial, string remotePath, CancellationToken ct = default)
     {

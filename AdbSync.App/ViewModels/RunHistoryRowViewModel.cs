@@ -6,20 +6,53 @@ using AdbSync.Core.Services.Orchestration.RunHistory;
 
 namespace AdbSync.App.ViewModels;
 
-public sealed class RunHistoryRowViewModel(JobRunRecord record)
+public sealed class RunHistoryRowViewModel
 {
-    public Guid RunId { get; } = record.RunId;
-    public string StartedAtText { get; } = record.StartedAt.LocalDateTime.ToString("g");
-    public string DurationText { get; } = FormatDuration(record.CompletedAt - record.StartedAt);
-    public string PullDurationText { get; } = record.PullDuration is { } pull ? FormatDuration(pull) : "-";
-    public string PushDurationText { get; } = record.PushDuration is { } push ? FormatDuration(push) : "-";
-    public int FilesCopied { get; } = record.FilesCopied;
-    public int FilesDeleted { get; } = record.FilesDeleted;
-    public string SizeText { get; } = FormatSize(record.BytesCopied);
-    public int ErrorCount { get; } = record.ErrorCount;
-    public JobRunOutcome Outcome { get; } = record.Outcome;
-    public string OutcomeText { get; } = RunOutcomeDisplay.FriendlyName(record.Outcome);
-    public string? ErrorMessage { get; } = record.ErrorMessage;
+    public RunHistoryRowViewModel(JobRunRecord record)
+    {
+        RunId = record.RunId;
+        StartedAtText = record.StartedAt.LocalDateTime.ToString("g");
+        DurationText = FormatDuration(record.CompletedAt - record.StartedAt);
+        PullDurationText = record.PullDuration is { } pull ? FormatDuration(pull) : "-";
+        PushDurationText = record.PushDuration is { } push ? FormatDuration(push) : "-";
+        FilesCopied = record.FilesCopied;
+        FilesDeleted = record.FilesDeleted;
+        SizeText = FormatSize(record.BytesCopied);
+        ErrorCount = record.ErrorCount;
+        Outcome = record.Outcome;
+        OutcomeText = RunOutcomeDisplay.FriendlyName(record.Outcome);
+        ErrorMessage = record.ErrorMessage;
+    }
+
+    /// <summary>Builds the synthetic row shown at the top of the grid for a job that's currently running - there's
+    /// no <see cref="JobRunRecord"/> yet, so the stats columns are placeholders until the real row lands.</summary>
+    public RunHistoryRowViewModel(string phaseText, DateTimeOffset startedAt)
+    {
+        IsRunning = true;
+        RunId = Guid.Empty;
+        StartedAtText = startedAt.LocalDateTime.ToString("g");
+        DurationText = FormatDuration(DateTimeOffset.Now - startedAt);
+        PullDurationText = "-";
+        PushDurationText = "-";
+        SizeText = "-";
+        OutcomeText = phaseText;
+    }
+
+    /// <summary>True for the synthetic in-progress row - also drives the shared running-shimmer <c>DataGridRow</c>
+    /// style in Theme.xaml, which binds to this same property name on the dashboard's job rows.</summary>
+    public bool IsRunning { get; }
+    public Guid RunId { get; }
+    public string StartedAtText { get; }
+    public string DurationText { get; }
+    public string PullDurationText { get; }
+    public string PushDurationText { get; }
+    public int FilesCopied { get; }
+    public int FilesDeleted { get; }
+    public string SizeText { get; }
+    public int ErrorCount { get; }
+    public JobRunOutcome Outcome { get; }
+    public string OutcomeText { get; }
+    public string? ErrorMessage { get; }
 
     internal static string FormatDuration(TimeSpan duration)
     {

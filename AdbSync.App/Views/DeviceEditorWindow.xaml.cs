@@ -53,6 +53,8 @@ public partial class DeviceEditorWindow : Window
 
     private void DeviceList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        NameErrorText.Visibility = Visibility.Collapsed;
+
         if (DeviceList.SelectedItem is not DeviceRow row)
         {
             _selected = null;
@@ -80,6 +82,7 @@ public partial class DeviceEditorWindow : Window
 
     private void New_Click(object sender, RoutedEventArgs e)
     {
+        NameErrorText.Visibility = Visibility.Collapsed;
         _selected = null;
         DeviceList.SelectedItem = null;
         NameBox.Text = "";
@@ -91,17 +94,19 @@ public partial class DeviceEditorWindow : Window
 
     private async void SaveDevice_Click(object sender, RoutedEventArgs e)
     {
+        NameErrorText.Visibility = Visibility.Collapsed;
+
         var name = NameBox.Text.Trim();
         if (name.Length == 0)
         {
-            MessageBox.Show(this, "Name is required.", "AdbSync", MessageBoxButton.OK, MessageBoxImage.Warning);
+            ShowNameError("Name is required.");
             return;
         }
 
         var isNew = _selected is null;
         if (isNew && _config.Devices.Any(d => d.Name == name))
         {
-            MessageBox.Show(this, $"A device named '{name}' already exists.", "AdbSync", MessageBoxButton.OK, MessageBoxImage.Warning);
+            ShowNameError($"A device named '{name}' already exists.");
             return;
         }
 
@@ -187,6 +192,12 @@ public partial class DeviceEditorWindow : Window
         var dialog = new PairDeviceWindow(name, ip) { Owner = this };
         if (dialog.ShowDialog() == true)
             TestResultText.Text = $"Paired: {dialog.PairedHostPort}";
+    }
+
+    private void ShowNameError(string message)
+    {
+        NameErrorText.Text = message;
+        NameErrorText.Visibility = Visibility.Visible;
     }
 
     private void Close_Click(object sender, RoutedEventArgs e) => Close();

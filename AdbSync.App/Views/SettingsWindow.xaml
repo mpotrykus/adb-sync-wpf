@@ -35,6 +35,7 @@
                                          controls:TextBoxHelper.Placeholder="C:\Users\you\Documents\AdbSync Projects"/>
                                 <Button Grid.Column="1" Content="Browse..." Click="Browse_Click"/>
                             </Grid>
+                            <TextBlock x:Name="ProjectsDirectoryErrorText" Style="{StaticResource ValidationErrorText}"/>
                         </StackPanel>
                     </Border>
 
@@ -134,7 +135,7 @@
                                             </TextBlock>
                                             <TextBox Grid.Row="0" Grid.Column="1" x:Name="LogRetentionDaysBox" controls:TextBoxHelper.Placeholder="30"/>
                                             <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,12,0,0">
-                                                <Run Text="Max log file size "/><Run Text="(MB)" Style="{StaticResource DescriptorRun}"/>
+                                                <Run Text="Max log file size "/><Run Text="(mb)" Style="{StaticResource DescriptorRun}"/>
                                             </TextBlock>
                                             <TextBox Grid.Row="1" Grid.Column="1" x:Name="PerLogFileMaxMegabytesBox" Margin="0,12,0,0" controls:TextBoxHelper.Placeholder="5"/>
                                             <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Margin="0,12,0,0">
@@ -165,9 +166,9 @@
                                                 <RowDefinition/>
                                             </Grid.RowDefinitions>
                                             <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center">
-                                                <Run Text="Bandwidth throttle "/><Run Text="(KB/s, blank = unlimited)" Style="{StaticResource DescriptorRun}"/>
+                                                <Run Text="Bandwidth throttle "/><Run Text="(kb/s, blank = unlimited)" Style="{StaticResource DescriptorRun}"/>
                                             </TextBlock>
-                                            <TextBox Grid.Row="0" Grid.Column="1" x:Name="BandwidthThrottleKBpsBox" controls:TextBoxHelper.Placeholder="unlimited"/>
+                                            <TextBox Grid.Row="0" Grid.Column="1" x:Name="BandwidthThrottleKBpsBox" controls:TextBoxHelper.Placeholder="Unlimited"/>
                                             <TextBlock Grid.Row="1" Grid.Column="0" Text="Transfer retry attempts" VerticalAlignment="Center" Margin="0,12,0,0"/>
                                             <TextBox Grid.Row="1" Grid.Column="1" x:Name="RetryMaxAttemptsBox" Margin="0,12,0,0" controls:TextBoxHelper.Placeholder="3"/>
                                             <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Margin="0,12,0,0">

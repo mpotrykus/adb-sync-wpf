@@ -22,6 +22,7 @@
             <Grid Grid.Row="1" Margin="20">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
@@ -38,19 +39,26 @@
                             <TextBox x:Name="PathBox" Grid.Column="0" Margin="0,0,8,0" KeyDown="PathBox_KeyDown"/>
                             <Button Grid.Column="1" Content="Go" Click="Go_Click"/>
                         </Grid>
-                        <Button x:Name="UpButton" Content="Up" HorizontalAlignment="Left" Click="Up_Click"/>
                     </StackPanel>
                 </Border>
 
-                <Grid Grid.Row="1" Margin="0,12,0,0">
+                <TextBox Grid.Row="1" x:Name="FilterBox" Margin="0,12,0,0" controls:TextBoxHelper.Placeholder="Filter folders..."
+                         TextChanged="FilterBox_TextChanged"/>
+
+                <Grid Grid.Row="2" Margin="0,12,0,0">
                     <ListBox x:Name="FoldersList" MouseDoubleClick="FoldersList_MouseDoubleClick">
                         <ListBox.ItemTemplate>
                             <DataTemplate>
                                 <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="&#xE8B7;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="14"
+                                    <TextBlock x:Name="Icon" Text="&#xE8B7;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="14"
                                                Foreground="{StaticResource Brush.Text.Secondary}" Margin="0,0,8,0" VerticalAlignment="Center"/>
                                     <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
                                 </StackPanel>
+                                <DataTemplate.Triggers>
+                                    <DataTrigger Binding="{Binding IsParent}" Value="True">
+                                        <Setter TargetName="Icon" Property="Text" Value="&#xE74A;"/>
+                                    </DataTrigger>
+                                </DataTemplate.Triggers>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
                     </ListBox>
@@ -58,10 +66,10 @@
                                HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0" Visibility="Collapsed"/>
                 </Grid>
 
-                <TextBlock Grid.Row="2" x:Name="StatusText" Style="{StaticResource CaptionText}" Foreground="{StaticResource Brush.Danger}"
+                <TextBlock Grid.Row="3" x:Name="StatusText" Style="{StaticResource CaptionText}" Foreground="{StaticResource Brush.Danger}"
                            Margin="4,10,4,0" Visibility="Collapsed"/>
 
-                <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+                <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
                     <Button Content="Cancel" Width="90" Margin="0,0,8,0" Click="Cancel_Click" IsCancel="True"/>
                     <Button Content="Select Folder" Width="120" Style="{StaticResource PrimaryButton}" Click="Select_Click" IsDefault="True"/>
                 </StackPanel>

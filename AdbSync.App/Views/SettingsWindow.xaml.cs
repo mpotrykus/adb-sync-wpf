@@ -54,7 +54,10 @@ public partial class SettingsWindow : Window
         if (ConfirmDialog.Show(this, "Set to Default",
             "This resets every setting on this page to its default value. Your changes won't be saved unless you click Save afterward.",
             confirmText: "Set to Default"))
+        {
             LoadFromSettings(new GlobalSettings());
+            ProjectsDirectoryErrorText.Visibility = Visibility.Collapsed;
+        }
     }
 
     private void Browse_Click(object sender, RoutedEventArgs e)
@@ -69,9 +72,12 @@ public partial class SettingsWindow : Window
 
     private void Save_Click(object sender, RoutedEventArgs e)
     {
+        ProjectsDirectoryErrorText.Visibility = Visibility.Collapsed;
+
         if (string.IsNullOrWhiteSpace(ProjectsDirectoryBox.Text))
         {
-            MessageBox.Show(this, "Projects directory is required.", "AdbSync", MessageBoxButton.OK, MessageBoxImage.Warning);
+            ProjectsDirectoryErrorText.Text = "Projects directory is required.";
+            ProjectsDirectoryErrorText.Visibility = Visibility.Visible;
             return;
         }
 

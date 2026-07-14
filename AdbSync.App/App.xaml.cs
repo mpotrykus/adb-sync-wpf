@@ -154,6 +154,7 @@ public partial class App : Application
         services.AddSingleton(AppPaths.Default);
         services.AddSingleton<IAppConfigStore, AppConfigStore>();
         services.AddSingleton<AppConfigService>();
+        services.AddSingleton<DashboardUiStateStore>();
 
         services.AddSingleton<IAdbClient>(_ => new AdbClient());
         services.AddSingleton<IAdbServer>(_ => new AdbServer());
@@ -173,6 +174,7 @@ public partial class App : Application
         services.AddSingleton<ICheckpointManager, CheckpointManager>();
         services.AddSingleton<IDeviceSnapshotService, DeviceSnapshotService>();
         services.AddSingleton<IRunHistoryStore, RunHistoryStore>();
+        services.AddSingleton<ILiveRunLogSink, LiveRunLogSink>();
 
         services.AddSingleton<DashboardViewModel>();
         services.AddSingleton<ISyncEventSink>(sp => sp.GetRequiredService<DashboardViewModel>());

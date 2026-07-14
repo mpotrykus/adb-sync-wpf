@@ -1,7 +1,12 @@
 using System.ComponentModel;
+using System.Diagnostics;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Data;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using AdbSync.App.Services;
 using AdbSync.App.ViewModels;
@@ -13,6 +18,7 @@ using AdbSync.Core.Models.Orchestration;
 using AdbSync.Core.Services.Orchestration;
 using AdbSync.Core.Models.Orchestration.RunHistory;
 using AdbSync.Core.Services.Orchestration.RunHistory;
+using AdbSync.Core.Services.Logging;
 using AdbSync.Core.Models.Transfer;
 using AdbSync.Core.Services.Transfer;
 
@@ -21,9 +27,11 @@ namespace AdbSync.App.Views;
 public partial class DashboardWindow : Window
 {
     private readonly AppConfigService _configService;
+    private readonly DashboardUiStateStore _uiStateStore;
     private readonly JobRunService _jobRunService;
     private readonly DashboardViewModel _viewModel;
     private readonly IRunHistoryStore _historyStore;
+    private readonly ILiveRunLogSink _liveLogSink;
     private readonly IAdbDeviceResolver _deviceResolver;
     private readonly IDeviceChangeWatcher _changeWatcher;
     private readonly IRemoteFileSystemFactory _remoteFileSystemFactory;
@@ -37,16 +45,23 @@ public partial class DashboardWindow : Window
     private DeviceEditorWindow? _deviceEditorWindow;
     private SettingsWindow? _settingsWindow;
 
+    // The user's last chosen sort column/direction, kept for the life of the window (it's hidden, not recreated,
+    // between tray show/hide cycles) so it survives every SyncFrom-driven refresh rather than resetting to default.
+    private string _sortMemberPath = nameof(JobStatusViewModel.Name);
+    private ListSortDirection _sortDirection = ListSortDirection.Ascending;
+
     public DashboardWindow(
-        AppConfigService configService, JobRunService jobRunService, DashboardViewModel viewModel, IRunHistoryStore historyStore,
-        IAdbDeviceResolver deviceResolver, IDeviceChangeWatcher changeWatcher, IRemoteFileSystemFactory remoteFileSystemFactory,
-        IDevicePackageLister packageLister)
+        AppConfigService configService, DashboardUiStateStore uiStateStore, JobRunService jobRunService, DashboardViewModel viewModel,
+        IRunHistoryStore historyStore, ILiveRunLogSink liveLogSink, IAdbDeviceResolver deviceResolver, IDeviceChangeWatcher changeWatcher,
+        IRemoteFileSystemFactory remoteFileSystemFactory, IDevicePackageLister packageLister)
     {
         InitializeComponent();
         _configService = configService;
+        _uiStateStore = uiStateStore;
         _jobRunService = jobRunService;
         _viewModel = viewModel;
         _historyStore = historyStore;
+        _liveLogSink = liveLogSink;
         _deviceResolver = deviceResolver;
         _changeWatcher = changeWatcher;
         _remoteFileSystemFactory = remoteFileSystemFactory;
@@ -69,9 +84,26 @@ public partial class DashboardWindow : Window
                 _relativeTimeTimer.Stop();
         };
 
-        Loaded += async (_, _) => await RefreshAsync();
+        ApplySort();
+
+        Loaded += async (_, _) =>
+        {
+            await LoadPersistedSortAsync();
+            await RefreshAsync();
+        };
         _configService.ConfigChanged += async (_, _) => await Dispatcher.InvokeAsync(RefreshAsync);
         PreviewKeyDown += (_, e) => { if (e.Key == System.Windows.Input.Key.F12) Application.Current.Shutdown(); };
+    }
+
+    private async Task LoadPersistedSortAsync()
+    {
+        var state = await _uiStateStore.LoadAsync();
+        if (state.SortColumn is not { Length: > 0 } sortColumn || JobsGrid.Columns.All(c => c.SortMemberPath != sortColumn))
+            return;
+
+        _sortMemberPath = sortColumn;
+        _sortDirection = state.SortDescending ? ListSortDirection.Descending : ListSortDirection.Ascending;
+        ApplySort();
     }
 
     private async Task RefreshAsync()
@@ -79,6 +111,69 @@ public partial class DashboardWindow : Window
         var config = await _configService.GetAsync();
         _viewModel.SyncFrom(config);
         await PopulateLastOutcomesAsync(config);
+
+        // SyncFrom adds/removes rows in the same ObservableCollection, so its default CollectionView normally
+        // keeps sorting itself automatically - this reapplies explicitly so a refresh can never drop the user's
+        // chosen sort column/direction or leave a stale arrow on the header.
+        ApplySort();
+    }
+
+    private void JobsGrid_Sorting(object sender, DataGridSortingEventArgs e)
+    {
+        if (e.Column.SortMemberPath is not { Length: > 0 } sortMemberPath)
+            return;
+
+        e.Handled = true;
+        _sortDirection = e.Column.SortDirection == ListSortDirection.Ascending ? ListSortDirection.Descending : ListSortDirection.Ascending;
+        _sortMemberPath = sortMemberPath;
+        ApplySort();
+
+        _ = _uiStateStore.SaveAsync(new DashboardUiState
+        {
+            SortColumn = _sortMemberPath,
+            SortDescending = _sortDirection == ListSortDirection.Descending,
+        });
+    }
+
+    private void ApplySort()
+    {
+        var view = CollectionViewSource.GetDefaultView(_viewModel.Jobs);
+        view.SortDescriptions.Clear();
+        view.SortDescriptions.Add(new SortDescription(_sortMemberPath, _sortDirection));
+
+        foreach (var column in JobsGrid.Columns)
+            column.SortDirection = column.SortMemberPath == _sortMemberPath ? _sortDirection : null;
+
+        // Driven from code rather than a XAML Trigger.EnterActions storyboard: BeginAnimation always cleanly
+        // replaces whatever's currently animating the property, so repeated toggles (unlike trigger-driven
+        // storyboards, which only reliably fire the first time a given trigger becomes active) always animate.
+        foreach (var header in FindVisualChildren<DataGridColumnHeader>(JobsGrid))
+        {
+            if (header.Column is not { } column || header.Template?.FindName("SortArrowRotate", header) is not RotateTransform rotate)
+                continue;
+
+            var targetAngle = column.SortDirection switch
+            {
+                ListSortDirection.Ascending => 0.0,
+                ListSortDirection.Descending => 180.0,
+                _ => (double?)null,
+            };
+            if (targetAngle is { } angle)
+                rotate.BeginAnimation(RotateTransform.AngleProperty, new DoubleAnimation(angle, TimeSpan.FromMilliseconds(150)));
+        }
+    }
+
+    private static IEnumerable<T> FindVisualChildren<T>(DependencyObject root) where T : DependencyObject
+    {
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is T match)
+                yield return match;
+
+            foreach (var descendant in FindVisualChildren<T>(child))
+                yield return descendant;
+        }
     }
 
     // SyncFrom only knows the last-run timestamp from job config; the human-readable outcome text lives in run
@@ -267,9 +362,9 @@ public partial class DashboardWindow : Window
             return;
 
         var choice = ConfirmDialog.ShowWithResult(this, "Checkpoint",
-            $"This pulls the current contents of every device in '{vm.Name}' into a new, timestamped backup folder inside its project directory. " +
-            "It does not touch the sync master, staging, or the devices themselves, so it won't be modified or removed by future sync runs - " +
-            "use it to snapshot device state before running a job you're unsure about.",
+            $"This pulls the current contents of every device in '{vm.Name}' into a new, timestamped backup folder inside its project directory.\n\n" +
+            "It does not touch the sync master, staging, or the devices themselves, so it won't be modified or removed by future sync runs.\n\n" +
+            "Use it to snapshot device state before running a job you're unsure about.",
             confirmText: "Checkpoint", secondaryText: "Restore Checkpoint...");
 
         switch (choice)
@@ -345,6 +440,25 @@ public partial class DashboardWindow : Window
         }
     }
 
+    private async void OpenFolder_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: JobStatusViewModel vm })
+            return;
+
+        var config = await _configService.GetAsync();
+        var job = config.Jobs.FirstOrDefault(j => j.Name == vm.Name);
+        if (job is null)
+            return;
+
+        var eff = job.Resolve(config.Settings);
+        if (string.IsNullOrWhiteSpace(eff.ProjectsDirectory))
+            return;
+
+        var projectRoot = Path.Combine(eff.ProjectsDirectory, job.Name);
+        Directory.CreateDirectory(projectRoot);
+        Process.Start(new ProcessStartInfo("explorer.exe", $"\"{projectRoot}\"") { UseShellExecute = true });
+    }
+
     private void ViewLogs_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: JobStatusViewModel vm })
@@ -356,7 +470,7 @@ public partial class DashboardWindow : Window
             return;
         }
 
-        var window = new RunHistoryWindow(_historyStore, vm.Name) { Owner = this };
+        var window = new RunHistoryWindow(_historyStore, vm.Name, _viewModel, _liveLogSink) { Owner = this };
         _openRunHistoryWindows[vm.Name] = window;
         window.Closed += (_, _) => _openRunHistoryWindows.Remove(vm.Name);
         window.Show();

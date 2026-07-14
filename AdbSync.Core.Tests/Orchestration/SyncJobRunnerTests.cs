@@ -6,6 +6,7 @@ using AdbSync.Core.Models.Orchestration;
 using AdbSync.Core.Services.Orchestration;
 using AdbSync.Core.Models.Orchestration.RunHistory;
 using AdbSync.Core.Services.Orchestration.RunHistory;
+using AdbSync.Core.Services.Logging;
 using AdbSync.Core.Tests.Orchestration.Fakes;
 
 namespace AdbSync.Core.Tests.Orchestration;
@@ -511,5 +512,52 @@ public class SyncJobRunnerTests : IDisposable
         var result = await runner.RunAsync(job, 0, [device], _settings, resumeFrom: null);
 
         Assert.Equal(JobRunOutcome.CompletedNoChanges, result.Outcome);
+    }
+
+    [Fact]
+    public async Task RunAsync_PopulatesLiveLogSinkWhileRunningAndClearsItOnceComplete()
+    {
+        WriteDeviceFile("DeviceA", "a.txt", "hello");
+        var device = new DeviceConfig { Name = "DeviceA", Serial = "DeviceA" };
+        var job = new SyncJobConfig
+        {
+            Name = "JobLiveLog",
+            Devices = [new JobDeviceBinding { DeviceName = "DeviceA", RemotePath = "/sdcard/app" }],
+        };
+        var liveLog = new LiveRunLogSink();
+        var wasLiveDuringRun = false;
+        // PhaseChanged fires synchronously from inside RunAsync, so this snapshots the sink's state mid-run
+        // without needing real concurrency - FakeAdbTransferEngine completes each phase synchronously too.
+        var sink = new PhaseCapturingSyncEventSink(() => wasLiveDuringRun |= liveLog.TryGet(job.Name, out _, out _));
+        var runner = new SyncJobRunner(
+            new FakeDeviceResolver(),
+            new FakeAppRunningGuard(),
+            new SyncLockManager(),
+            new FakeAdbTransferEngine(new Dictionary<string, string> { ["DeviceA"] = DeviceFolder("DeviceA") }),
+            new TwoWayMergeEngine(),
+            new ManifestStore(_appPaths),
+            new PushSafetyGuard(_appPaths),
+            new CheckpointManager(_appPaths),
+            sink,
+            new RunHistoryStore(_appPaths),
+            liveLog: liveLog);
+
+        await runner.RunAsync(job, 0, [device], _settings, resumeFrom: null);
+
+        Assert.True(wasLiveDuringRun);
+        Assert.False(liveLog.TryGet(job.Name, out _, out _));
+    }
+
+    private sealed class PhaseCapturingSyncEventSink(Action onPhaseChanged) : ISyncEventSink
+    {
+        public void PhaseChanged(string jobName, SyncPhase phase, string? deviceName = null) => onPhaseChanged();
+        public void JobSkipped(string jobName, string reason) { }
+        public void JobCompleted(string jobName, bool pushed) { }
+        public void JobFailed(string jobName, Exception exception) { }
+        public void MergeConflictsDetected(string jobName, string deviceName, int conflictCount) { }
+        public void WatchStarted(string jobName, string deviceName, bool liveWatch) { }
+        public void WatchDegraded(string jobName, string deviceName, string reason) { }
+        public void WatchStopped(string jobName, string deviceName) { }
+        public void ChangeDetected(string jobName, string deviceName) { }
     }
 }

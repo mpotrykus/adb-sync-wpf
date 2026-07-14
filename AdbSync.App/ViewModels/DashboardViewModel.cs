@@ -54,7 +54,12 @@ public sealed class DashboardViewModel : ISyncEventSink
     public void PhaseChanged(string jobName, SyncPhase phase, string? deviceName = null) =>
         UpdateJob(jobName, vm =>
         {
-            vm.PhaseText = deviceName is null ? phase.ToString() : $"{phase} @ {deviceName}";
+            vm.PhaseText = phase switch
+            {
+                SyncPhase.WaitingForAppClose when deviceName is not null => $"Waiting for app to close on {deviceName}",
+                _ when deviceName is null => phase.ToString(),
+                _ => $"{phase} @ {deviceName}",
+            };
             if (phase == SyncPhase.PreConnect)
                 vm.ConflictCountThisRun = 0;
         });

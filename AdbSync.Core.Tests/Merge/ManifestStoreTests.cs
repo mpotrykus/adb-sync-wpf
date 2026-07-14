@@ -63,6 +63,17 @@ public class ManifestStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task GetOrBootstrapAsync_SameSizeAndMtimeButDifferentContent_IsNotIncludedInBaseline()
+    {
+        Write(_stagingPath, "coincidence.txt", "aaaaaaaaaa", T0); // same size and mtime as master...
+        Write(_masterPath, "coincidence.txt", "bbbbbbbbbb", T0); // ...but genuinely different bytes
+
+        var manifest = await _store.GetOrBootstrapAsync("Job1", "DeviceA", _stagingPath, _masterPath);
+
+        Assert.False(manifest.Entries.ContainsKey("coincidence.txt"));
+    }
+
+    [Fact]
     public async Task SaveAsync_ThenGetOrBootstrapAsync_ReturnsPersistedManifestWithoutReBootstrapping()
     {
         var toSave = new SyncManifest

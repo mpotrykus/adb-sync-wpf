@@ -39,9 +39,10 @@
                         <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
                     </Grid.Resources>
                     <DataGrid x:Name="JobsGrid" ItemsSource="{Binding Jobs}" AutoGenerateColumns="False" IsReadOnly="True"
-                              CanUserAddRows="False" HeadersVisibility="Column" GridLinesVisibility="None">
+                              CanUserAddRows="False" CanUserSortColumns="True" HeadersVisibility="Column" GridLinesVisibility="None"
+                              Sorting="JobsGrid_Sorting">
                         <DataGrid.Columns>
-                            <DataGridTemplateColumn Header="ENABLED" Width="80">
+                            <DataGridTemplateColumn Header="ENABLED" Width="80" SortMemberPath="Enabled">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <CheckBox Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Center"
@@ -49,7 +50,7 @@
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
-                            <DataGridTemplateColumn Header="JOB" Width="150">
+                            <DataGridTemplateColumn Header="JOB" Width="*" SortMemberPath="Name">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <StackPanel Orientation="Horizontal">
@@ -62,19 +63,20 @@
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
-                            <DataGridTemplateColumn Header="STATUS" Width="120">
+                            <DataGridTemplateColumn Header="STATUS" Width="*" SortMemberPath="DisplayStatusText">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <StackPanel Orientation="Horizontal">
                                             <Ellipse Style="{StaticResource StatusDot}" Fill="{Binding DisplayStatusText, Converter={StaticResource PhaseToBrushConverter}}"/>
                                             <TextBlock Text="{Binding DisplayStatusText}" VerticalAlignment="Center"
                                                        TextTrimming="CharacterEllipsis"
+                                                       ToolTip="{Binding DisplayStatusText}"
                                                        Foreground="{Binding DisplayStatusText, Converter={StaticResource PhaseToBrushConverter}}"/>
                                         </StackPanel>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
-                            <DataGridTextColumn Header="LAST RESULT" Binding="{Binding LastOutcome}" Width="*">
+                            <DataGridTextColumn Header="LAST RESULT" Binding="{Binding LastOutcome}" Width="156">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
                                         <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
@@ -83,21 +85,26 @@
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
-                            <DataGridTextColumn Header="LAST RUN" Binding="{Binding LastRunText}" Width="150">
+                            <DataGridTextColumn Header="LAST RUN" Binding="{Binding LastRunText}" Width="130" SortMemberPath="LastRunAt">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
                                         <Setter Property="Foreground" Value="{StaticResource Brush.Text.Secondary}"/>
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
-                            <DataGridTextColumn Header="NEXT RUN" Binding="{Binding NextRunText}" Width="150">
+                            <DataGridTextColumn Header="NEXT RUN" Binding="{Binding NextRunText}" Width="130" SortMemberPath="NextRunAt">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
                                         <Setter Property="Foreground" Value="{StaticResource Brush.Text.Secondary}"/>
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
-                            <DataGridTemplateColumn Header="" Width="230">
+                            <DataGridTemplateColumn Header="" Width="260" CanUserSort="False">
+                                <DataGridTemplateColumn.HeaderStyle>
+                                    <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
+                                        <Setter Property="Cursor" Value="Arrow"/>
+                                    </Style>
+                                </DataGridTemplateColumn.HeaderStyle>
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
@@ -114,8 +121,11 @@
                                             <Button Style="{StaticResource RowButton}" Margin="0,0,4,0" Click="Checkpoint_Click" ToolTip="Checkpoint (back up current device state)">
                                                 <TextBlock Text="&#xE722;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="12"/>
                                             </Button>
-                                            <Button Style="{StaticResource RowButton}" Margin="0,0,16,0" Click="ViewLogs_Click" ToolTip="Run History">
+                                            <Button Style="{StaticResource RowButton}" Margin="0,0,4,0" Click="ViewLogs_Click" ToolTip="Run History">
                                                 <TextBlock Text="&#xE81C;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="12"/>
+                                            </Button>
+                                            <Button Style="{StaticResource RowButton}" Margin="0,0,16,0" Click="OpenFolder_Click" ToolTip="Open Project Folder">
+                                                <TextBlock Text="&#xE8B7;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="12"/>
                                             </Button>
                                             <Button Style="{StaticResource RowDangerButton}" Click="RemoveJob_Click" ToolTip="Remove">
                                                 <TextBlock Text="&#xE74D;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="12"/>

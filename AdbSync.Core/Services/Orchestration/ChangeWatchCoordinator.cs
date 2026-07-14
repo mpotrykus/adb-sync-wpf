@@ -69,7 +69,7 @@ public sealed class ChangeWatchCoordinator(
             try
             {
                 var serial = await deviceResolver.EnsureConnectedAsync(binding.Device, ct);
-                var availability = await watcher.CheckAvailabilityAsync(serial, binding.RemotePath, ct);
+                var availability = await watcher.CheckAvailabilityAsync(serial, binding.RemotePath, binding.Exclude, ct);
 
                 if (availability.LiveWatchSupported)
                 {
@@ -99,7 +99,7 @@ public sealed class ChangeWatchCoordinator(
     {
         while (!ct.IsCancellationRequested)
         {
-            var paths = await watcher.EnumerateSubdirectoriesAsync(serial, binding.RemotePath, ct);
+            var paths = await watcher.EnumerateSubdirectoriesAsync(serial, binding.RemotePath, binding.Exclude, ct);
             if (!paths.Contains(binding.RemotePath))
                 paths = [binding.RemotePath, .. paths];
 

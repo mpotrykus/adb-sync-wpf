@@ -5,6 +5,7 @@ using AdbSync.Core.Models.Devices;
 using AdbSync.Core.Services.Devices;
 using AdbSync.Core.Models.Orchestration;
 using AdbSync.Core.Services.Orchestration;
+using AdbSync.Core.Services.Transfer;
 using AdbSync.Core.Tests.Orchestration.Fakes;
 using NSubstitute;
 
@@ -15,6 +16,7 @@ public class ChangeWatchCoordinatorTests
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(30);
     private static readonly TimeSpan ReconnectBackoff = TimeSpan.FromMilliseconds(30);
     private static readonly DeviceConfig Device = new() { Name = "Phone", Serial = "abc123" };
+    private static readonly IExcludeMatcher NoExclude = new ExcludeMatcher([]);
 
     [Fact]
     public async Task RapidSignals_CoalesceIntoOneTrigger()
@@ -24,7 +26,7 @@ public class ChangeWatchCoordinatorTests
         var triggerCount = 0;
 
         await using var coordinator = new ChangeWatchCoordinator(
-            "Job", [new ChangeWatchBinding(Device, "/sdcard/DCIM")], watcher, new FakeDeviceResolver(), events,
+            "Job", [new ChangeWatchBinding(Device, "/sdcard/DCIM", NoExclude)], watcher, new FakeDeviceResolver(), events,
             debounceWindow: TimeSpan.FromMilliseconds(60), rescanInterval: TimeSpan.FromSeconds(30),
             onTriggered: () => { Interlocked.Increment(ref triggerCount); return Task.CompletedTask; },
             pollInterval: PollInterval, reconnectBackoff: ReconnectBackoff);
@@ -53,7 +55,7 @@ public class ChangeWatchCoordinatorTests
         var triggerCount = 0;
 
         await using var coordinator = new ChangeWatchCoordinator(
-            "Job", [new ChangeWatchBinding(Device, "/sdcard/DCIM")], watcher, new FakeDeviceResolver(), events,
+            "Job", [new ChangeWatchBinding(Device, "/sdcard/DCIM", NoExclude)], watcher, new FakeDeviceResolver(), events,
             debounceWindow: TimeSpan.FromMilliseconds(20), rescanInterval: TimeSpan.FromSeconds(30),
             onTriggered: () =>
             {
@@ -87,7 +89,7 @@ public class ChangeWatchCoordinatorTests
         var triggerCount = 0;
 
         await using var coordinator = new ChangeWatchCoordinator(
-            "Job", [new ChangeWatchBinding(Device, "/sdcard/Android/data/com.foo")], watcher, new FakeDeviceResolver(), events,
+            "Job", [new ChangeWatchBinding(Device, "/sdcard/Android/data/com.foo", NoExclude)], watcher, new FakeDeviceResolver(), events,
             debounceWindow: TimeSpan.FromMilliseconds(20), rescanInterval: TimeSpan.FromSeconds(30),
             onTriggered: () => { Interlocked.Increment(ref triggerCount); return Task.CompletedTask; },
             pollInterval: PollInterval, reconnectBackoff: ReconnectBackoff);
@@ -116,7 +118,7 @@ public class ChangeWatchCoordinatorTests
 
         var triggerCount = 0;
         await using var coordinator = new ChangeWatchCoordinator(
-            "Job", [new ChangeWatchBinding(Device, "/sdcard/DCIM")], watcher, resolver, events,
+            "Job", [new ChangeWatchBinding(Device, "/sdcard/DCIM", NoExclude)], watcher, resolver, events,
             debounceWindow: TimeSpan.FromMilliseconds(20), rescanInterval: TimeSpan.FromSeconds(30),
             onTriggered: () => { Interlocked.Increment(ref triggerCount); return Task.CompletedTask; },
             pollInterval: PollInterval, reconnectBackoff: ReconnectBackoff);
