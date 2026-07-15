@@ -6,6 +6,10 @@
 
   <ItemGroup>
     <Resource Include="Assets\app.ico" />
+    <Resource Include="Assets\pull.ico" />
+    <Resource Include="Assets\push.ico" />
+    <Resource Include="Assets\merge.ico" />
+    <Resource Include="Assets\warning.ico" />
   </ItemGroup>
 
   <ItemGroup>

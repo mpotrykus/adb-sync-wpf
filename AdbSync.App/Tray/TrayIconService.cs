@@ -27,11 +27,23 @@ public sealed class TrayIconService(
     private TaskbarIcon? _icon;
     private DashboardWindow? _dashboardWindow;
 
+    private System.Drawing.Icon _appIcon = null!;
+    private System.Drawing.Icon _pullIcon = null!;
+    private System.Drawing.Icon _pushIcon = null!;
+    private System.Drawing.Icon _mergeIcon = null!;
+    private System.Drawing.Icon _warningIcon = null!;
+
     public void Initialize()
     {
+        _appIcon = LoadIcon("app.ico");
+        _pullIcon = LoadIcon("pull.ico");
+        _pushIcon = LoadIcon("push.ico");
+        _mergeIcon = LoadIcon("merge.ico");
+        _warningIcon = LoadIcon("warning.ico");
+
         _icon = new TaskbarIcon
         {
-            Icon = LoadAppIcon(),
+            Icon = (System.Drawing.Icon)_appIcon.Clone(),
             ToolTipText = "AdbSync: idle",
         };
 
@@ -42,7 +54,11 @@ public sealed class TrayIconService(
             WireJobUpdates(job);
         dashboard.Jobs.CollectionChanged += (_, e) =>
         {
-            Application.Current.Dispatcher.Invoke(RebuildContextMenu);
+            Application.Current.Dispatcher.Invoke(() =>
+            {
+                RebuildContextMenu();
+                UpdateTrayIcon();
+            });
             if (e.NewItems is null)
                 return;
             foreach (JobStatusViewModel job in e.NewItems)
@@ -51,6 +67,7 @@ public sealed class TrayIconService(
         configService.ConfigChanged += (_, _) => Application.Current.Dispatcher.Invoke(RebuildContextMenu);
 
         RebuildContextMenu();
+        UpdateTrayIcon();
     }
 
     /// <summary>Live tray tooltip (mirrors the old tool's per-phase tooltip updates) + balloon notifications on outcome, gated by settings.</summary>
@@ -60,6 +77,8 @@ public sealed class TrayIconService(
         {
             if (e.PropertyName == nameof(JobStatusViewModel.PhaseText))
                 UpdateTooltip(job);
+            if (e.PropertyName is nameof(JobStatusViewModel.PhaseText) or nameof(JobStatusViewModel.NeedsAttention))
+                UpdateTrayIcon();
         };
         job.OutcomeReported += async _ => await ShowOutcomeNotificationAsync(job);
     }
@@ -71,6 +90,27 @@ public sealed class TrayIconService(
         _icon.ToolTipText = job.PhaseText == "Idle"
             ? (dashboard.Jobs.FirstOrDefault(j => j.PhaseText != "Idle") is { } active ? $"AdbSync: [{active.Name}] {active.PhaseText}" : "AdbSync: idle")
             : $"AdbSync: [{job.Name}] {job.PhaseText}";
+    }
+
+    /// <summary>Picks the tray glyph from current job states: a job needing attention (force-push required,
+    /// device unreachable, etc.) always wins over an in-progress phase, otherwise the busiest active phase
+    /// across all jobs is shown, falling back to the plain app icon when everything is idle/watching.</summary>
+    private void UpdateTrayIcon()
+    {
+        if (_icon is null)
+            return;
+
+        var jobs = dashboard.Jobs;
+        var master = jobs.Any(j => j.NeedsAttention) ? _warningIcon
+            : jobs.Any(j => j.PhaseText.StartsWith("Push", StringComparison.Ordinal)) ? _pushIcon
+            : jobs.Any(j => j.PhaseText.StartsWith("Pull", StringComparison.Ordinal)) ? _pullIcon
+            : jobs.Any(j => j.PhaseText.StartsWith("Merge", StringComparison.Ordinal)) ? _mergeIcon
+            : _appIcon;
+
+        // TaskbarIcon.Icon disposes whatever the *previous* value was as soon as a new one is assigned, so the
+        // cached master icons above must never be handed to it directly - only a throwaway clone each time,
+        // or the second reuse of a master (e.g. pull.ico on device #2) throws ObjectDisposedException mid-run.
+        _icon.Icon = (System.Drawing.Icon)master.Clone();
     }
 
     private async Task ShowOutcomeNotificationAsync(JobStatusViewModel job)
@@ -180,12 +220,20 @@ public sealed class TrayIconService(
         Process.Start(new ProcessStartInfo("explorer.exe", $"\"{path}\"") { UseShellExecute = true });
     }
 
-    private static System.Drawing.Icon LoadAppIcon()
+    private static System.Drawing.Icon LoadIcon(string fileName)
     {
-        var resourceInfo = Application.GetResourceStream(new Uri("Assets/app.ico", UriKind.Relative));
+        var resourceInfo = Application.GetResourceStream(new Uri($"Assets/{fileName}", UriKind.Relative));
         using var stream = resourceInfo!.Stream;
         return new System.Drawing.Icon(stream);
     }
 
-    public void Dispose() => _icon?.Dispose();
+    public void Dispose()
+    {
+        _icon?.Dispose();
+        _appIcon?.Dispose();
+        _pullIcon?.Dispose();
+        _pushIcon?.Dispose();
+        _mergeIcon?.Dispose();
+        _warningIcon?.Dispose();
+    }
 }

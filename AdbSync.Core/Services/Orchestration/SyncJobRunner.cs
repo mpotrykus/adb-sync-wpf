@@ -219,6 +219,7 @@ public sealed class SyncJobRunner(
                 BackupConflictLosers: eff.BackupConflictLosers,
                 ConflictBackupDir: GetConflictBackupDir(projectRoot, binding.DeviceName),
                 DryRun: eff.DryRun);
+            events.PhaseChanged(job.Name, SyncPhase.Merge, binding.DeviceName);
             var mergeResult = await merge.MergeAsync(stagingPath, masterPath, manifest, mergeOptions, ct);
             // A dry run must never persist state - the manifest write is what would make the rehearsal "real".
             if (!eff.DryRun)
