@@ -21,7 +21,7 @@ public class CheckpointManagerTests : IDisposable
     [Fact]
     public async Task LoadAsync_NoCheckpointSaved_ReturnsNull()
     {
-        Assert.Null(await _manager.LoadAsync());
+        Assert.Null(await _manager.LoadAsync("JobName"));
     }
 
     [Fact]
@@ -30,8 +30,8 @@ public class CheckpointManagerTests : IDisposable
         var checkpoint = new SyncCheckpoint(1, DateTimeOffset.UtcNow, 2, "JobName", SyncPhase.Push, 1,
             new Dictionary<string, string> { ["DeviceA"] = "192.168.0.40:5555" });
 
-        await _manager.SaveAsync(checkpoint);
-        var loaded = await _manager.LoadAsync();
+        await _manager.SaveAsync("JobName", checkpoint);
+        var loaded = await _manager.LoadAsync("JobName");
 
         Assert.NotNull(loaded);
         Assert.Equal(2, loaded.ProjectIndex);
@@ -44,27 +44,71 @@ public class CheckpointManagerTests : IDisposable
     [Fact]
     public async Task ClearAsync_RemovesCheckpointFile()
     {
-        await _manager.SaveAsync(new SyncCheckpoint(1, DateTimeOffset.UtcNow, 0, "Job", SyncPhase.Pull, 0, []));
+        await _manager.SaveAsync("Job", new SyncCheckpoint(1, DateTimeOffset.UtcNow, 0, "Job", SyncPhase.Pull, 0, []));
 
-        await _manager.ClearAsync();
+        await _manager.ClearAsync("Job");
 
-        Assert.Null(await _manager.LoadAsync());
+        Assert.Null(await _manager.LoadAsync("Job"));
     }
 
     [Fact]
     public async Task ClearAsync_WhenNothingSaved_DoesNotThrow()
     {
-        await _manager.ClearAsync();
+        await _manager.ClearAsync("Job");
     }
 
     [Fact]
     public async Task SaveAsync_Overwrite_ReplacesPreviousCheckpoint()
     {
-        await _manager.SaveAsync(new SyncCheckpoint(1, DateTimeOffset.UtcNow, 0, "Job", SyncPhase.Pull, 0, []));
-        await _manager.SaveAsync(new SyncCheckpoint(1, DateTimeOffset.UtcNow, 5, "Job2", SyncPhase.Push, 3, []));
+        await _manager.SaveAsync("Job", new SyncCheckpoint(1, DateTimeOffset.UtcNow, 0, "Job", SyncPhase.Pull, 0, []));
+        await _manager.SaveAsync("Job", new SyncCheckpoint(1, DateTimeOffset.UtcNow, 5, "Job", SyncPhase.Push, 3, []));
 
-        var loaded = await _manager.LoadAsync();
+        var loaded = await _manager.LoadAsync("Job");
 
         Assert.Equal(5, loaded!.ProjectIndex);
+    }
+
+    [Fact]
+    public async Task SaveAsync_DifferentJobs_DoNotClobberEachOther()
+    {
+        await _manager.SaveAsync("JobA", new SyncCheckpoint(1, DateTimeOffset.UtcNow, 0, "JobA", SyncPhase.Pull, 0, []));
+        await _manager.SaveAsync("JobB", new SyncCheckpoint(1, DateTimeOffset.UtcNow, 1, "JobB", SyncPhase.Push, 2, []));
+
+        var loadedA = await _manager.LoadAsync("JobA");
+        var loadedB = await _manager.LoadAsync("JobB");
+
+        Assert.Equal(SyncPhase.Pull, loadedA!.Phase);
+        Assert.Equal(SyncPhase.Push, loadedB!.Phase);
+    }
+
+    [Fact]
+    public async Task ClearAsync_OnOneJob_LeavesOtherJobsCheckpointIntact()
+    {
+        await _manager.SaveAsync("JobA", new SyncCheckpoint(1, DateTimeOffset.UtcNow, 0, "JobA", SyncPhase.Pull, 0, []));
+        await _manager.SaveAsync("JobB", new SyncCheckpoint(1, DateTimeOffset.UtcNow, 1, "JobB", SyncPhase.Push, 2, []));
+
+        await _manager.ClearAsync("JobA");
+
+        Assert.Null(await _manager.LoadAsync("JobA"));
+        Assert.NotNull(await _manager.LoadAsync("JobB"));
+    }
+
+    [Fact]
+    public async Task LoadAllAsync_NoCheckpoints_ReturnsEmpty()
+    {
+        Assert.Empty(await _manager.LoadAllAsync());
+    }
+
+    [Fact]
+    public async Task LoadAllAsync_ReturnsEveryJobsCheckpoint()
+    {
+        await _manager.SaveAsync("JobA", new SyncCheckpoint(1, DateTimeOffset.UtcNow, 0, "JobA", SyncPhase.Pull, 0, []));
+        await _manager.SaveAsync("JobB", new SyncCheckpoint(1, DateTimeOffset.UtcNow, 1, "JobB", SyncPhase.Push, 2, []));
+
+        var all = await _manager.LoadAllAsync();
+
+        Assert.Equal(2, all.Count);
+        Assert.Contains(all, c => c.ProjectName == "JobA" && c.Phase == SyncPhase.Pull);
+        Assert.Contains(all, c => c.ProjectName == "JobB" && c.Phase == SyncPhase.Push);
     }
 }

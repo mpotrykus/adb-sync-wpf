@@ -10,9 +10,9 @@ namespace AdbSync.Core.Services.Orchestration;
 /// it needs a same-device-in-flight guard first, since two jobs sharing a physical device would contend on one
 /// adb connection.
 /// </summary>
-public sealed class SyncOrchestrator(SyncJobRunner runner)
+public sealed class SyncOrchestrator(SyncJobRunner runner, ICheckpointManager checkpoints)
 {
-    public async Task<IReadOnlyList<JobRunResult>> RunAllAsync(AppConfig config, SyncCheckpoint? resumeFrom, CancellationToken ct = default)
+    public async Task<IReadOnlyList<JobRunResult>> RunAllAsync(AppConfig config, CancellationToken ct = default)
     {
         var results = new List<JobRunResult>();
         for (var index = 0; index < config.Jobs.Count; index++)
@@ -21,7 +21,7 @@ public sealed class SyncOrchestrator(SyncJobRunner runner)
             if (!job.Enabled)
                 continue;
 
-            var resume = resumeFrom is not null && resumeFrom.ProjectIndex == index ? resumeFrom : null;
+            var resume = await checkpoints.LoadAsync(job.Name, ct);
             results.Add(await runner.RunAsync(job, index, config.Devices, config.Settings, resume, forcePush: false, ct));
         }
         return results;

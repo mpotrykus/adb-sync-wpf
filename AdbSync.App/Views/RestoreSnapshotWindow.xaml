@@ -1,4 +1,4 @@
-<Window x:Class="AdbSync.App.Views.RestoreCheckpointWindow"
+<Window x:Class="AdbSync.App.Views.RestoreSnapshotWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
@@ -20,7 +20,7 @@
             <controls:TitleBar Grid.Row="0"/>
 
             <DockPanel Grid.Row="1" Margin="20">
-                <TextBlock DockPanel.Dock="Top" Text="Pick a checkpoint to restore. Restoring pushes it back out to every matching device, overwriting current device files and deleting anything not in the checkpoint."
+                <TextBlock DockPanel.Dock="Top" Text="Pick a snapshot to restore. Restoring pushes it back out to every matching device, overwriting current device files and deleting anything not in the snapshot."
                            TextWrapping="Wrap" Margin="0,0,0,12" Foreground="{StaticResource Brush.Text.Secondary}"/>
 
                 <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">

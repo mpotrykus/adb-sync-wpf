@@ -14,6 +14,8 @@ public sealed class ConsoleSyncEventSink : ISyncEventSink
 
     public void JobFailed(string jobName, Exception exception) => Console.Error.WriteLine($"[{jobName}] FAILED: {exception.Message}");
 
+    public void JobCancelled(string jobName) => Console.WriteLine($"[{jobName}] stopped");
+
     public void MergeConflictsDetected(string jobName, string deviceName, int conflictCount) =>
         Console.WriteLine($"[{jobName}] {conflictCount} conflict(s) with '{deviceName}' resolved (newer-wins; losers backed up)");
 

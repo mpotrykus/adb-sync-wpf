@@ -36,6 +36,7 @@
                     <Grid.Resources>
                         <conv:PhaseToBrushConverter x:Key="PhaseToBrushConverter"/>
                         <conv:OutcomeToBrushConverter x:Key="OutcomeToBrushConverter"/>
+                        <conv:InverseBooleanToVisibilityConverter x:Key="InverseBoolToVisibility"/>
                         <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
                     </Grid.Resources>
                     <DataGrid x:Name="JobsGrid" ItemsSource="{Binding Jobs}" AutoGenerateColumns="False" IsReadOnly="True"
@@ -59,6 +60,10 @@
                                                        Foreground="#FFC107" Margin="6,0,0,0" VerticalAlignment="Center"
                                                        Visibility="{Binding NeedsAttention, Converter={StaticResource BoolToVisibility}}"
                                                        ToolTip="Needs attention - see LAST RESULT"/>
+                                            <TextBlock Text="&#xE777;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="13"
+                                                       Foreground="#4FC3F7" Margin="6,0,0,0" VerticalAlignment="Center"
+                                                       Visibility="{Binding HasCheckpoint, Converter={StaticResource BoolToVisibility}}"
+                                                       ToolTip="{Binding CheckpointSummary}"/>
                                         </StackPanel>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
@@ -99,7 +104,7 @@
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
-                            <DataGridTemplateColumn Header="" Width="260" CanUserSort="False">
+                            <DataGridTemplateColumn Header="" Width="300" CanUserSort="False">
                                 <DataGridTemplateColumn.HeaderStyle>
                                     <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
                                         <Setter Property="Cursor" Value="Arrow"/>
@@ -108,17 +113,33 @@
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                            <Button Style="{StaticResource RowSuccessButton}" Margin="0,0,4,0" Click="RunNow_Click" ToolTip="Run Now">
-                                                <TextBlock Text="&#xE768;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="12"/>
-                                            </Button>
-                                            <Button Style="{StaticResource RowButton}" Margin="0,0,16,0" Click="EditJob_Click" ToolTip="Edit">
-                                                <TextBlock Text="&#xE70F;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="12"/>
-                                            </Button>
+                                            
+                                            
                                             <Button Style="{StaticResource RowDangerButton}" Margin="0,0,4,0" Click="ForcePush_Click" ToolTip="Force Push (bypass safety check)"
                                                     Visibility="{Binding CanForcePush, Converter={StaticResource BoolToVisibility}}">
                                                 <TextBlock Text="&#xE7BA;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="12"/>
                                             </Button>
-                                            <Button Style="{StaticResource RowButton}" Margin="0,0,4,0" Click="Checkpoint_Click" ToolTip="Checkpoint (back up current device state)">
+                                            <Button Style="{StaticResource RowButton}" Margin="0,0,4,0" Click="DiscardCheckpoint_Click" ToolTip="Discard checkpoint - next run starts from the beginning"
+                                                    Visibility="{Binding HasCheckpoint, Converter={StaticResource BoolToVisibility}}">
+                                                <TextBlock Text="&#xE894;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="12"/>
+                                            </Button>
+                                            
+                                            
+                                            <Button Style="{StaticResource RowSuccessButton}" Margin="12,0,4,0" Click="RunNow_Click" ToolTip="Run Now"
+                                                    Visibility="{Binding IsRunning, Converter={StaticResource InverseBoolToVisibility}}">
+                                                <TextBlock Text="&#xE768;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="12"/>
+                                            </Button>
+                                            <Button Style="{StaticResource RowDangerButton}" Margin="12,0,4,0" Click="StopNow_Click" ToolTip="Stop Job"
+                                                    Visibility="{Binding IsRunning, Converter={StaticResource BoolToVisibility}}"
+                                                    IsEnabled="{Binding CanStop}">
+                                                <TextBlock Text="&#xE71A;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="12"/>
+                                            </Button>
+                                            <Button Style="{StaticResource RowButton}" Margin="0,0,16,0" Click="EditJob_Click" ToolTip="Edit">
+                                                <TextBlock Text="&#xE70F;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="12"/>
+                                            </Button>
+                                            
+                                            
+                                            <Button Style="{StaticResource RowButton}" Margin="0,0,4,0" Click="Snapshot_Click" ToolTip="Snapshot (back up current device state)">
                                                 <TextBlock Text="&#xE722;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="12"/>
                                             </Button>
                                             <Button Style="{StaticResource RowButton}" Margin="0,0,4,0" Click="ViewLogs_Click" ToolTip="Run History">
@@ -130,6 +151,8 @@
                                             <Button Style="{StaticResource RowDangerButton}" Click="RemoveJob_Click" ToolTip="Remove">
                                                 <TextBlock Text="&#xE74D;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="12"/>
                                             </Button>
+                                            
+                                            
                                         </StackPanel>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>

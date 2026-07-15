@@ -100,9 +100,12 @@ public sealed class NativeAdbTransferEngine(IRemoteFileSystemFactory remoteFacto
         var copiedPaths = new List<string>();
         foreach (var entry in plan.ToCopy.Where(e => !e.IsDirectory))
         {
+            // Checked before starting each item, not passed into the push below: once a push is in flight it
+            // always runs to completion, so a stop request can only take effect between items.
+            ct.ThrowIfCancellationRequested();
             try
             {
-                await remote.PushFileAsync(Path.Combine(localPath, entry.RelativePath), $"{remotePath}/{entry.RelativePath}", entry.ModifiedUtc, ct);
+                await remote.PushFileAsync(Path.Combine(localPath, entry.RelativePath), $"{remotePath}/{entry.RelativePath}", entry.ModifiedUtc, CancellationToken.None);
                 copied++;
                 copiedPaths.Add(entry.RelativePath);
                 bytesCopied += entry.Size;
@@ -117,12 +120,13 @@ public sealed class NativeAdbTransferEngine(IRemoteFileSystemFactory remoteFacto
         var deletedPaths = new List<string>();
         foreach (var entry in plan.ToDelete)
         {
+            ct.ThrowIfCancellationRequested();
             try
             {
                 if (entry.IsDirectory)
-                    await remote.DeleteDirectoryRecursiveAsync($"{remotePath}/{entry.RelativePath}", ct);
+                    await remote.DeleteDirectoryRecursiveAsync($"{remotePath}/{entry.RelativePath}", CancellationToken.None);
                 else
-                    await remote.DeleteFileAsync($"{remotePath}/{entry.RelativePath}", ct);
+                    await remote.DeleteFileAsync($"{remotePath}/{entry.RelativePath}", CancellationToken.None);
                 deleted++;
                 deletedPaths.Add(entry.RelativePath);
             }

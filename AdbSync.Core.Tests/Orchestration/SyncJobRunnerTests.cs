@@ -358,7 +358,7 @@ public class SyncJobRunnerTests : IDisposable
 
         await runner.RunAsync(job, 0, [device], _settings, resumeFrom: null);
 
-        Assert.Null(await checkpoints.LoadAsync());
+        Assert.Null(await checkpoints.LoadAsync(job.Name));
     }
 
     [Fact]
@@ -487,7 +487,7 @@ public class SyncJobRunnerTests : IDisposable
         Assert.Equal(JobRunOutcome.DryRunCompleted, result.Outcome);
         var masterPath = Path.Combine(_projectsDirectory, "JobDryRun", "master");
         Assert.Empty(Directory.EnumerateFiles(masterPath, "*", SearchOption.AllDirectories));
-        Assert.Null(await checkpoints.LoadAsync());
+        Assert.Null(await checkpoints.LoadAsync(job.Name));
     }
 
     [Fact]
@@ -554,6 +554,7 @@ public class SyncJobRunnerTests : IDisposable
         public void JobSkipped(string jobName, string reason) { }
         public void JobCompleted(string jobName, bool pushed) { }
         public void JobFailed(string jobName, Exception exception) { }
+        public void JobCancelled(string jobName) { }
         public void MergeConflictsDetected(string jobName, string deviceName, int conflictCount) { }
         public void WatchStarted(string jobName, string deviceName, bool liveWatch) { }
         public void WatchDegraded(string jobName, string deviceName, string reason) { }

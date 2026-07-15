@@ -96,10 +96,9 @@ async Task<int> RunAllAsync(bool useNativeTransfer)
 {
     var config = await configStore.LoadAsync();
     var checkpoints = new CheckpointManager(paths);
-    var resume = await checkpoints.LoadAsync();
 
-    var orchestrator = new SyncOrchestrator(BuildRunner(useNativeTransfer));
-    var results = await orchestrator.RunAllAsync(config, resume);
+    var orchestrator = new SyncOrchestrator(BuildRunner(useNativeTransfer), checkpoints);
+    var results = await orchestrator.RunAllAsync(config);
 
     await configStore.SaveAsync(config); // persist any newly-resolved device CachedHostPort values
     return PrintResultsAndExitCode(config, results);
@@ -115,8 +114,11 @@ async Task<int> RunOneAsync(string jobName, bool useNativeTransfer, bool forcePu
         return 1;
     }
 
+    var checkpoints = new CheckpointManager(paths);
+    var resume = await checkpoints.LoadAsync(config.Jobs[index].Name);
+
     var runner = BuildRunner(useNativeTransfer);
-    var result = await runner.RunAsync(config.Jobs[index], index, config.Devices, config.Settings, resumeFrom: null, forcePush);
+    var result = await runner.RunAsync(config.Jobs[index], index, config.Devices, config.Settings, resume, forcePush);
 
     await configStore.SaveAsync(config);
     return PrintResultsAndExitCode(config, [result], [jobName]);

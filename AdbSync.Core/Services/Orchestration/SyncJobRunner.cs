@@ -120,7 +120,7 @@ public sealed class SyncJobRunner(
             {
                 _logger.LogInformation("Job '{Job}' completed - no changes", job.Name);
                 events.JobCompleted(job.Name, pushed: false);
-                await checkpoints.ClearAsync(ct);
+                await checkpoints.ClearAsync(job.Name, ct);
                 return await FinishAsync(JobRunOutcome.CompletedNoChanges);
             }
 
@@ -146,13 +146,19 @@ public sealed class SyncJobRunner(
 
             _logger.LogInformation("Job '{Job}' completed successfully", job.Name);
             events.JobCompleted(job.Name, pushed: true);
-            await checkpoints.ClearAsync(ct);
+            await checkpoints.ClearAsync(job.Name, ct);
             // "No changes" reflects what actually left the machine - if nothing needed pushing (e.g. a device
             // already had everything the pull brought in), the run reads as a no-op regardless of pull activity.
             var outcome = totalFilesCopied == 0 && totalFilesDeleted == 0
                 ? JobRunOutcome.CompletedNoChanges
                 : JobRunOutcome.Completed;
             return await FinishAsync(outcome);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("Job '{Job}' stopped by user request", job.Name);
+            events.JobCancelled(job.Name);
+            return await FinishAsync(JobRunOutcome.Cancelled);
         }
         catch (Exception ex)
         {
@@ -168,7 +174,10 @@ public sealed class SyncJobRunner(
                 totalFilesCopied, totalFilesDeleted, totalErrors, totalBytesCopied, pullDuration, pushDuration);
             try
             {
-                await runHistory.SaveRunAsync(record, runLog.BuildText(), eff.MaxRunHistoryEntries, ct);
+                // Always CancellationToken.None: a cancelled job's ct is already signaled here, and this is
+                // bookkeeping for the run that just ended, not more work the cancellation should cut short -
+                // a stopped run's history entry must still get saved.
+                await runHistory.SaveRunAsync(record, runLog.BuildText(), eff.MaxRunHistoryEntries, CancellationToken.None);
             }
             catch (Exception ex)
             {
@@ -245,7 +254,7 @@ public sealed class SyncJobRunner(
             // A dry run must never persist state - a checkpoint would let a later real run "resume" into a push
             // phase that this rehearsal never actually reached.
             if (!eff.DryRun)
-                await checkpoints.SaveAsync(new SyncCheckpoint(1, DateTimeOffset.UtcNow, jobIndex, job.Name, SyncPhase.Pull, di + 1, serials), ct);
+                await checkpoints.SaveAsync(job.Name, new SyncCheckpoint(1, DateTimeOffset.UtcNow, jobIndex, job.Name, SyncPhase.Pull, di + 1, serials), ct);
         }
 
         return new PhaseStats(anyChange, filesCopied, filesDeleted, errors, bytesCopied, [], []);
@@ -280,7 +289,7 @@ public sealed class SyncJobRunner(
             copiedPaths.UnionWith(pushResult.CopiedPaths);
             deletedPaths.UnionWith(pushResult.DeletedPaths);
 
-            await checkpoints.SaveAsync(new SyncCheckpoint(1, DateTimeOffset.UtcNow, jobIndex, job.Name, SyncPhase.Push, di + 1, serials), ct);
+            await checkpoints.SaveAsync(job.Name, new SyncCheckpoint(1, DateTimeOffset.UtcNow, jobIndex, job.Name, SyncPhase.Push, di + 1, serials), ct);
         }
 
         return new PhaseStats(AnyChange: false, filesCopied, filesDeleted, errors, bytesCopied, copiedPaths.ToList(), deletedPaths.ToList());

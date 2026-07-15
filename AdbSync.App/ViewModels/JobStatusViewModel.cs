@@ -25,9 +25,38 @@ public sealed partial class JobStatusViewModel(string name) : ObservableObject
     /// <summary>True while a sync is actively in progress for this job - drives the row's running shimmer.</summary>
     public bool IsRunning => PhaseText != "Idle";
 
-    /// <summary>The single line shown in the STATUS column - the active phase while a sync is running, otherwise
-    /// the watch status (e.g. "Watching (live)") in place of "Idle" when the job's watcher is active.</summary>
-    public string DisplayStatusText => IsRunning ? PhaseText : (WatchStatusText ?? PhaseText);
+    /// <summary>True from the moment Stop is clicked until the run actually finishes - disables the Stop button
+    /// so a second click can't fire while the current file/device is still finishing up.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DisplayStatusText))]
+    [NotifyPropertyChangedFor(nameof(CanStop))]
+    private bool _isStopping;
+
+    public bool CanStop => !IsStopping;
+
+    /// <summary>True when this job has a saved checkpoint from an interrupted run (crash, shutdown, or a
+    /// deliberate Stop) - the next "Run Now" will resume from it instead of starting over.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DisplayStatusText))]
+    private bool _hasCheckpoint;
+
+    /// <summary>Human-readable description of the saved checkpoint, e.g. "Interrupted during Push @ Pixel7 -
+    /// saved 2 hours ago" - shown as the checkpoint badge's tooltip.</summary>
+    [ObservableProperty]
+    private string? _checkpointSummary;
+
+    /// <summary>The single line shown in the STATUS column - "Stopping..." once a stop has been requested,
+    /// otherwise the active phase while a sync is running, otherwise the watch status (e.g. "Watching (live)")
+    /// in place of "Idle" when the job's watcher is active, with a "resume available" note appended while a
+    /// checkpoint is on file.</summary>
+    public string DisplayStatusText
+    {
+        get
+        {
+            var baseText = IsStopping ? "Stopping..." : IsRunning ? PhaseText : (WatchStatusText ?? PhaseText);
+            return !IsRunning && !IsStopping && HasCheckpoint ? $"{baseText} - resume available" : baseText;
+        }
+    }
 
     /// <summary>True when the failure was a <see cref="AdbSync.Core.Orchestration.PushSafetyException"/>, which can be resolved via the Force Push action.</summary>
     [ObservableProperty]
@@ -66,7 +95,9 @@ public sealed partial class JobStatusViewModel(string name) : ObservableObject
 
     private static readonly TimeSpan RelativeTimeCutoff = TimeSpan.FromHours(24);
 
-    private static string FormatRelative(DateTimeOffset t)
+    /// <summary>Shared with DashboardWindow's checkpoint-summary text so both use the same "n minutes/hours
+    /// ago" phrasing as LAST RUN.</summary>
+    internal static string FormatRelative(DateTimeOffset t)
     {
         var elapsed = DateTimeOffset.Now - t;
         if (elapsed < TimeSpan.Zero)

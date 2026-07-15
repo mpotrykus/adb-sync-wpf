@@ -29,6 +29,7 @@ public partial class DashboardWindow : Window
     private readonly AppConfigService _configService;
     private readonly DashboardUiStateStore _uiStateStore;
     private readonly JobRunService _jobRunService;
+    private readonly ChangeWatchHostedService _changeWatchHostedService;
     private readonly DashboardViewModel _viewModel;
     private readonly IRunHistoryStore _historyStore;
     private readonly ILiveRunLogSink _liveLogSink;
@@ -51,7 +52,7 @@ public partial class DashboardWindow : Window
     private ListSortDirection _sortDirection = ListSortDirection.Ascending;
 
     public DashboardWindow(
-        AppConfigService configService, DashboardUiStateStore uiStateStore, JobRunService jobRunService, DashboardViewModel viewModel,
+        AppConfigService configService, DashboardUiStateStore uiStateStore, JobRunService jobRunService, ChangeWatchHostedService changeWatchHostedService, DashboardViewModel viewModel,
         IRunHistoryStore historyStore, ILiveRunLogSink liveLogSink, IAdbDeviceResolver deviceResolver, IDeviceChangeWatcher changeWatcher,
         IRemoteFileSystemFactory remoteFileSystemFactory, IDevicePackageLister packageLister)
     {
@@ -59,6 +60,7 @@ public partial class DashboardWindow : Window
         _configService = configService;
         _uiStateStore = uiStateStore;
         _jobRunService = jobRunService;
+        _changeWatchHostedService = changeWatchHostedService;
         _viewModel = viewModel;
         _historyStore = historyStore;
         _liveLogSink = liveLogSink;
@@ -111,6 +113,7 @@ public partial class DashboardWindow : Window
         var config = await _configService.GetAsync();
         _viewModel.SyncFrom(config);
         await PopulateLastOutcomesAsync(config);
+        await PopulateCheckpointsAsync(config);
 
         // SyncFrom adds/removes rows in the same ObservableCollection, so its default CollectionView normally
         // keeps sorting itself automatically - this reapplies explicitly so a refresh can never drop the user's
@@ -201,6 +204,41 @@ public partial class DashboardWindow : Window
         }
     }
 
+    // Populates the checkpoint badge from whatever's on disk (AdbSync.Core.Services.Orchestration.CheckpointManager),
+    // not from run outcomes - a checkpoint can be left behind by a hard crash that never got the chance to report
+    // any outcome at all, which is exactly the case this badge exists to surface.
+    private async Task PopulateCheckpointsAsync(AppConfig config)
+    {
+        var checkpoints = await _jobRunService.GetAllCheckpointsAsync();
+        var byJobName = checkpoints.ToDictionary(c => c.ProjectName ?? "", StringComparer.Ordinal);
+
+        foreach (var vm in _viewModel.Jobs)
+        {
+            if (byJobName.TryGetValue(vm.Name, out var checkpoint))
+                ApplyCheckpoint(vm, checkpoint, config);
+            else
+                ClearCheckpoint(vm);
+        }
+    }
+
+    private static void ApplyCheckpoint(JobStatusViewModel vm, SyncCheckpoint checkpoint, AppConfig config)
+    {
+        var job = config.Jobs.FirstOrDefault(j => j.Name == vm.Name);
+        var deviceName = job is not null && checkpoint.DeviceIndex >= 0 && checkpoint.DeviceIndex < job.Devices.Count
+            ? job.Devices[checkpoint.DeviceIndex].DeviceName
+            : null;
+
+        var where = deviceName is not null ? $"{checkpoint.Phase} @ {deviceName}" : checkpoint.Phase.ToString();
+        vm.HasCheckpoint = true;
+        vm.CheckpointSummary = $"Interrupted during {where} - saved {JobStatusViewModel.FormatRelative(checkpoint.SavedAt)}";
+    }
+
+    private static void ClearCheckpoint(JobStatusViewModel vm)
+    {
+        vm.HasCheckpoint = false;
+        vm.CheckpointSummary = null;
+    }
+
     private static string FormatOutcome(JobRunRecord record) => record.Outcome switch
     {
         JobRunOutcome.Completed => "Success",
@@ -209,6 +247,7 @@ public partial class DashboardWindow : Window
         JobRunOutcome.SkippedAppRunning => "Skipped: app running",
         JobRunOutcome.Failed => $"Error: {record.ErrorMessage}",
         JobRunOutcome.DryRunCompleted => "Dry run completed",
+        JobRunOutcome.Cancelled => "Stopped",
         _ => record.Outcome.ToString(),
     };
 
@@ -296,6 +335,7 @@ public partial class DashboardWindow : Window
         var config = await _configService.GetAsync();
         config.Jobs.RemoveAll(j => j.Name == vm.Name);
         await _configService.SaveAsync();
+        await _jobRunService.DiscardCheckpointAsync(vm.Name); // best-effort - don't leave an orphan checkpoint file for a job that no longer exists
         await RefreshAsync();
     }
 
@@ -329,8 +369,65 @@ public partial class DashboardWindow : Window
 
         var config = await _configService.GetAsync();
         var index = config.Jobs.FindIndex(j => j.Name == vm.Name);
-        if (index >= 0)
-            _ = _jobRunService.RunJobAsync(index); // fire-and-forget; live status flows back via ISyncEventSink
+        if (index < 0)
+            return;
+
+        await _jobRunService.RunJobAsync(index); // live status flows back via ISyncEventSink while this runs
+
+        // Re-check against disk rather than assume from the outcome: a run that fails or gets stopped mid-push
+        // may have just written a *new* checkpoint, while a clean completion clears the old one.
+        var checkpoint = await _jobRunService.GetCheckpointAsync(vm.Name);
+        if (checkpoint is not null)
+            ApplyCheckpoint(vm, checkpoint, await _configService.GetAsync());
+        else
+            ClearCheckpoint(vm);
+    }
+
+    private async void StopNow_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: JobStatusViewModel vm })
+            return;
+        if (vm.IsStopping)
+            return;
+
+        // Only push can leave devices in a mismatched state if interrupted partway - pull/merge/pre-connect
+        // stop without ceremony since nothing device-visible is left half-done.
+        if (vm.PhaseText.StartsWith("Push", StringComparison.Ordinal))
+        {
+            var confirmed = ConfirmDialog.Show(this, "Stop Job",
+                $"'{vm.Name}' is currently pushing to a device. Stopping now may leave some devices updated and others not, " +
+                "an incomplete state until the job is run again.",
+                confirmText: "Stop Job");
+            if (!confirmed)
+                return;
+        }
+
+        var config = await _configService.GetAsync();
+        var index = config.Jobs.FindIndex(j => j.Name == vm.Name);
+        // A change-watch job waiting for its app to close (or queued behind a concurrency gate) hasn't handed
+        // off to JobRunService yet, so CancelJob(index) has nothing to cancel there - fall back to interrupting
+        // the watch's own wait/trigger cycle instead.
+        var cancelled = index >= 0 && _jobRunService.CancelJob(index);
+        cancelled |= _changeWatchHostedService.CancelJob(vm.Name);
+        if (cancelled)
+            vm.IsStopping = true;
+    }
+
+    private async void DiscardCheckpoint_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: JobStatusViewModel vm })
+            return;
+
+        var confirmed = ConfirmDialog.Show(this, "Discard Checkpoint",
+            $"Job '{vm.Name}' was interrupted ({vm.CheckpointSummary}). Discarding its checkpoint means the " +
+            "next run starts over from the very beginning (a full re-pull and re-merge) instead of continuing " +
+            "where it left off. Files already synced are not affected.",
+            confirmText: "Discard");
+        if (!confirmed)
+            return;
+
+        await _jobRunService.DiscardCheckpointAsync(vm.Name);
+        ClearCheckpoint(vm);
     }
 
     private async void ForcePush_Click(object sender, RoutedEventArgs e)
@@ -351,7 +448,7 @@ public partial class DashboardWindow : Window
             _ = _jobRunService.RunJobAsync(index, forcePush: true); // fire-and-forget; live status flows back via ISyncEventSink
     }
 
-    private async void Checkpoint_Click(object sender, RoutedEventArgs e)
+    private async void Snapshot_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: JobStatusViewModel vm })
             return;
@@ -361,33 +458,33 @@ public partial class DashboardWindow : Window
         if (index < 0)
             return;
 
-        var choice = ConfirmDialog.ShowWithResult(this, "Checkpoint",
+        var choice = ConfirmDialog.ShowWithResult(this, "Snapshot",
             $"This pulls the current contents of every device in '{vm.Name}' into a new, timestamped backup folder inside its project directory.\n\n" +
             "It does not touch the sync master, staging, or the devices themselves, so it won't be modified or removed by future sync runs.\n\n" +
             "Use it to snapshot device state before running a job you're unsure about.",
-            confirmText: "Checkpoint", secondaryText: "Restore Checkpoint...");
+            confirmText: "Snapshot", secondaryText: "Restore Snapshot...");
 
         switch (choice)
         {
             case ConfirmDialogResult.Confirm:
-                await CreateCheckpointAsync(vm, index);
+                await CreateSnapshotWorkflowAsync(vm, index);
                 break;
             case ConfirmDialogResult.Secondary:
-                await RestoreCheckpointAsync(vm, index);
+                await RestoreSnapshotWorkflowAsync(vm, index);
                 break;
         }
     }
 
-    private async Task CreateCheckpointAsync(JobStatusViewModel vm, int index)
+    private async Task CreateSnapshotWorkflowAsync(JobStatusViewModel vm, int index)
     {
         // No SyncJobRunner/ISyncEventSink involved here, so this handler drives the row's phase/outcome text itself.
-        vm.PhaseText = "Checkpoint";
+        vm.PhaseText = "Snapshot";
         try
         {
             var result = await _jobRunService.CreateSnapshotAsync(index);
             vm.ReportOutcome(result.Errors == 0
-                ? $"Checkpoint saved ({result.TotalFiles} file(s))"
-                : $"Checkpoint saved with {result.Errors} error(s)");
+                ? $"Snapshot saved ({result.TotalFiles} file(s))"
+                : $"Snapshot saved with {result.Errors} error(s)");
         }
         catch (Exception ex)
         {
@@ -400,22 +497,22 @@ public partial class DashboardWindow : Window
         }
     }
 
-    private async Task RestoreCheckpointAsync(JobStatusViewModel vm, int index)
+    private async Task RestoreSnapshotWorkflowAsync(JobStatusViewModel vm, int index)
     {
         var snapshots = await _jobRunService.ListSnapshotsAsync(index);
         if (snapshots.Count == 0)
         {
-            MessageBox.Show(this, $"No checkpoints found for '{vm.Name}'.", "Restore Checkpoint", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show(this, $"No snapshots found for '{vm.Name}'.", "Restore Snapshot", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 
-        var picker = new RestoreCheckpointWindow(vm.Name, snapshots) { Owner = this };
+        var picker = new RestoreSnapshotWindow(vm.Name, snapshots) { Owner = this };
         if (picker.ShowDialog() != true || picker.SelectedSnapshot is not { } snapshot)
             return;
 
-        var confirmed = ConfirmDialog.Show(this, "Restore Checkpoint",
-            $"This pushes the checkpoint from {snapshot.CreatedAt.LocalDateTime:g} back out to every matching device in '{vm.Name}', " +
-            "overwriting current device files and deleting any device file that isn't in the checkpoint. This cannot be undone.",
+        var confirmed = ConfirmDialog.Show(this, "Restore Snapshot",
+            $"This pushes the snapshot from {snapshot.CreatedAt.LocalDateTime:g} back out to every matching device in '{vm.Name}', " +
+            "overwriting current device files and deleting any device file that isn't in the snapshot. This cannot be undone.",
             confirmText: "Restore");
         if (!confirmed)
             return;
@@ -426,8 +523,8 @@ public partial class DashboardWindow : Window
             var result = await _jobRunService.RestoreSnapshotAsync(index, snapshot.Path);
             var skippedNote = result.SkippedDevices is { Count: > 0 } skipped ? $", skipped {skipped.Count} unmatched device(s)" : "";
             vm.ReportOutcome(result.Errors == 0
-                ? $"Checkpoint restored ({result.TotalFiles} file(s)){skippedNote}"
-                : $"Checkpoint restored with {result.Errors} error(s){skippedNote}");
+                ? $"Snapshot restored ({result.TotalFiles} file(s)){skippedNote}"
+                : $"Snapshot restored with {result.Errors} error(s){skippedNote}");
         }
         catch (Exception ex)
         {

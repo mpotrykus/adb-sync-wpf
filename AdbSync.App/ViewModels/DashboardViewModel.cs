@@ -68,6 +68,7 @@ public sealed class DashboardViewModel : ISyncEventSink
         UpdateJob(jobName, vm =>
         {
             vm.PhaseText = "Idle";
+            vm.IsStopping = false;
             vm.ReportOutcome($"Skipped: {reason}");
         });
 
@@ -75,6 +76,7 @@ public sealed class DashboardViewModel : ISyncEventSink
         UpdateJob(jobName, vm =>
         {
             vm.PhaseText = "Idle";
+            vm.IsStopping = false;
             var outcome = pushed ? "Success" : "No changes";
             vm.ReportOutcome(vm.ConflictCountThisRun > 0 ? $"{outcome} ({vm.ConflictCountThisRun} conflict(s) resolved)" : outcome);
             vm.LastRunAt = DateTimeOffset.Now;
@@ -86,10 +88,20 @@ public sealed class DashboardViewModel : ISyncEventSink
         UpdateJob(jobName, vm =>
         {
             vm.PhaseText = "Idle";
+            vm.IsStopping = false;
             vm.ReportOutcome($"Error: {exception.Message}");
             vm.LastRunAt = DateTimeOffset.Now;
             vm.NeedsAttention = true;
             vm.CanForcePush = exception is PushSafetyException;
+        });
+
+    public void JobCancelled(string jobName) =>
+        UpdateJob(jobName, vm =>
+        {
+            vm.PhaseText = "Idle";
+            vm.IsStopping = false;
+            vm.ReportOutcome("Stopped");
+            vm.LastRunAt = DateTimeOffset.Now;
         });
 
     public void MergeConflictsDetected(string jobName, string deviceName, int conflictCount) =>

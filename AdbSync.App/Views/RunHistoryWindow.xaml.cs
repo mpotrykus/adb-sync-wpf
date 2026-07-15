@@ -119,7 +119,7 @@ public partial class RunHistoryWindow : Window
     [
         JobRunOutcome.Completed, JobRunOutcome.CompletedNoChanges,
         JobRunOutcome.Skipped, JobRunOutcome.SkippedAppRunning, JobRunOutcome.Failed,
-        JobRunOutcome.DryRunCompleted,
+        JobRunOutcome.DryRunCompleted, JobRunOutcome.Cancelled,
     ];
 
     private void UpdateOutcomeChart(IReadOnlyList<JobRunRecord> runs)

@@ -12,7 +12,7 @@ public sealed class AppPaths(string root)
     public string ProjectsFile => Path.Combine(ConfigDir, "projects.json");
     public string ManifestsDir => Path.Combine(Root, "manifests");
     public string LogsDir => Path.Combine(Root, "logs");
-    public string CheckpointFile => Path.Combine(Root, ".sync_checkpoint.json");
+    public string CheckpointsDir => Path.Combine(Root, "checkpoints");
     public string RunHistoryDbFile => Path.Combine(Root, "run-history.db");
     public string LocalStateFile => Path.Combine(Root, "local-state.json");
 

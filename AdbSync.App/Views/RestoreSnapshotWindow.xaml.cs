@@ -7,14 +7,14 @@ using AdbSync.Core.Models.Orchestration;
 
 namespace AdbSync.App.Views;
 
-public partial class RestoreCheckpointWindow : Window
+public partial class RestoreSnapshotWindow : Window
 {
     public SnapshotInfo? SelectedSnapshot { get; private set; }
 
-    public RestoreCheckpointWindow(string jobName, IReadOnlyList<SnapshotInfo> snapshots)
+    public RestoreSnapshotWindow(string jobName, IReadOnlyList<SnapshotInfo> snapshots)
     {
         InitializeComponent();
-        Title = $"Restore Checkpoint - {jobName}";
+        Title = $"Restore Snapshot - {jobName}";
         SnapshotsGrid.ItemsSource = snapshots.Select(s => new SnapshotRowViewModel(s)).ToList();
     }
 
@@ -49,7 +49,7 @@ public partial class RestoreCheckpointWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, $"Couldn't open the checkpoint folder: {ex.Message}", "Open Folder", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(this, $"Couldn't open the snapshot folder: {ex.Message}", "Open Folder", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 }

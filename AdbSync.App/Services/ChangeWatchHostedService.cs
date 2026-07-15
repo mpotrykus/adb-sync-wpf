@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using AdbSync.Core.Models.Config;
 using AdbSync.Core.Services.Config;
 using AdbSync.Core.Models.Devices;
@@ -7,6 +8,7 @@ using AdbSync.Core.Services.Orchestration;
 using AdbSync.Core.Services.Transfer;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Win32;
 
 namespace AdbSync.App.Services;
 
@@ -28,9 +30,16 @@ public sealed class ChangeWatchHostedService(
     private readonly Dictionary<string, ActiveWatch> _active = [];
     private readonly SemaphoreSlim _reconcileGate = new(1, 1);
 
+    // One entry per job currently inside TriggerAsync (waiting for its app to close, or already handed off to
+    // JobRunService). Lets the dashboard's Stop button interrupt a job stuck waiting for its app to close, which
+    // JobRunService.CancelJob can't do since that job hasn't been registered there yet at that point.
+    private readonly ConcurrentDictionary<string, CancellationTokenSource> _manualStops = new(StringComparer.Ordinal);
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         configService.ConfigChanged += OnConfigChanged;
+        SystemEvents.PowerModeChanged += OnPowerModeChanged;
+        SystemEvents.SessionEnding += OnSessionEnding;
         await ReconcileAsync(stoppingToken);
 
         try
@@ -45,24 +54,11 @@ public sealed class ChangeWatchHostedService(
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
         configService.ConfigChanged -= OnConfigChanged;
+        SystemEvents.PowerModeChanged -= OnPowerModeChanged;
+        SystemEvents.SessionEnding -= OnSessionEnding;
         await base.StopAsync(cancellationToken);
 
-        foreach (var (jobName, active) in _active)
-        {
-            active.RetryCts.Cancel();
-            active.RetryCts.Dispose();
-            try
-            {
-                await active.Coordinator.DisposeAsync().AsTask().WaitAsync(cancellationToken);
-            }
-            catch (OperationCanceledException)
-            {
-                // Shutdown deadline hit while a watch loop was still unwinding - abandon it; the
-                // process is exiting regardless.
-                logger.LogWarning("Watch for job '{Job}' didn't stop within the shutdown deadline; abandoning it", jobName);
-            }
-        }
-        _active.Clear();
+        await TeardownActiveAsync(cancellationToken);
     }
 
     private async void OnConfigChanged(object? sender, EventArgs e)
@@ -75,6 +71,92 @@ public sealed class ChangeWatchHostedService(
         {
             // best-effort reconciliation - a bad tick shouldn't take down the app; the next config save retries
             logger.LogWarning(ex, "Failed to reconcile change watchers after a config change");
+        }
+    }
+
+    /// <summary>
+    /// A live inotifyd stream, a wait-for-app-close shell command, or an in-flight sync run left holding an ADB
+    /// connection open across a suspend can leave the network adapter unable to enter its low-power state in
+    /// time, crashing the machine. Tear everything down right before suspend and rebuild the watches from config
+    /// on resume, so nothing is ever asked to survive the transition. Runs synchronously (blocking the
+    /// SystemEvents callback thread, not the UI thread) so the OS doesn't proceed with the suspend before the
+    /// connections actually close.
+    /// </summary>
+    private void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e)
+    {
+        switch (e.Mode)
+        {
+            case PowerModes.Suspend:
+                logger.LogInformation("System is suspending; stopping {Count} active change watch(es)", _active.Count);
+                RunBlocking(() => TeardownActiveAsync(CancellationToken.None), "suspend");
+                break;
+            case PowerModes.Resume:
+                logger.LogInformation("System resumed; restarting change watchers");
+                RunBlocking(() => ReconcileAsync(CancellationToken.None), "resume");
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Same reasoning as <see cref="OnPowerModeChanged"/>, but for a Windows shutdown/restart/logoff instead of a
+    /// suspend - unlike suspend, WPF does not translate this broadcast into a graceful <c>OnExit</c> for a
+    /// tray-resident app with no visible window, so without this the process would simply be killed with its adb
+    /// connections still open.
+    /// </summary>
+    private void OnSessionEnding(object sender, SessionEndingEventArgs e)
+    {
+        logger.LogInformation("System session ending ({Reason}); stopping {Count} active change watch(es)", e.Reason, _active.Count);
+        RunBlocking(() => TeardownActiveAsync(CancellationToken.None), "session ending");
+    }
+
+    /// <summary>Runs an async teardown/reconcile step to completion before returning to the OS notification -
+    /// fire-and-forget wouldn't give the OS any reason to wait for the connections to actually close.</summary>
+    private void RunBlocking(Func<Task> action, string context)
+    {
+        try
+        {
+            Task.Run(action).GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to handle {Context}", context);
+        }
+    }
+
+    private async Task TeardownActiveAsync(CancellationToken ct)
+    {
+        // Stop any in-flight sync run first - it may be holding its own adb connection mid-transfer, independent
+        // of the watch connections torn down below.
+        jobRunService.CancelAllRunning();
+
+        await _reconcileGate.WaitAsync(CancellationToken.None);
+        try
+        {
+            foreach (var (jobName, active) in _active)
+            {
+                active.RetryCts.Cancel();
+                active.RetryCts.Dispose();
+
+                // Capped independently of the caller's token: on suspend/shutdown there is no shutdown deadline
+                // to inherit, and we want the adb connection closed quickly either way.
+                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                timeoutCts.CancelAfter(TimeSpan.FromSeconds(5));
+                try
+                {
+                    await active.Coordinator.DisposeAsync().AsTask().WaitAsync(timeoutCts.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    // Deadline hit while a watch loop was still unwinding - abandon it rather than block
+                    // shutdown/suspend any further.
+                    logger.LogWarning("Watch for job '{Job}' didn't stop within the deadline; abandoning it", jobName);
+                }
+            }
+            _active.Clear();
+        }
+        finally
+        {
+            _reconcileGate.Release();
         }
     }
 
@@ -120,6 +202,11 @@ public sealed class ChangeWatchHostedService(
                     logger: logger);
                 coordinator.Start();
                 _active[job.Name] = new ActiveWatch(coordinator, Signature(job), retryCts);
+
+                // The watch only reacts to changes from here forward - it won't notice anything that happened
+                // while the job was disabled (or under its old config). Run once now so enabling/reconfiguring
+                // an OnChange job always leaves it caught up, instead of sitting stale until the next real change.
+                _ = TriggerAsync(jobName, retryCts.Token);
             }
         }
         finally
@@ -136,6 +223,9 @@ public sealed class ChangeWatchHostedService(
     /// </summary>
     private async Task TriggerAsync(string jobName, CancellationToken ct)
     {
+        using var manualStopCts = new CancellationTokenSource();
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct, manualStopCts.Token);
+        _manualStops[jobName] = manualStopCts;
         try
         {
             while (true)
@@ -145,9 +235,9 @@ public sealed class ChangeWatchHostedService(
                 if (index < 0 || !config.Jobs[index].Enabled)
                     return;
 
-                await WaitForAppToCloseAsync(jobName, config, index, ct);
+                await WaitForAppToCloseAsync(jobName, config, index, cts.Token);
 
-                var result = await jobRunService.RunJobAsync(index, ct: ct);
+                var result = await jobRunService.RunJobAsync(index, ct: cts.Token);
                 if (result.Outcome != JobRunOutcome.SkippedAppRunning)
                     return;
 
@@ -155,12 +245,35 @@ public sealed class ChangeWatchHostedService(
                 // above and the run actually starting. Loop back and wait again rather than dropping the sync.
             }
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
         {
-            // The watch for this job was stopped/reconciled away while waiting for the app to close - reset the
-            // dashboard row so it doesn't sit on "Waiting for app to close" forever with nothing to update it.
-            events.JobSkipped(jobName, "watch stopped");
+            if (manualStopCts.IsCancellationRequested)
+                // The user hit Stop while this job was waiting for its app to close (or still queued behind a
+                // concurrency gate) - it never reached JobRunService.RunJobAsync, so report it the same way a
+                // mid-run stop does rather than as a watch teardown.
+                events.JobCancelled(jobName);
+            else
+                // The watch for this job was stopped/reconciled away while waiting for the app to close - reset
+                // the dashboard row so it doesn't sit on "Waiting for app to close" forever with nothing to update it.
+                events.JobSkipped(jobName, "watch stopped");
         }
+        finally
+        {
+            _manualStops.TryRemove(new KeyValuePair<string, CancellationTokenSource>(jobName, manualStopCts));
+        }
+    }
+
+    /// <summary>Interrupts a job that's currently waiting for its app to close (or queued behind a concurrency
+    /// gate) before an OnChange-triggered run starts. Returns false if the job has no active trigger cycle right
+    /// now - typically because it's not an OnChange job, or its run has already progressed far enough to be
+    /// registered with <see cref="JobRunService.CancelJob"/> instead.</summary>
+    public bool CancelJob(string jobName)
+    {
+        if (!_manualStops.TryGetValue(jobName, out var cts))
+            return false;
+
+        cts.Cancel();
+        return true;
     }
 
     private async Task WaitForAppToCloseAsync(string jobName, AppConfig config, int index, CancellationToken ct)

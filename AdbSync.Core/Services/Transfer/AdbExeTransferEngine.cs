@@ -55,12 +55,17 @@ public sealed class AdbExeTransferEngine(IAdbProcessRunner adb, IMirrorDiffer di
         {
             foreach (var childPath in Directory.EnumerateFileSystemEntries(localPath))
             {
+                // Checked before starting each item, not passed into the push below: once a push is in flight
+                // it always runs to completion, so a stop request can only take effect between items, never
+                // orphan a still-running adb.exe mid-transfer (see AdbProcessRunner.RunAsync).
+                ct.ThrowIfCancellationRequested();
+
                 var childName = Path.GetFileName(childPath);
                 var isDirectory = Directory.Exists(childPath);
                 if (exclude.IsExcluded(childName, isDirectory))
                     continue;
 
-                var pushResult = await adb.RunAsync(["-s", serial, "push", childPath, $"{remotePath}/{childName}"], ct);
+                var pushResult = await adb.RunAsync(["-s", serial, "push", childPath, $"{remotePath}/{childName}"], CancellationToken.None);
                 if (pushResult.ExitCode != 0)
                 {
                     errors.Add($"push '{childName}' failed (exit {pushResult.ExitCode}): {pushResult.StandardError}");
@@ -106,7 +111,8 @@ public sealed class AdbExeTransferEngine(IAdbProcessRunner adb, IMirrorDiffer di
         var deletedPaths = new List<string>();
         foreach (var dir in topMostExtraDirs)
         {
-            var result = await adb.RunAsync(["-s", serial, "shell", "rm", "-rf", $"{remotePath}/{dir}"], ct);
+            ct.ThrowIfCancellationRequested();
+            var result = await adb.RunAsync(["-s", serial, "shell", "rm", "-rf", $"{remotePath}/{dir}"], CancellationToken.None);
             if (result.ExitCode != 0)
                 errors.Add($"rm -rf '{dir}' failed (exit {result.ExitCode}): {result.StandardError}");
             else
@@ -117,7 +123,8 @@ public sealed class AdbExeTransferEngine(IAdbProcessRunner adb, IMirrorDiffer di
         }
         foreach (var file in extraFiles)
         {
-            var result = await adb.RunAsync(["-s", serial, "shell", "rm", $"{remotePath}/{file}"], ct);
+            ct.ThrowIfCancellationRequested();
+            var result = await adb.RunAsync(["-s", serial, "shell", "rm", $"{remotePath}/{file}"], CancellationToken.None);
             if (result.ExitCode != 0)
                 errors.Add($"rm '{file}' failed (exit {result.ExitCode}): {result.StandardError}");
             else

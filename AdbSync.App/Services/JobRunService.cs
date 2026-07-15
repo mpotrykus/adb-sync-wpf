@@ -13,7 +13,7 @@ namespace AdbSync.App.Services;
 /// sharing a physical device can never contend on the same adb connection even when the global cap allows more
 /// than one job to run at once.
 /// </summary>
-public sealed class JobRunService(AppConfigService configService, SyncJobRunner runner, IDeviceSnapshotService snapshotService)
+public sealed class JobRunService(AppConfigService configService, SyncJobRunner runner, IDeviceSnapshotService snapshotService, ICheckpointManager checkpoints)
 {
     // Sized once from settings.MaxConcurrentJobs on first use - restart to apply, the same tradeoff already
     // accepted for LogRetentionDays/PerLogFileMaxBytes at startup.
@@ -26,6 +26,10 @@ public sealed class JobRunService(AppConfigService configService, SyncJobRunner 
 
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _deviceGates = new(StringComparer.OrdinalIgnoreCase);
 
+    // Keyed by job index so the dashboard's Stop button can cancel a specific in-flight run without knowing
+    // anything about how it was started (manual "Run Now", scheduler, or change-watch trigger).
+    private readonly ConcurrentDictionary<int, CancellationTokenSource> _runningJobs = new();
+
     public async Task<JobRunResult> RunJobAsync(int jobIndex, bool forcePush = false, CancellationToken ct = default)
     {
         var config = await configService.GetAsync();
@@ -35,7 +39,19 @@ public sealed class JobRunService(AppConfigService configService, SyncJobRunner 
         job.Schedule.LastRunAt = DateTimeOffset.Now;
         await configService.SaveAsync();
 
-        var result = await runner.RunAsync(job, jobIndex, config.Devices, config.Settings, resumeFrom: null, forcePush, ct);
+        var resume = await checkpoints.LoadAsync(job.Name, ct);
+
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        _runningJobs[jobIndex] = cts;
+        JobRunResult result;
+        try
+        {
+            result = await runner.RunAsync(job, jobIndex, config.Devices, config.Settings, resume, forcePush, cts.Token);
+        }
+        finally
+        {
+            _runningJobs.TryRemove(new KeyValuePair<int, CancellationTokenSource>(jobIndex, cts));
+        }
 
         if (result.Outcome is JobRunOutcome.Completed or JobRunOutcome.CompletedNoChanges)
             job.Schedule.LastSuccessAt = DateTimeOffset.Now;
@@ -43,6 +59,42 @@ public sealed class JobRunService(AppConfigService configService, SyncJobRunner 
 
         return result;
     }
+
+    /// <summary>Requests that the given job's in-flight run stop at its next safe point. Returns false if the
+    /// job isn't currently running (e.g. it already finished, or was never started).</summary>
+    public bool CancelJob(int jobIndex)
+    {
+        if (!_runningJobs.TryGetValue(jobIndex, out var cts))
+            return false;
+
+        cts.Cancel();
+        return true;
+    }
+
+    /// <summary>Requests every currently in-flight run stop at its next safe point - same mechanism as
+    /// <see cref="CancelJob"/>, just applied to all of them. Used when the system is suspending or shutting
+    /// down: an adb connection an in-flight run is holding open needs to close before the transition completes,
+    /// and each cancelled run's checkpoint (already saved at the last completed device boundary) lets it resume
+    /// cleanly on its next trigger.</summary>
+    public void CancelAllRunning()
+    {
+        foreach (var cts in _runningJobs.Values)
+            cts.Cancel();
+    }
+
+    /// <summary>Every job with a saved checkpoint (i.e. interrupted mid-run and not yet resumed to completion),
+    /// for hydrating the dashboard's checkpoint badge on load.</summary>
+    public Task<IReadOnlyList<SyncCheckpoint>> GetAllCheckpointsAsync(CancellationToken ct = default) =>
+        checkpoints.LoadAllAsync(ct);
+
+    /// <summary>The given job's saved checkpoint, if any - null once it's completed a run without interruption.</summary>
+    public Task<SyncCheckpoint?> GetCheckpointAsync(string jobName, CancellationToken ct = default) =>
+        checkpoints.LoadAsync(jobName, ct);
+
+    /// <summary>Discards a job's saved checkpoint so its next run starts over from the beginning instead of
+    /// resuming. Safe to call whether or not a checkpoint actually exists.</summary>
+    public Task DiscardCheckpointAsync(string jobName, CancellationToken ct = default) =>
+        checkpoints.ClearAsync(jobName, ct);
 
     /// <summary>Pulls the current state of every device bound to the job into a new timestamped backup folder,
     /// without touching master/staging/devices. Shares the same gates as <see cref="RunJobAsync"/> so it can't

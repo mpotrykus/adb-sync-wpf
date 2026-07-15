@@ -7,6 +7,7 @@ public sealed class RecordingSyncEventSink : ISyncEventSink
 {
     public bool Failed { get; private set; }
     public Exception? LastException { get; private set; }
+    public bool Cancelled { get; private set; }
     public int TotalConflictsReported { get; private set; }
     public List<(string JobName, string DeviceName, bool LiveWatch)> WatchStartedCalls { get; } = [];
     public List<(string JobName, string DeviceName, string Reason)> WatchDegradedCalls { get; } = [];
@@ -22,6 +23,8 @@ public sealed class RecordingSyncEventSink : ISyncEventSink
         Failed = true;
         LastException = exception;
     }
+
+    public void JobCancelled(string jobName) => Cancelled = true;
 
     public void MergeConflictsDetected(string jobName, string deviceName, int conflictCount) =>
         TotalConflictsReported += conflictCount;

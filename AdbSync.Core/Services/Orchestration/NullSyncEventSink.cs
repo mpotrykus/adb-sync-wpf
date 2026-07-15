@@ -10,6 +10,7 @@ public sealed class NullSyncEventSink : ISyncEventSink
     public void JobSkipped(string jobName, string reason) { }
     public void JobCompleted(string jobName, bool pushed) { }
     public void JobFailed(string jobName, Exception exception) { }
+    public void JobCancelled(string jobName) { }
     public void MergeConflictsDetected(string jobName, string deviceName, int conflictCount) { }
     public void WatchStarted(string jobName, string deviceName, bool liveWatch) { }
     public void WatchDegraded(string jobName, string deviceName, string reason) { }

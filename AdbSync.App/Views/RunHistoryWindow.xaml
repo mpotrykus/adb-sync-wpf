@@ -58,8 +58,9 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="188"/>
-                    <RowDefinition Height="*" MinHeight="160"/>
-                    <RowDefinition Height="150"/>
+                    <RowDefinition Height="*" MinHeight="120"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="150" MinHeight="80"/>
                 </Grid.RowDefinitions>
 
                 <!-- Summary stat tiles -->
@@ -127,11 +128,11 @@
                     </Border>
                 </Grid>
 
-                <DataGrid x:Name="RunsGrid" Grid.Row="2" Margin="0,0,0,12" AutoGenerateColumns="False" IsReadOnly="True"
+                <DataGrid x:Name="RunsGrid" Grid.Row="2" Margin="0,0,0,0" AutoGenerateColumns="False" IsReadOnly="True"
                           CanUserAddRows="False" HeadersVisibility="Column" GridLinesVisibility="None" RowHeight="40"
                           SelectionChanged="RunsGrid_SelectionChanged">
                     <DataGrid.Columns>
-                        <DataGridTextColumn Header="STARTED" Binding="{Binding StartedAtText}" Width="150"/>
+                        <DataGridTextColumn Header="STARTED" Binding="{Binding StartedAtText}" Width="160"/>
                         <DataGridTextColumn Header="DURATION" Binding="{Binding DurationText}" Width="90"/>
                         <DataGridTextColumn Header="PULL" Binding="{Binding PullDurationText}" Width="80"/>
                         <DataGridTextColumn Header="PUSH" Binding="{Binding PushDurationText}" Width="80"/>
@@ -181,7 +182,18 @@
                     </DataGrid.Columns>
                 </DataGrid>
 
-                <TextBox x:Name="LogTextBox" Grid.Row="3" IsReadOnly="True" TextWrapping="NoWrap" FontFamily="Consolas"
+                <GridSplitter Grid.Row="3" Height="12" Margin="0,-3" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                              Background="Transparent" ResizeBehavior="PreviousAndNext" ResizeDirection="Rows" Cursor="SizeNS">
+                    <GridSplitter.Template>
+                        <ControlTemplate TargetType="GridSplitter">
+                            <Border Background="{TemplateBinding Background}">
+                                <Border Height="3" CornerRadius="1.5" Background="{StaticResource Brush.Border.Hover}" Margin="0,4"/>
+                            </Border>
+                        </ControlTemplate>
+                    </GridSplitter.Template>
+                </GridSplitter>
+
+                <TextBox x:Name="LogTextBox" Grid.Row="4" IsReadOnly="True" TextWrapping="NoWrap" FontFamily="Consolas"
                          VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                          Text="Select a run above to view its log."/>
             </Grid>

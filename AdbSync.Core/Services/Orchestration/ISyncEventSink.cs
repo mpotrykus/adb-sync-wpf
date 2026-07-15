@@ -10,6 +10,9 @@ public interface ISyncEventSink
     void JobCompleted(string jobName, bool pushed);
     void JobFailed(string jobName, Exception exception);
 
+    /// <summary>The run was stopped by user request (via a job's Stop button) rather than failing or completing.</summary>
+    void JobCancelled(string jobName);
+
     /// <summary>Reported once per device after a merge that found conflicts - conflict losers are always backed up to disk, never silently discarded.</summary>
     void MergeConflictsDetected(string jobName, string deviceName, int conflictCount);
 
