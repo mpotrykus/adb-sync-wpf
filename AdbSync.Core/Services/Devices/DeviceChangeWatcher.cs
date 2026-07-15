@@ -54,7 +54,11 @@ public sealed class DeviceChangeWatcher(IAdbClient adbClient) : IDeviceChangeWat
         var device = new DeviceData { Serial = serial, State = DeviceState.Online };
 
         // "-" as PROG means "no program to run, just print each event to stdout" (toybox mirrors busybox here).
-        var command = "inotifyd - " + string.Join(' ', paths.Select(Quote));
+        // ":ndmy" restricts each watch to real directory-entry changes (created/deleted/moved-in/moved-out).
+        // Without it, toybox's default mask includes "a" (accessed) - a sync run's own pull (which reads every
+        // file under the watched tree) triggers a flood of self-generated access events, which without this
+        // filter looks indistinguishable from a real change and re-triggers the job the moment it finishes.
+        var command = "inotifyd - " + string.Join(' ', paths.Select(p => Quote(p) + ":ndmy"));
 
         await foreach (var _ in adbClient.ExecuteRemoteEnumerableAsync(command, device, Encoding.UTF8, ct))
             yield return new ChangeSignal();

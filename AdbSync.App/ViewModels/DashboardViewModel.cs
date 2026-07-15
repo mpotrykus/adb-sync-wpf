@@ -16,6 +16,21 @@ public sealed class DashboardViewModel : ISyncEventSink
 {
     public ObservableCollection<JobStatusViewModel> Jobs { get; } = [];
 
+    public bool AnyJobRunning => Jobs.Any(j => j.IsRunning);
+
+    /// <summary>Warning shown before exiting the app while a job is running - notes the push-specific risk
+    /// (partially-updated devices) only when it actually applies, same condition StopNow_Click checks.</summary>
+    public string ExitWarningMessage
+    {
+        get
+        {
+            var pushNote = Jobs.Any(j => j.IsRunning && j.PhaseText.StartsWith("Push", StringComparison.Ordinal))
+                ? " A job that's mid-push may leave some devices updated and others not until it runs again."
+                : "";
+            return $"One or more jobs are still running.\n\n{pushNote} Exiting now will stop them.\n\nEach resumes from its last checkpoint the next time it runs.";
+        }
+    }
+
     public void SyncFrom(AppConfig config)
     {
         RunOnUi(() =>

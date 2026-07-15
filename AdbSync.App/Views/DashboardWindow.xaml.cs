@@ -94,7 +94,14 @@ public partial class DashboardWindow : Window
             await RefreshAsync();
         };
         _configService.ConfigChanged += async (_, _) => await Dispatcher.InvokeAsync(RefreshAsync);
-        PreviewKeyDown += (_, e) => { if (e.Key == System.Windows.Input.Key.F12) Application.Current.Shutdown(); };
+        PreviewKeyDown += (_, e) =>
+        {
+            if (e.Key != System.Windows.Input.Key.F12)
+                return;
+            if (_viewModel.AnyJobRunning && !ConfirmDialog.Show(this, "Exit AdbSync", _viewModel.ExitWarningMessage, confirmText: "Exit"))
+                return;
+            Application.Current.Shutdown();
+        };
     }
 
     private async Task LoadPersistedSortAsync()
@@ -321,6 +328,15 @@ public partial class DashboardWindow : Window
         };
         editor.Show();
         editor.Activate();
+    }
+
+    private void MoreActions_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { ContextMenu: { } menu } button)
+            return;
+
+        menu.PlacementTarget = button;
+        menu.IsOpen = true;
     }
 
     private async void RemoveJob_Click(object sender, RoutedEventArgs e)

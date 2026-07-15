@@ -44,10 +44,15 @@ public sealed class TrayIconService(
         _icon = new TaskbarIcon
         {
             Icon = (System.Drawing.Icon)_appIcon.Clone(),
-            ToolTipText = "AdbSync: idle",
         };
 
         _icon.ForceCreate(enablesEfficiencyMode: false);
+
+        // ToolTipText must be set after ForceCreate, not in the object initializer above - H.NotifyIcon builds
+        // its hover popup (TrayToolTipResolved) from a property-changed callback that requires the icon to
+        // already be created, so a pre-creation value never gets a popup built for it and the very first hover
+        // (before any job has touched ToolTipText post-creation) silently shows nothing.
+        _icon.ToolTipText = "AdbSync: idle";
         _icon.TrayMouseDoubleClick += (_, _) => OpenDashboard();
 
         foreach (var job in dashboard.Jobs)
@@ -187,6 +192,13 @@ public sealed class TrayIconService(
         menu.Items.Add(new Separator());
         menu.Items.Add(MakeItem("Exit", async (_, _) =>
         {
+            if (dashboard.AnyJobRunning)
+            {
+                _dashboardWindow ??= services.GetRequiredService<DashboardWindow>();
+                if (!ConfirmDialog.Show(_dashboardWindow, "Exit AdbSync", dashboard.ExitWarningMessage, confirmText: "Exit"))
+                    return;
+            }
+
             _icon?.Dispose();
             _icon = null;
 
