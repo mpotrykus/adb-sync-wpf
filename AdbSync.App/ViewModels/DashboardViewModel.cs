@@ -1,10 +1,9 @@
-using System.Collections.ObjectModel;
-using System.Windows;
 using AdbSync.Core.Models.Config;
-using AdbSync.Core.Services.Config;
 using AdbSync.Core.Models.Orchestration;
 using AdbSync.Core.Services.Orchestration;
 using AdbSync.Core.Services.Scheduling;
+using System.Collections.ObjectModel;
+using System.Windows;
 
 namespace AdbSync.App.ViewModels;
 
@@ -24,7 +23,7 @@ public sealed class DashboardViewModel : ISyncEventSink
     {
         get
         {
-            var pushNote = Jobs.Any(j => j.IsRunning && j.PhaseText.StartsWith("Push", StringComparison.Ordinal))
+            var pushNote = Jobs.Any(j => j.IsRunning && j.PhaseText.Contains("Push", StringComparison.Ordinal))
                 ? " A job that's mid-push may leave some devices updated and others not until it runs again."
                 : "";
             return $"One or more jobs are still running.\n\n{pushNote} Exiting now will stop them.\n\nEach resumes from its last checkpoint the next time it runs.";
@@ -69,19 +68,37 @@ public sealed class DashboardViewModel : ISyncEventSink
     public void PhaseChanged(string jobName, SyncPhase phase, string? deviceName = null) =>
         UpdateJob(jobName, vm =>
         {
-            vm.PhaseText = phase switch
+            if (deviceName is null)
             {
-                SyncPhase.WaitingForAppClose when deviceName is not null => $"Waiting for app to close on {deviceName}",
-                _ when deviceName is null => phase.ToString(),
-                _ => $"{phase} @ {deviceName}",
-            };
+                // A job-level phase (currently only PreConnect) - starts a fresh run, so any per-device text
+                // left over from the last run (or a device this run hasn't reached yet) must not linger.
+                vm.ClearDevicePhases();
+                vm.PhaseText = phase.ToString();
+            }
+            else
+            {
+                var (prefix, suffix) = phase switch
+                {
+                    SyncPhase.WaitingForAppClose => ("Waiting for app to close on ", ""),
+                    SyncPhase.WaitingForDevice => ("Waiting for ", " (in use by another job)"),
+                    _ => ($"{phase} @ ", ""),
+                };
+                vm.SetDevicePhase(deviceName, prefix, suffix);
+            }
+
             if (phase == SyncPhase.PreConnect)
                 vm.ConflictCountThisRun = 0;
         });
 
+    // PhaseChanged (fired once the run actually starts, e.g. PreConnect) naturally overwrites this once the
+    // queue clears - no need to clear it explicitly here.
+    public void JobQueued(string jobName, string reason) =>
+        UpdateJob(jobName, vm => vm.PhaseText = reason);
+
     public void JobSkipped(string jobName, string reason) =>
         UpdateJob(jobName, vm =>
         {
+            vm.ClearDevicePhases();
             vm.PhaseText = "Idle";
             vm.IsStopping = false;
             vm.ReportOutcome($"Skipped: {reason}");
@@ -90,6 +107,7 @@ public sealed class DashboardViewModel : ISyncEventSink
     public void JobCompleted(string jobName, bool pushed) =>
         UpdateJob(jobName, vm =>
         {
+            vm.ClearDevicePhases();
             vm.PhaseText = "Idle";
             vm.IsStopping = false;
             var outcome = pushed ? "Success" : "No changes";
@@ -102,6 +120,7 @@ public sealed class DashboardViewModel : ISyncEventSink
     public void JobFailed(string jobName, Exception exception) =>
         UpdateJob(jobName, vm =>
         {
+            vm.ClearDevicePhases();
             vm.PhaseText = "Idle";
             vm.IsStopping = false;
             vm.ReportOutcome($"Error: {exception.Message}");
@@ -113,6 +132,7 @@ public sealed class DashboardViewModel : ISyncEventSink
     public void JobCancelled(string jobName) =>
         UpdateJob(jobName, vm =>
         {
+            vm.ClearDevicePhases();
             vm.PhaseText = "Idle";
             vm.IsStopping = false;
             vm.ReportOutcome("Stopped");

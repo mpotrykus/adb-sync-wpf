@@ -1,8 +1,7 @@
-using AdbSync.Core.Models.Devices;
-using System.Text;
 using AdvancedSharpAdbClient;
 using AdvancedSharpAdbClient.Models;
 using AdvancedSharpAdbClient.Receivers;
+using System.Text;
 
 namespace AdbSync.Core.Services.Devices;
 

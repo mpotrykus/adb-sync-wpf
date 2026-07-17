@@ -104,6 +104,7 @@
                                             <Grid.RowDefinitions>
                                                 <RowDefinition/>
                                                 <RowDefinition/>
+                                                <RowDefinition/>
                                             </Grid.RowDefinitions>
                                             <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center">
                                                 <Run Text="Stale lock timeout "/><Run Text="(hours)" Style="{StaticResource DescriptorRun}"/>
@@ -111,6 +112,10 @@
                                             <TextBox Grid.Row="0" Grid.Column="1" x:Name="StaleLockHoursBox" controls:TextBoxHelper.Placeholder="4"/>
                                             <TextBlock Grid.Row="1" Grid.Column="0" Text="Max concurrent jobs" VerticalAlignment="Center" Margin="0,12,0,0"/>
                                             <TextBox Grid.Row="1" Grid.Column="1" x:Name="MaxConcurrentJobsBox" Margin="0,12,0,0" controls:TextBoxHelper.Placeholder="1"/>
+                                            <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Margin="0,12,0,0">
+                                                <Run Text="Max concurrent transfers per device "/><Run Text="(restart to apply)" Style="{StaticResource DescriptorRun}"/>
+                                            </TextBlock>
+                                            <TextBox Grid.Row="2" Grid.Column="1" x:Name="MaxConcurrentPerDeviceBox" Margin="0,12,0,0" controls:TextBoxHelper.Placeholder="4"/>
                                         </Grid>
                                     </StackPanel>
                                 </Border>

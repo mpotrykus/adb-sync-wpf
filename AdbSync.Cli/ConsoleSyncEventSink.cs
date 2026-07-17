@@ -8,6 +8,8 @@ public sealed class ConsoleSyncEventSink : ISyncEventSink
     public void PhaseChanged(string jobName, SyncPhase phase, string? deviceName = null) =>
         Console.WriteLine(deviceName is null ? $"[{jobName}] {phase}" : $"[{jobName}] {phase} @ {deviceName}");
 
+    public void JobQueued(string jobName, string reason) => Console.WriteLine($"[{jobName}] queued: {reason}");
+
     public void JobSkipped(string jobName, string reason) => Console.WriteLine($"[{jobName}] skipped: {reason}");
 
     public void JobCompleted(string jobName, bool pushed) => Console.WriteLine($"[{jobName}] completed (pushed={pushed})");

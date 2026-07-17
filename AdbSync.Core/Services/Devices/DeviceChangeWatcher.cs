@@ -1,10 +1,10 @@
 using AdbSync.Core.Models.Devices;
 using AdbSync.Core.Services.Transfer;
-using System.Runtime.CompilerServices;
-using System.Text;
 using AdvancedSharpAdbClient;
 using AdvancedSharpAdbClient.Models;
 using AdvancedSharpAdbClient.Receivers;
+using System.Runtime.CompilerServices;
+using System.Text;
 
 namespace AdbSync.Core.Services.Devices;
 

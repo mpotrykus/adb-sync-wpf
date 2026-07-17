@@ -1,4 +1,3 @@
-using AdbSync.Core.Models.Config;
 using AdbSync.Core.Services.Config;
 using Serilog;
 

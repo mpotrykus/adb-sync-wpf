@@ -1,5 +1,3 @@
-using AdbSync.Core.Models.Config;
-
 namespace AdbSync.Core.Services.Config;
 
 /// <summary>Resolves every on-disk path the app reads/writes, rooted at <see cref="Root"/> so tests can point it elsewhere.</summary>

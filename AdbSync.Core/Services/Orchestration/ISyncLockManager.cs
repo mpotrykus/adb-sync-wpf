@@ -1,5 +1,3 @@
-using AdbSync.Core.Models.Orchestration;
-
 namespace AdbSync.Core.Services.Orchestration;
 
 public interface ISyncLockManager

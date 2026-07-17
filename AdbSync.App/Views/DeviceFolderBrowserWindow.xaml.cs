@@ -1,8 +1,7 @@
+using AdbSync.Core.Services.Transfer;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using AdbSync.Core.Models.Transfer;
-using AdbSync.Core.Services.Transfer;
 
 namespace AdbSync.App.Views;
 

@@ -1,15 +1,14 @@
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Shapes;
-using System.Windows.Threading;
 using AdbSync.App.Controls;
 using AdbSync.App.Converters;
 using AdbSync.App.ViewModels;
 using AdbSync.Core.Models.Orchestration;
-using AdbSync.Core.Services.Orchestration;
 using AdbSync.Core.Models.Orchestration.RunHistory;
-using AdbSync.Core.Services.Orchestration.RunHistory;
 using AdbSync.Core.Services.Logging;
+using AdbSync.Core.Services.Orchestration.RunHistory;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Shapes;
+using System.Windows.Threading;
 
 namespace AdbSync.App.Views;
 
@@ -139,7 +138,9 @@ public partial class RunHistoryWindow : Window
             var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 4) };
             row.Children.Add(new Ellipse
             {
-                Width = 8, Height = 8, Margin = new Thickness(0, 0, 7, 0),
+                Width = 8,
+                Height = 8,
+                Margin = new Thickness(0, 0, 7, 0),
                 VerticalAlignment = VerticalAlignment.Center,
                 Fill = RunOutcomeDisplay.Resolve(outcome),
             });

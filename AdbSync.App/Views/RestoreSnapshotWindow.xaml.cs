@@ -1,9 +1,9 @@
+using AdbSync.App.ViewModels;
+using AdbSync.Core.Models.Orchestration;
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using AdbSync.App.ViewModels;
-using AdbSync.Core.Models.Orchestration;
 
 namespace AdbSync.App.Views;
 

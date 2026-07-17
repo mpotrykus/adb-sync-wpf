@@ -1,12 +1,8 @@
 using AdbSync.Core.Models.Config;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using AdbSync.Core.Models.Config.Legacy;
-using AdbSync.Core.Services.Config.Legacy;
 using AdbSync.Core.Models.Merge;
-using AdbSync.Core.Services.Merge;
 using AdbSync.Core.Models.Orchestration;
-using AdbSync.Core.Services.Orchestration;
+using System.Text.Json.Serialization;
 
 namespace AdbSync.Core.Services.Config;
 

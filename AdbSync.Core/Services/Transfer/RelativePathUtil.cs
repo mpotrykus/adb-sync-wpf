@@ -1,5 +1,3 @@
-using AdbSync.Core.Models.Transfer;
-
 namespace AdbSync.Core.Services.Transfer;
 
 internal static class RelativePathUtil

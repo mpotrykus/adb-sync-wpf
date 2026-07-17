@@ -1,10 +1,11 @@
-using AdbSync.Core.Models.Devices;
 using AdbSync.Core.Models.Config;
+using AdbSync.Core.Models.Devices;
 using AdbSync.Core.Services.Logging;
 using AdvancedSharpAdbClient;
 using AdvancedSharpAdbClient.Models;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Collections.Concurrent;
 
 namespace AdbSync.Core.Services.Devices;
 
@@ -20,7 +21,31 @@ public sealed class AdbDeviceResolver(
     // rolling file log - "why did connect fail" is otherwise a black box, since ConnectAsync/mDNS give no detail.
     private readonly ILogger<AdbDeviceResolver> _logger = new RunCapturingLogger<AdbDeviceResolver>(logger ?? NullLogger<AdbDeviceResolver>.Instance);
 
+    // Two jobs can share a device, and with concurrent job execution (see SyncJobRunner/JobRunService) their
+    // PreConnect phases can now land here at the same time. This is deliberately its own short-lived
+    // per-device lock rather than SyncJobRunner's job-lifetime IDeviceAccessGate: it exists only to stop two
+    // concurrent calls from racing on the same DeviceConfig's CachedHostPort/CachedAt fields (AppConfigService
+    // hands out one shared, mutable AppConfig/DeviceConfig instance to every caller) and on the underlying adb
+    // server/mDNS calls, which were never verified safe for concurrent use against the same device. It's held
+    // only for the duration of resolving a connection, not for the rest of the run, so one device connecting
+    // slowly (e.g. waiting its turn behind another job) never delays a sibling device's own connect+pull.
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _connectGates = new(StringComparer.OrdinalIgnoreCase);
+
     public async Task<string> EnsureConnectedAsync(DeviceConfig device, CancellationToken ct = default)
+    {
+        var gate = _connectGates.GetOrAdd(device.Name, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(ct);
+        try
+        {
+            return await EnsureConnectedCoreAsync(device, ct);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    private async Task<string> EnsureConnectedCoreAsync(DeviceConfig device, CancellationToken ct)
     {
         var startResult = await adbServer.StartServerAsync(adbExecutablePath, restartServerIfNewer: false, ct);
         _logger.LogDebug("Device '{Device}': adb server start result: {Result}", device.Name, startResult);
@@ -140,6 +165,33 @@ public sealed class AdbDeviceResolver(
 
     private async Task<bool> IsOnlineAsync(string hostPort, CancellationToken ct) =>
         await GetStateAsync(hostPort, ct) == DeviceState.Online;
+
+    public async Task DisconnectAsync(DeviceConfig device, CancellationToken ct = default)
+    {
+        if (device.CachedHostPort is null)
+            return;
+
+        var (host, port) = SplitHostPort(device.CachedHostPort);
+        try
+        {
+            await adbClient.DisconnectAsync(host, port, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Device '{Device}': adb disconnect from {HostPort} threw", device.Name, device.CachedHostPort);
+        }
+        finally
+        {
+            device.CachedHostPort = null;
+            device.CachedAt = null;
+        }
+    }
+
+    private static (string Host, int Port) SplitHostPort(string hostPort)
+    {
+        var separatorIndex = hostPort.LastIndexOf(':');
+        return (hostPort[..separatorIndex], int.Parse(hostPort[(separatorIndex + 1)..]));
+    }
 
     private static void Cache(DeviceConfig device, string hostPort)
     {

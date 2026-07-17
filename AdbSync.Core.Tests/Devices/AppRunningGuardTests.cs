@@ -1,10 +1,9 @@
-using System.Text;
-using AdbSync.Core.Models.Devices;
 using AdbSync.Core.Services.Devices;
 using AdvancedSharpAdbClient;
 using AdvancedSharpAdbClient.Models;
 using AdvancedSharpAdbClient.Receivers;
 using NSubstitute;
+using System.Text;
 
 namespace AdbSync.Core.Tests.Devices;
 

@@ -1,21 +1,24 @@
-using AdbSync.Core.Models.Orchestration;
-using System.Diagnostics;
 using AdbSync.Core.Models.Config;
-using AdbSync.Core.Services.Config;
-using AdbSync.Core.Models.Devices;
+using AdbSync.Core.Models.Merge;
+using AdbSync.Core.Models.Orchestration;
+using AdbSync.Core.Models.Orchestration.RunHistory;
+using AdbSync.Core.Models.Transfer;
 using AdbSync.Core.Services.Devices;
 using AdbSync.Core.Services.Logging;
-using AdbSync.Core.Models.Merge;
 using AdbSync.Core.Services.Merge;
-using AdbSync.Core.Models.Orchestration.RunHistory;
 using AdbSync.Core.Services.Orchestration.RunHistory;
-using AdbSync.Core.Models.Transfer;
 using AdbSync.Core.Services.Transfer;
 using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 
 namespace AdbSync.Core.Services.Orchestration;
 
-/// <summary>Runs one sync job's full pipeline: lock -> connect devices -> app-running guard -> pull+merge per device -> push-safety -> push per device.</summary>
+/// <summary>Runs one sync job's full pipeline: lock -> connect devices -> app-running guard -> pull+merge per
+/// device (concurrently, one device's busy wait never blocks another's) -> push-safety -> push per device
+/// (also concurrently). Each device's gate (up to GlobalSettings.MaxConcurrentPerDevice concurrent holders) is
+/// held only for the duration of its actual pull/push call, not across the whole run - merge/manifest/checkpoint
+/// bookkeeping is local disk I/O and needs no device, so another job can use a device the moment this job's
+/// transfer with it finishes.</summary>
 public sealed class SyncJobRunner(
     IAdbDeviceResolver deviceResolver,
     IAppRunningGuard appGuard,
@@ -28,9 +31,11 @@ public sealed class SyncJobRunner(
     ISyncEventSink events,
     IRunHistoryStore runHistory,
     ILogger<SyncJobRunner>? logger = null,
-    ILiveRunLogSink? liveLog = null)
+    ILiveRunLogSink? liveLog = null,
+    IDeviceAccessGate? deviceAccessGate = null)
 {
     private readonly ILogger<SyncJobRunner> _logger = new RunCapturingLogger<SyncJobRunner>(logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<SyncJobRunner>.Instance);
+    private readonly IDeviceAccessGate _deviceAccessGate = deviceAccessGate ?? new DeviceAccessGate();
 
     public async Task<JobRunResult> RunAsync(
         SyncJobConfig job, int jobIndex, IReadOnlyList<DeviceConfig> devices, GlobalSettings settings,
@@ -102,7 +107,7 @@ public sealed class SyncJobRunner(
             if (!anyChange)
             {
                 var pullStopwatch = Stopwatch.StartNew();
-                var pullStats = await RunPullPhaseAsync(job, jobIndex, masterPath, serials, exclude, resumeFrom, eff, ct);
+                var pullStats = await RunPullPhaseAsync(job, jobIndex, masterPath, serials, exclude, resumeFrom, eff, settings.MaxConcurrentPerDevice, ct);
                 pullDuration = pullStopwatch.Elapsed;
                 anyChange = pullStats.AnyChange;
                 totalErrors += pullStats.Errors;
@@ -135,7 +140,7 @@ public sealed class SyncJobRunner(
             }
 
             var pushStopwatch = Stopwatch.StartNew();
-            var pushStats = await RunPushPhaseAsync(job, jobIndex, masterPath, serials, exclude, resumeFrom, eff, ct);
+            var pushStats = await RunPushPhaseAsync(job, jobIndex, masterPath, serials, exclude, resumeFrom, eff, settings.MaxConcurrentPerDevice, ct);
             pushDuration = pushStopwatch.Elapsed;
             // Files column reports unique files actually pushed, not a per-device sum - pushing the same
             // file to 3 devices should read as "1 copied", not "3 copied".
@@ -189,108 +194,162 @@ public sealed class SyncJobRunner(
 
     private async Task<PhaseStats> RunPullPhaseAsync(
         SyncJobConfig job, int jobIndex, string masterPath, Dictionary<string, string> serials,
-        ExcludeMatcher exclude, SyncCheckpoint? resumeFrom, EffectiveJobSettings eff, CancellationToken ct)
+        ExcludeMatcher exclude, SyncCheckpoint? resumeFrom, EffectiveJobSettings eff, int maxConcurrentPerDevice,
+        CancellationToken ct)
     {
         var projectRoot = Path.GetDirectoryName(masterPath)!;
-        var startIndex = resumeFrom is { Phase: SyncPhase.Pull } r ? r.DeviceIndex : 0;
+        var completed = resumeFrom is { Phase: SyncPhase.Pull } r ? new List<string>(r.CompletedDevices) : [];
+        var alreadyDone = new HashSet<string>(completed, StringComparer.OrdinalIgnoreCase);
+        var pending = job.Devices.Where(b => !alreadyDone.Contains(b.DeviceName)).ToList();
+
         var anyChange = false;
         var filesCopied = 0;
         var filesDeleted = 0;
         var errors = 0;
         var bytesCopied = 0L;
+        // Pulls run concurrently across this job's devices (each waiting only on its own device gate), but
+        // merging into the shared master and updating shared per-job state (checkpoint, push-safety history)
+        // must happen one device at a time - this gate serializes just that tail of the work.
+        using var bookkeepingGate = new SemaphoreSlim(1, 1);
 
-        for (var di = startIndex; di < job.Devices.Count; di++)
+        async Task ProcessDeviceAsync(JobDeviceBinding binding)
         {
-            var binding = job.Devices[di];
             var serial = serials[binding.DeviceName];
             var stagingPath = GetStagingPath(projectRoot, binding.DeviceName);
 
-            events.PhaseChanged(job.Name, SyncPhase.Pull, binding.DeviceName);
-            var pullResult = await transfer.PullMirrorAsync(serial, binding.RemotePath, stagingPath, exclude, eff.ToTransferPolicy(), ct);
+            // The device gate is held only for this call - merge/manifest/checkpoint bookkeeping below is
+            // all local disk I/O, so releasing it here lets another job's pull/push use this device the
+            // instant the actual transfer is done, instead of for this device's remaining share of the run.
+            if (_deviceAccessGate.IsBusy(binding.DeviceName))
+                events.PhaseChanged(job.Name, SyncPhase.WaitingForDevice, binding.DeviceName);
+            TransferResult pullResult;
+            await using (await _deviceAccessGate.AcquireAsync(binding.DeviceName, maxConcurrentPerDevice, ct))
+            {
+                events.PhaseChanged(job.Name, SyncPhase.Pull, binding.DeviceName);
+                pullResult = await transfer.PullMirrorAsync(serial, binding.RemotePath, stagingPath, exclude, eff.ToTransferPolicy(), ct);
+            }
             _logger.LogInformation(
                 "Job '{Job}' pulled from '{Device}': {Copied} copied, {Deleted} deleted, {Errors} error(s)",
                 job.Name, binding.DeviceName, pullResult.FilesCopied, pullResult.FilesDeleted, pullResult.Errors.Count);
-            filesCopied += pullResult.FilesCopied;
-            filesDeleted += pullResult.FilesDeleted;
-            errors += pullResult.Errors.Count;
-            bytesCopied += pullResult.BytesCopied;
 
             var fileCount = Directory.Exists(stagingPath)
                 ? Directory.EnumerateFiles(stagingPath, "*", SearchOption.AllDirectories).Count()
                 : 0;
-            await pushSafety.RecordDeviceSnapshotAsync(job.Name, binding.DeviceName, fileCount, ct);
 
             var manifest = await manifests.GetOrBootstrapAsync(job.Name, binding.DeviceName, stagingPath, masterPath, ct);
-            // ConflictBackupDir must live outside both stagingPath (deleted at the end of this loop iteration,
+            // ConflictBackupDir must live outside both stagingPath (deleted at the end of this device's work,
             // which would destroy a staging-side backup) and masterPath (mirrored verbatim to every device on
             // push, which would leak a master-side backup out to devices that had nothing to do with the conflict).
             var mergeOptions = new MergeOptions(
                 BackupConflictLosers: eff.BackupConflictLosers,
                 ConflictBackupDir: GetConflictBackupDir(projectRoot, binding.DeviceName),
                 DryRun: eff.DryRun);
-            events.PhaseChanged(job.Name, SyncPhase.Merge, binding.DeviceName);
-            var mergeResult = await merge.MergeAsync(stagingPath, masterPath, manifest, mergeOptions, ct);
-            // A dry run must never persist state - the manifest write is what would make the rehearsal "real".
-            if (!eff.DryRun)
-                await manifests.SaveAsync(job.Name, binding.DeviceName, mergeResult.UpdatedManifest, ct);
-            anyChange |= pullResult.AnyChange || mergeResult.AnyChange;
 
-            if (mergeResult.Conflicts.Count > 0)
+            await bookkeepingGate.WaitAsync(ct);
+            try
             {
-                _logger.LogWarning(
-                    "Job '{Job}' merge with '{Device}' had {Count} conflict(s): {Paths}",
-                    job.Name, binding.DeviceName, mergeResult.Conflicts.Count,
-                    string.Join(", ", mergeResult.Conflicts.Select(c => c.RelativePath)));
-                events.MergeConflictsDetected(job.Name, binding.DeviceName, mergeResult.Conflicts.Count);
+                filesCopied += pullResult.FilesCopied;
+                filesDeleted += pullResult.FilesDeleted;
+                errors += pullResult.Errors.Count;
+                bytesCopied += pullResult.BytesCopied;
+
+                await pushSafety.RecordDeviceSnapshotAsync(job.Name, binding.DeviceName, fileCount, ct);
+
+                events.PhaseChanged(job.Name, SyncPhase.Merge, binding.DeviceName);
+                var mergeResult = await merge.MergeAsync(stagingPath, masterPath, manifest, mergeOptions, ct);
+                // A dry run must never persist state - the manifest write is what would make the rehearsal "real".
+                if (!eff.DryRun)
+                    await manifests.SaveAsync(job.Name, binding.DeviceName, mergeResult.UpdatedManifest, ct);
+                anyChange |= pullResult.AnyChange || mergeResult.AnyChange;
+
+                if (mergeResult.Conflicts.Count > 0)
+                {
+                    _logger.LogWarning(
+                        "Job '{Job}' merge with '{Device}' had {Count} conflict(s): {Paths}",
+                        job.Name, binding.DeviceName, mergeResult.Conflicts.Count,
+                        string.Join(", ", mergeResult.Conflicts.Select(c => c.RelativePath)));
+                    events.MergeConflictsDetected(job.Name, binding.DeviceName, mergeResult.Conflicts.Count);
+                }
+
+                // Opportunistic sweep: piggyback on the run that just touched this device's backup folder rather
+                // than running a separate cleanup job for what's normally an empty or near-empty directory.
+                PruneConflictBackups(mergeOptions.ConflictBackupDir!, eff.ConflictRetentionDays);
+
+                if (Directory.Exists(stagingPath))
+                    Directory.Delete(stagingPath, recursive: true);
+
+                completed.Add(binding.DeviceName);
+                // A dry run must never persist state - a checkpoint would let a later real run "resume" into a
+                // push phase that this rehearsal never actually reached.
+                if (!eff.DryRun)
+                    await checkpoints.SaveAsync(job.Name, new SyncCheckpoint(1, DateTimeOffset.UtcNow, jobIndex, job.Name, SyncPhase.Pull, completed.ToList(), serials), ct);
             }
-
-            // Opportunistic sweep: piggyback on the run that just touched this device's backup folder rather
-            // than running a separate cleanup job for what's normally an empty or near-empty directory.
-            PruneConflictBackups(mergeOptions.ConflictBackupDir!, eff.ConflictRetentionDays);
-
-            if (Directory.Exists(stagingPath))
-                Directory.Delete(stagingPath, recursive: true);
-
-            // A dry run must never persist state - a checkpoint would let a later real run "resume" into a push
-            // phase that this rehearsal never actually reached.
-            if (!eff.DryRun)
-                await checkpoints.SaveAsync(job.Name, new SyncCheckpoint(1, DateTimeOffset.UtcNow, jobIndex, job.Name, SyncPhase.Pull, di + 1, serials), ct);
+            finally
+            {
+                bookkeepingGate.Release();
+            }
         }
+
+        await Task.WhenAll(pending.Select(ProcessDeviceAsync));
 
         return new PhaseStats(anyChange, filesCopied, filesDeleted, errors, bytesCopied, [], []);
     }
 
     private async Task<PhaseStats> RunPushPhaseAsync(
         SyncJobConfig job, int jobIndex, string masterPath, Dictionary<string, string> serials,
-        ExcludeMatcher exclude, SyncCheckpoint? resumeFrom, EffectiveJobSettings eff, CancellationToken ct)
+        ExcludeMatcher exclude, SyncCheckpoint? resumeFrom, EffectiveJobSettings eff, int maxConcurrentPerDevice,
+        CancellationToken ct)
     {
-        var startIndex = resumeFrom is { Phase: SyncPhase.Push } r ? r.DeviceIndex : 0;
+        var completed = resumeFrom is { Phase: SyncPhase.Push } r ? new List<string>(r.CompletedDevices) : [];
+        var alreadyDone = new HashSet<string>(completed, StringComparer.OrdinalIgnoreCase);
+        var pending = job.Devices.Where(b => !alreadyDone.Contains(b.DeviceName)).ToList();
+
         var filesCopied = 0;
         var filesDeleted = 0;
         var errors = 0;
         var bytesCopied = 0L;
         var copiedPaths = new HashSet<string>(StringComparer.Ordinal);
         var deletedPaths = new HashSet<string>(StringComparer.Ordinal);
+        // Same reasoning as the pull phase's gate: pushes themselves run concurrently, only the shared
+        // checkpoint/stat bookkeeping after each one needs to be serialized.
+        using var bookkeepingGate = new SemaphoreSlim(1, 1);
 
-        for (var di = startIndex; di < job.Devices.Count; di++)
+        async Task ProcessDeviceAsync(JobDeviceBinding binding)
         {
-            var binding = job.Devices[di];
             var serial = serials[binding.DeviceName];
 
-            events.PhaseChanged(job.Name, SyncPhase.Push, binding.DeviceName);
-            var pushResult = await transfer.PushMirrorAsync(serial, masterPath, binding.RemotePath, exclude, eff.ToTransferPolicy(), ct);
+            if (_deviceAccessGate.IsBusy(binding.DeviceName))
+                events.PhaseChanged(job.Name, SyncPhase.WaitingForDevice, binding.DeviceName);
+            TransferResult pushResult;
+            await using (await _deviceAccessGate.AcquireAsync(binding.DeviceName, maxConcurrentPerDevice, ct))
+            {
+                events.PhaseChanged(job.Name, SyncPhase.Push, binding.DeviceName);
+                pushResult = await transfer.PushMirrorAsync(serial, masterPath, binding.RemotePath, exclude, eff.ToTransferPolicy(), ct);
+            }
             _logger.LogInformation(
                 "Job '{Job}' pushed to '{Device}': {Copied} copied, {Deleted} deleted, {Errors} error(s)",
                 job.Name, binding.DeviceName, pushResult.FilesCopied, pushResult.FilesDeleted, pushResult.Errors.Count);
-            filesCopied += pushResult.FilesCopied;
-            filesDeleted += pushResult.FilesDeleted;
-            errors += pushResult.Errors.Count;
-            bytesCopied += pushResult.BytesCopied;
-            copiedPaths.UnionWith(pushResult.CopiedPaths);
-            deletedPaths.UnionWith(pushResult.DeletedPaths);
 
-            await checkpoints.SaveAsync(job.Name, new SyncCheckpoint(1, DateTimeOffset.UtcNow, jobIndex, job.Name, SyncPhase.Push, di + 1, serials), ct);
+            await bookkeepingGate.WaitAsync(ct);
+            try
+            {
+                filesCopied += pushResult.FilesCopied;
+                filesDeleted += pushResult.FilesDeleted;
+                errors += pushResult.Errors.Count;
+                bytesCopied += pushResult.BytesCopied;
+                copiedPaths.UnionWith(pushResult.CopiedPaths);
+                deletedPaths.UnionWith(pushResult.DeletedPaths);
+
+                completed.Add(binding.DeviceName);
+                await checkpoints.SaveAsync(job.Name, new SyncCheckpoint(1, DateTimeOffset.UtcNow, jobIndex, job.Name, SyncPhase.Push, completed.ToList(), serials), ct);
+            }
+            finally
+            {
+                bookkeepingGate.Release();
+            }
         }
+
+        await Task.WhenAll(pending.Select(ProcessDeviceAsync));
 
         return new PhaseStats(AnyChange: false, filesCopied, filesDeleted, errors, bytesCopied, copiedPaths.ToList(), deletedPaths.ToList());
     }

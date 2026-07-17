@@ -4,7 +4,6 @@ using System.Windows.Data;
 
 namespace AdbSync.App.Converters;
 
-/// <summary>Maps a job's PhaseText ("Idle" vs an active SyncPhase name) to a status-dot/pill brush.</summary>
 public sealed class PhaseToBrushConverter : IValueConverter
 {
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
@@ -16,8 +15,6 @@ public sealed class PhaseToBrushConverter : IValueConverter
         throw new NotSupportedException();
 }
 
-/// <summary>Inverse of the built-in <see cref="System.Windows.Data.Binding"/>-friendly BooleanToVisibilityConverter -
-/// used to show the Run button only while a job is NOT running (the Stop button covers the running case).</summary>
 public sealed class InverseBooleanToVisibilityConverter : IValueConverter
 {
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
@@ -27,7 +24,6 @@ public sealed class InverseBooleanToVisibilityConverter : IValueConverter
         throw new NotSupportedException();
 }
 
-/// <summary>Maps a job's LastOutcome text to a semantic brush based on its "Error:"/"Skipped:" prefix.</summary>
 public sealed class OutcomeToBrushConverter : IValueConverter
 {
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)

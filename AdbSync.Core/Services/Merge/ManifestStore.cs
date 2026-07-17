@@ -1,7 +1,6 @@
 using AdbSync.Core.Models.Merge;
-using AdbSync.Core.Models.Config;
-using AdbSync.Core.Services.Config;
 using AdbSync.Core.Models.Transfer;
+using AdbSync.Core.Services.Config;
 using AdbSync.Core.Services.Transfer;
 
 namespace AdbSync.Core.Services.Merge;

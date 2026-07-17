@@ -139,7 +139,7 @@ public sealed class ChangeWatchCoordinator(
 
             lastSnapshot = snapshot;
             if (_suppressed)
-                continue; 
+                continue;
 
             events.ChangeDetected(jobName, binding.Device.Name);
             await SignalChangeAsync(ct);

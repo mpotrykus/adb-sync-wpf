@@ -1,11 +1,9 @@
-using System.Windows;
-using System.Windows.Controls;
 using AdbSync.Core.Models.Config;
-using AdbSync.Core.Services.Config;
-using AdbSync.Core.Models.Devices;
 using AdbSync.Core.Services.Devices;
 using AdvancedSharpAdbClient;
 using AdvancedSharpAdbClient.Models;
+using System.Windows;
+using System.Windows.Controls;
 
 namespace AdbSync.App.Views;
 

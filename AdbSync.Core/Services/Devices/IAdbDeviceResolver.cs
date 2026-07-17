@@ -1,6 +1,4 @@
-using AdbSync.Core.Models.Devices;
 using AdbSync.Core.Models.Config;
-using AdbSync.Core.Services.Config;
 
 namespace AdbSync.Core.Services.Devices;
 
@@ -22,4 +20,14 @@ public interface IAdbDeviceResolver
     /// which is only ever set by a subsequent <see cref="EnsureConnectedAsync"/> connect.
     /// </summary>
     Task<string> PairAsync(DeviceConfig device, string pairingCode, CancellationToken ct = default);
+
+    /// <summary>
+    /// Drops the adb-server-level connection to <paramref name="device"/> if <see cref="DeviceConfig.CachedHostPort"/>
+    /// is set, and clears it so the next <see cref="EnsureConnectedAsync"/> reconnects from scratch. No-op for USB
+    /// devices or devices with no cached connection. The adb server otherwise keeps a WiFi device's TCP connection
+    /// open indefinitely once connected, regardless of whether anything is actively using it - callers must call
+    /// this explicitly (e.g. before a system suspend) to actually release it. Callers are responsible for
+    /// persisting the config afterward.
+    /// </summary>
+    Task DisconnectAsync(DeviceConfig device, CancellationToken ct = default);
 }

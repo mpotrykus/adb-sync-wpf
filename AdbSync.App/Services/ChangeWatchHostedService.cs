@@ -1,23 +1,15 @@
-using System.Collections.Concurrent;
 using AdbSync.Core.Models.Config;
-using AdbSync.Core.Services.Config;
-using AdbSync.Core.Models.Devices;
-using AdbSync.Core.Services.Devices;
 using AdbSync.Core.Models.Orchestration;
+using AdbSync.Core.Services.Devices;
 using AdbSync.Core.Services.Orchestration;
 using AdbSync.Core.Services.Transfer;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Win32;
+using System.Collections.Concurrent;
 
 namespace AdbSync.App.Services;
 
-/// <summary>
-/// Keeps one live <see cref="ChangeWatchCoordinator"/> running per enabled OnChange job, reconciled against
-/// <see cref="AppConfigService"/> - which already raises <see cref="AppConfigService.ConfigChanged"/> on every
-/// save from the job editor - so watchers start/stop/restart immediately when a job is added, edited, disabled,
-/// or removed, without a separate polling loop.
-/// </summary>
 public sealed class ChangeWatchHostedService(
     AppConfigService configService,
     IDeviceChangeWatcher watcher,
@@ -30,9 +22,6 @@ public sealed class ChangeWatchHostedService(
     private readonly Dictionary<string, ActiveWatch> _active = [];
     private readonly SemaphoreSlim _reconcileGate = new(1, 1);
 
-    // One entry per job currently inside TriggerAsync (waiting for its app to close, or already handed off to
-    // JobRunService). Lets the dashboard's Stop button interrupt a job stuck waiting for its app to close, which
-    // JobRunService.CancelJob can't do since that job hasn't been registered there yet at that point.
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _manualStops = new(StringComparer.Ordinal);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -69,7 +58,6 @@ public sealed class ChangeWatchHostedService(
         }
         catch (Exception ex)
         {
-            // best-effort reconciliation - a bad tick shouldn't take down the app; the next config save retries
             logger.LogWarning(ex, "Failed to reconcile change watchers after a config change");
         }
     }
@@ -158,6 +146,15 @@ public sealed class ChangeWatchHostedService(
         {
             _reconcileGate.Release();
         }
+
+        await DisconnectWifiDevicesAsync();
+    }
+
+    private async Task DisconnectWifiDevicesAsync()
+    {
+        var config = await configService.GetAsync();
+        foreach (var device in config.Devices.Where(d => d.Ip is not null))
+            await deviceResolver.DisconnectAsync(device);
     }
 
     private async Task ReconcileAsync(CancellationToken ct)
@@ -248,9 +245,11 @@ public sealed class ChangeWatchHostedService(
         catch (OperationCanceledException) when (cts.IsCancellationRequested)
         {
             if (manualStopCts.IsCancellationRequested)
-                // The user hit Stop while this job was waiting for its app to close (or still queued behind a
-                // concurrency gate) - it never reached JobRunService.RunJobAsync, so report it the same way a
-                // mid-run stop does rather than as a watch teardown.
+                // The user hit Stop while this job was waiting for its app to close - it never reached
+                // JobRunService.RunJobAsync, so report it the same way a mid-run stop does rather than as a
+                // watch teardown. (A job stopped while merely queued behind the concurrency cap doesn't reach
+                // here at all - JobRunService.RunJobAsync catches that itself and reports JobCancelled directly,
+                // returning a Cancelled result instead of throwing.)
                 events.JobCancelled(jobName);
             else
                 // The watch for this job was stopped/reconciled away while waiting for the app to close - reset

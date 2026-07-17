@@ -1,7 +1,6 @@
 <Solution>
   <Project Path="AdbSync.App/AdbSync.App.csproj" />
   <Project Path="AdbSync.Cli/AdbSync.Cli.csproj" />
-  <Project Path="AdbSync.Core/AdbSync.Core.csproj" />
-  <Project Path="AdbSync.Core.IntegrationTests/AdbSync.Core.IntegrationTests.csproj" />
   <Project Path="AdbSync.Core.Tests/AdbSync.Core.Tests.csproj" />
+  <Project Path="AdbSync.Core/AdbSync.Core.csproj" />
 </Solution>

@@ -1,9 +1,8 @@
-using System.IO;
-using System.Windows;
 using AdbSync.App.Services;
 using AdbSync.Core.Models.Config;
-using AdbSync.Core.Services.Config;
 using Microsoft.Win32;
+using System.IO;
+using System.Windows;
 
 namespace AdbSync.App.Views;
 
@@ -46,6 +45,7 @@ public partial class SettingsWindow : Window
         RetryBackoffSecondsBox.Text = settings.RetryBackoffSeconds.ToString();
         PushSafetyMinimumPercentBox.Text = settings.PushSafetyMinimumPercent.ToString();
         MaxConcurrentJobsBox.Text = settings.MaxConcurrentJobs.ToString();
+        MaxConcurrentPerDeviceBox.Text = settings.MaxConcurrentPerDevice.ToString();
         BackupConflictLosersBox.IsChecked = settings.BackupConflictLosers;
     }
 
@@ -117,6 +117,8 @@ public partial class SettingsWindow : Window
             _config.Settings.PushSafetyMinimumPercent = pushSafetyMinimumPercent;
         if (int.TryParse(MaxConcurrentJobsBox.Text, out var maxConcurrentJobs) && maxConcurrentJobs > 0)
             _config.Settings.MaxConcurrentJobs = maxConcurrentJobs;
+        if (int.TryParse(MaxConcurrentPerDeviceBox.Text, out var maxConcurrentPerDevice) && maxConcurrentPerDevice > 0)
+            _config.Settings.MaxConcurrentPerDevice = maxConcurrentPerDevice;
         _config.Settings.BackupConflictLosers = BackupConflictLosersBox.IsChecked == true;
 
         StartupRegistration.SetEnabled(_config.Settings.StartAtLogin);

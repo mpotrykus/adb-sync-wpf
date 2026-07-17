@@ -15,6 +15,41 @@ public sealed partial class JobStatusViewModel(string name) : ObservableObject
     [NotifyPropertyChangedFor(nameof(DisplayStatusText))]
     private string _phaseText = "Idle";
 
+    /// <summary>This run's current (prefix, suffix) per device, e.g. ("Pull @ ", "") - since a job's devices
+    /// run concurrently, more than one can be active at once, but never more than one phase at a time per
+    /// device. <see cref="PhaseText"/> groups devices that share the same prefix/suffix (i.e. the same phase)
+    /// so two devices both mid-pull read as one clause - "Pull @ A and B" - instead of "Pull @ A, Pull @ B".</summary>
+    private readonly Dictionary<string, (string Prefix, string Suffix)> _devicePhases = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Sets this run's current phase for one device - <paramref name="prefix"/> and
+    /// <paramref name="suffix"/> sandwich where the device name(s) go, e.g. ("Pull @ ", "") or
+    /// ("Waiting for ", " (in use by another job)") - and recomputes <see cref="PhaseText"/> by grouping every
+    /// device on file that shares the same prefix/suffix into one clause.</summary>
+    public void SetDevicePhase(string deviceName, string prefix, string suffix = "")
+    {
+        _devicePhases[deviceName] = (prefix, suffix);
+        PhaseText = string.Join(", ",
+            _devicePhases
+                .GroupBy(kv => kv.Value, kv => kv.Key)
+                .OrderBy(g => g.Key.Prefix, StringComparer.OrdinalIgnoreCase)
+                .Select(g => $"{g.Key.Prefix}{JoinNaturally(g.OrderBy(n => n, StringComparer.OrdinalIgnoreCase))}{g.Key.Suffix}"));
+    }
+
+    /// <summary>Drops all per-device phase text - called at the start of a new run (so a device this run hasn't
+    /// touched yet doesn't show stale text from the last run) and whenever the job goes idle.</summary>
+    public void ClearDevicePhases() => _devicePhases.Clear();
+
+    private static string JoinNaturally(IEnumerable<string> names)
+    {
+        var list = names.ToList();
+        return list.Count switch
+        {
+            <= 1 => list.Count == 1 ? list[0] : "",
+            2 => $"{list[0]} and {list[1]}",
+            _ => $"{string.Join(", ", list.Take(list.Count - 1))}, and {list[^1]}",
+        };
+    }
+
     [ObservableProperty]
     private string? _lastOutcome;
 

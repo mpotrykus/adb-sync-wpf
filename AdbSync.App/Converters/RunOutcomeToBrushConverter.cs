@@ -3,11 +3,9 @@ using System.Windows;
 using System.Windows.Data;
 using System.Windows.Media;
 using AdbSync.Core.Models.Orchestration;
-using AdbSync.Core.Services.Orchestration;
 
 namespace AdbSync.App.Converters;
 
-/// <summary>Maps a run's outcome to the semantic brush and display name used across the run-history grid, legend and charts.</summary>
 public static class RunOutcomeDisplay
 {
     public static Brush Resolve(JobRunOutcome outcome)

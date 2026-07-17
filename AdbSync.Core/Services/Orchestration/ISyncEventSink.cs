@@ -6,6 +6,13 @@ namespace AdbSync.Core.Services.Orchestration;
 public interface ISyncEventSink
 {
     void PhaseChanged(string jobName, SyncPhase phase, string? deviceName = null);
+
+    /// <summary>The run was requested but hasn't handed off to <see cref="SyncJobRunner"/> yet because the
+    /// global concurrency cap (<see cref="AdbSync.Core.Models.Config.GlobalSettings.MaxConcurrentJobs"/>) is
+    /// currently full - it will start as soon as a slot frees up, unlike <see cref="JobSkipped"/> which means
+    /// this trigger won't run at all.</summary>
+    void JobQueued(string jobName, string reason);
+
     void JobSkipped(string jobName, string reason);
     void JobCompleted(string jobName, bool pushed);
     void JobFailed(string jobName, Exception exception);

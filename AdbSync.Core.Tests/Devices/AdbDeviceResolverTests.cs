@@ -1,11 +1,10 @@
-using System.Net;
 using AdbSync.Core.Models.Config;
-using AdbSync.Core.Services.Config;
 using AdbSync.Core.Models.Devices;
 using AdbSync.Core.Services.Devices;
 using AdvancedSharpAdbClient;
 using AdvancedSharpAdbClient.Models;
 using NSubstitute;
+using System.Net;
 
 namespace AdbSync.Core.Tests.Devices;
 
@@ -124,6 +123,61 @@ public class AdbDeviceResolverTests
             });
 
         await Assert.ThrowsAsync<DeviceConnectException>(() => _resolver.EnsureConnectedAsync(device));
+    }
+
+    [Fact]
+    public async Task EnsureConnectedAsync_SameDeviceCalledConcurrently_SecondWaitsForFirstToRelease()
+    {
+        var device = new DeviceConfig { Name = "S23+", Serial = "emulator-5554" };
+        var startServerGate = new TaskCompletionSource<StartServerResult>();
+        var startServerCallCount = 0;
+        _adbServer.StartServerAsync("adb", restartServerIfNewer: false, Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                Interlocked.Increment(ref startServerCallCount);
+                return startServerGate.Task;
+            });
+
+        var firstCall = _resolver.EnsureConnectedAsync(device);
+        await Task.Delay(50); // let the first call actually enter and block on startServerGate
+
+        var secondCall = _resolver.EnsureConnectedAsync(device);
+        var wonRace = await Task.WhenAny(secondCall, Task.Delay(TimeSpan.FromMilliseconds(200)));
+        Assert.NotSame(secondCall, wonRace);
+        // If the two calls weren't serialized, the second would have reached StartServerAsync by now too.
+        Assert.Equal(1, startServerCallCount);
+
+        startServerGate.SetResult(StartServerResult.Started);
+
+        Assert.Equal("emulator-5554", await firstCall);
+        Assert.Equal("emulator-5554", await secondCall);
+        Assert.Equal(2, startServerCallCount);
+    }
+
+    [Fact]
+    public async Task EnsureConnectedAsync_DifferentDevicesCalledConcurrently_BothProceedWithoutWaiting()
+    {
+        var deviceA = new DeviceConfig { Name = "S23+", Serial = "emulator-5554" };
+        var deviceB = new DeviceConfig { Name = "BlueStacks", Serial = "emulator-5556" };
+        var startServerGate = new TaskCompletionSource<StartServerResult>();
+        var startServerCallCount = 0;
+        // Only the first call (deviceA's) blocks - deviceA and deviceB are locked independently, so if deviceB
+        // waited behind deviceA it would never reach this second, non-blocking invocation either.
+        _adbServer.StartServerAsync("adb", restartServerIfNewer: false, Arg.Any<CancellationToken>())
+            .Returns(_ => Interlocked.Increment(ref startServerCallCount) == 1
+                ? startServerGate.Task
+                : Task.FromResult(StartServerResult.Started));
+
+        var firstCall = _resolver.EnsureConnectedAsync(deviceA);
+        await Task.Delay(50); // let the first call actually enter and block on startServerGate
+
+        var secondCall = _resolver.EnsureConnectedAsync(deviceB);
+        var wonRace = await Task.WhenAny(secondCall, Task.Delay(TimeSpan.FromSeconds(2)));
+        Assert.Same(secondCall, wonRace);
+        Assert.Equal("emulator-5556", await secondCall);
+
+        startServerGate.SetResult(StartServerResult.Started);
+        Assert.Equal("emulator-5554", await firstCall);
     }
 
     [Fact]

@@ -1,5 +1,4 @@
 using AdbSync.Core.Models.Config;
-using AdbSync.Core.Models.Devices;
 using AdbSync.Core.Services.Orchestration;
 using AdbSync.Core.Tests.Orchestration.Fakes;
 

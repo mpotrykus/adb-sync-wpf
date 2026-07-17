@@ -1,6 +1,5 @@
 using System.Text;
 using System.Text.RegularExpressions;
-using AdbSync.Core.Models.Transfer;
 
 namespace AdbSync.Core.Services.Transfer;
 

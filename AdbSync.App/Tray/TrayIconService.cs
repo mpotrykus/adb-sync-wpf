@@ -1,8 +1,3 @@
-using System.ComponentModel;
-using System.Diagnostics;
-using System.IO;
-using System.Windows;
-using System.Windows.Controls;
 using AdbSync.App.Services;
 using AdbSync.App.ViewModels;
 using AdbSync.App.Views;
@@ -12,6 +7,10 @@ using H.NotifyIcon;
 using H.NotifyIcon.Core;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using System.Diagnostics;
+using System.IO;
+using System.Windows;
+using System.Windows.Controls;
 
 namespace AdbSync.App.Tray;
 
@@ -107,9 +106,9 @@ public sealed class TrayIconService(
 
         var jobs = dashboard.Jobs;
         var master = jobs.Any(j => j.NeedsAttention) ? _warningIcon
-            : jobs.Any(j => j.PhaseText.StartsWith("Push", StringComparison.Ordinal)) ? _pushIcon
-            : jobs.Any(j => j.PhaseText.StartsWith("Pull", StringComparison.Ordinal)) ? _pullIcon
-            : jobs.Any(j => j.PhaseText.StartsWith("Merge", StringComparison.Ordinal)) ? _mergeIcon
+            : jobs.Any(j => j.PhaseText.Contains("Push", StringComparison.Ordinal)) ? _pushIcon
+            : jobs.Any(j => j.PhaseText.Contains("Pull", StringComparison.Ordinal)) ? _pullIcon
+            : jobs.Any(j => j.PhaseText.Contains("Merge", StringComparison.Ordinal)) ? _mergeIcon
             : _appIcon;
 
         // TaskbarIcon.Icon disposes whatever the *previous* value was as soon as a new one is assigned, so the

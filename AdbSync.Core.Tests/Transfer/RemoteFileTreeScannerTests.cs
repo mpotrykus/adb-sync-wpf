@@ -1,4 +1,3 @@
-using AdbSync.Core.Models.Transfer;
 using AdbSync.Core.Services.Transfer;
 
 namespace AdbSync.Core.Tests.Transfer;

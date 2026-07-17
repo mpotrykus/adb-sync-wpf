@@ -1,8 +1,8 @@
 using AdbSync.Core.Models.Transfer;
-using System.Text;
 using AdvancedSharpAdbClient;
 using AdvancedSharpAdbClient.Models;
 using AdvancedSharpAdbClient.Receivers;
+using System.Text;
 
 namespace AdbSync.Core.Services.Transfer;
 

@@ -1,4 +1,3 @@
-using AdbSync.Core.Models.Config.Legacy;
 using AdbSync.Core.Models.Config;
 
 namespace AdbSync.Core.Services.Config.Legacy;

@@ -1,8 +1,6 @@
 using AdbSync.App.Converters;
 using AdbSync.Core.Models.Orchestration;
-using AdbSync.Core.Services.Orchestration;
 using AdbSync.Core.Models.Orchestration.RunHistory;
-using AdbSync.Core.Services.Orchestration.RunHistory;
 
 namespace AdbSync.App.ViewModels;
 
@@ -24,8 +22,6 @@ public sealed class RunHistoryRowViewModel
         ErrorMessage = record.ErrorMessage;
     }
 
-    /// <summary>Builds the synthetic row shown at the top of the grid for a job that's currently running - there's
-    /// no <see cref="JobRunRecord"/> yet, so the stats columns are placeholders until the real row lands.</summary>
     public RunHistoryRowViewModel(string phaseText, DateTimeOffset startedAt)
     {
         IsRunning = true;
@@ -37,9 +33,7 @@ public sealed class RunHistoryRowViewModel
         SizeText = "-";
         OutcomeText = phaseText;
     }
-
-    /// <summary>True for the synthetic in-progress row - also drives the shared running-shimmer <c>DataGridRow</c>
-    /// style in Theme.xaml, which binds to this same property name on the dashboard's job rows.</summary>
+    
     public bool IsRunning { get; }
     public Guid RunId { get; }
     public string StartedAtText { get; }

@@ -1,3 +1,13 @@
+using AdbSync.App.Services;
+using AdbSync.App.ViewModels;
+using AdbSync.Core.Models.Config;
+using AdbSync.Core.Models.Orchestration;
+using AdbSync.Core.Models.Orchestration.RunHistory;
+using AdbSync.Core.Services.Config;
+using AdbSync.Core.Services.Devices;
+using AdbSync.Core.Services.Logging;
+using AdbSync.Core.Services.Orchestration.RunHistory;
+using AdbSync.Core.Services.Transfer;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
@@ -8,19 +18,6 @@ using System.Windows.Data;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
-using AdbSync.App.Services;
-using AdbSync.App.ViewModels;
-using AdbSync.Core.Models.Config;
-using AdbSync.Core.Services.Config;
-using AdbSync.Core.Models.Devices;
-using AdbSync.Core.Services.Devices;
-using AdbSync.Core.Models.Orchestration;
-using AdbSync.Core.Services.Orchestration;
-using AdbSync.Core.Models.Orchestration.RunHistory;
-using AdbSync.Core.Services.Orchestration.RunHistory;
-using AdbSync.Core.Services.Logging;
-using AdbSync.Core.Models.Transfer;
-using AdbSync.Core.Services.Transfer;
 
 namespace AdbSync.App.Views;
 
@@ -231,11 +228,14 @@ public partial class DashboardWindow : Window
     private static void ApplyCheckpoint(JobStatusViewModel vm, SyncCheckpoint checkpoint, AppConfig config)
     {
         var job = config.Jobs.FirstOrDefault(j => j.Name == vm.Name);
-        var deviceName = job is not null && checkpoint.DeviceIndex >= 0 && checkpoint.DeviceIndex < job.Devices.Count
-            ? job.Devices[checkpoint.DeviceIndex].DeviceName
-            : null;
+        var totalDevices = job?.Devices.Count ?? 0;
 
-        var where = deviceName is not null ? $"{checkpoint.Phase} @ {deviceName}" : checkpoint.Phase.ToString();
+        // Devices within a phase now run concurrently, so more than one can be mid-flight at once - a count
+        // of what's done is meaningful here where a single device name no longer would be.
+        var where = totalDevices > 0
+            ? $"{checkpoint.Phase} ({checkpoint.CompletedDevices.Count}/{totalDevices} devices done)"
+            : checkpoint.Phase.ToString();
+
         vm.HasCheckpoint = true;
         vm.CheckpointSummary = $"Interrupted during {where} - saved {JobStatusViewModel.FormatRelative(checkpoint.SavedAt)}";
     }
@@ -408,7 +408,7 @@ public partial class DashboardWindow : Window
 
         // Only push can leave devices in a mismatched state if interrupted partway - pull/merge/pre-connect
         // stop without ceremony since nothing device-visible is left half-done.
-        if (vm.PhaseText.StartsWith("Push", StringComparison.Ordinal))
+        if (vm.PhaseText.Contains("Push", StringComparison.Ordinal))
         {
             var confirmed = ConfirmDialog.Show(this, "Stop Job",
                 $"'{vm.Name}' is currently pushing to a device. Stopping now may leave some devices updated and others not, " +
@@ -420,9 +420,10 @@ public partial class DashboardWindow : Window
 
         var config = await _configService.GetAsync();
         var index = config.Jobs.FindIndex(j => j.Name == vm.Name);
-        // A change-watch job waiting for its app to close (or queued behind a concurrency gate) hasn't handed
-        // off to JobRunService yet, so CancelJob(index) has nothing to cancel there - fall back to interrupting
-        // the watch's own wait/trigger cycle instead.
+        // A change-watch job waiting for its app to close hasn't handed off to JobRunService yet, so
+        // CancelJob(index) has nothing to cancel there - fall back to interrupting the watch's own wait/trigger
+        // cycle instead. (A job queued behind the concurrency cap *is* registered with JobRunService already,
+        // so CancelJob(index) covers that case on its own.)
         var cancelled = index >= 0 && _jobRunService.CancelJob(index);
         cancelled |= _changeWatchHostedService.CancelJob(vm.Name);
         if (cancelled)
@@ -435,9 +436,10 @@ public partial class DashboardWindow : Window
             return;
 
         var confirmed = ConfirmDialog.Show(this, "Discard Checkpoint",
-            $"Job '{vm.Name}' was interrupted ({vm.CheckpointSummary}). Discarding its checkpoint means the " +
-            "next run starts over from the very beginning (a full re-pull and re-merge) instead of continuing " +
-            "where it left off. Files already synced are not affected.",
+            $"Job '{vm.Name}' was interrupted ({vm.CheckpointSummary}).\n\n" +
+            "Discarding its checkpoint means the next run starts over from the very beginning " +
+            "(a full re-pull and re-merge) instead of continuing where it left off.\n\n" +
+            "Files already synced are not affected.",
             confirmText: "Discard");
         if (!confirmed)
             return;

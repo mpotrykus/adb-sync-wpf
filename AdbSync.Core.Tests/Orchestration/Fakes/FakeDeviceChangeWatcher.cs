@@ -1,9 +1,9 @@
-using System.Collections.Concurrent;
-using System.Runtime.CompilerServices;
-using System.Threading.Channels;
 using AdbSync.Core.Models.Devices;
 using AdbSync.Core.Services.Devices;
 using AdbSync.Core.Services.Transfer;
+using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
+using System.Threading.Channels;
 
 namespace AdbSync.Core.Tests.Orchestration.Fakes;
 

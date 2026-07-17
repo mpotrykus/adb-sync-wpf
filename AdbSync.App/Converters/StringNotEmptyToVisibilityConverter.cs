@@ -4,7 +4,6 @@ using System.Windows.Data;
 
 namespace AdbSync.App.Converters;
 
-/// <summary>Visible when a bound string is non-empty - used to flag override fields that hold an explicit value.</summary>
 public sealed class StringNotEmptyToVisibilityConverter : IValueConverter
 {
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>

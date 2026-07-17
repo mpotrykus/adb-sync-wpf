@@ -1,5 +1,3 @@
-using AdbSync.Core.Models.Devices;
-
 namespace AdbSync.Core.Services.Devices;
 
 public interface IAppRunningGuard

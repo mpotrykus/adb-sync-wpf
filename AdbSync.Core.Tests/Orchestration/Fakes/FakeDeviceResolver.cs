@@ -1,6 +1,4 @@
 using AdbSync.Core.Models.Config;
-using AdbSync.Core.Services.Config;
-using AdbSync.Core.Models.Devices;
 using AdbSync.Core.Services.Devices;
 
 namespace AdbSync.Core.Tests.Orchestration.Fakes;
@@ -12,4 +10,11 @@ public sealed class FakeDeviceResolver : IAdbDeviceResolver
 
     public Task<string> PairAsync(DeviceConfig device, string pairingCode, CancellationToken ct = default) =>
         throw new NotImplementedException();
+
+    public Task DisconnectAsync(DeviceConfig device, CancellationToken ct = default)
+    {
+        device.CachedHostPort = null;
+        device.CachedAt = null;
+        return Task.CompletedTask;
+    }
 }

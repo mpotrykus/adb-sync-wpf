@@ -110,7 +110,7 @@
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
-                            <DataGridTemplateColumn Header="" Width="125" CanUserSort="False">
+                            <DataGridTemplateColumn Header="" Width="155" CanUserSort="False">
                                 <DataGridTemplateColumn.HeaderStyle>
                                     <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
                                         <Setter Property="Cursor" Value="Arrow"/>
@@ -131,6 +131,9 @@
                                             <Button Style="{StaticResource RowButton}" Margin="0,0,4,0" Click="EditJob_Click" ToolTip="Edit">
                                                 <TextBlock Text="&#xE70F;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="12"/>
                                             </Button>
+                                            <Button Style="{StaticResource RowButton}" Margin="0,0,4,0" Click="ViewLogs_Click" ToolTip="Run History">
+                                                <TextBlock Text="&#xE81C;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="12"/>
+                                            </Button>
                                             <Button Style="{StaticResource RowButton}" Click="MoreActions_Click" ToolTip="More actions">
                                                 <TextBlock Text="&#xE712;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="12"/>
                                                 <Button.ContextMenu>
@@ -140,14 +143,6 @@
                                                                 <StackPanel Orientation="Horizontal">
                                                                     <TextBlock Text="&#xE722;" Style="{StaticResource MenuItemIcon}"/>
                                                                     <TextBlock Text="Take Snapshot" VerticalAlignment="Center"/>
-                                                                </StackPanel>
-                                                            </MenuItem.Header>
-                                                        </MenuItem>
-                                                        <MenuItem Click="ViewLogs_Click">
-                                                            <MenuItem.Header>
-                                                                <StackPanel Orientation="Horizontal">
-                                                                    <TextBlock Text="&#xE81C;" Style="{StaticResource MenuItemIcon}"/>
-                                                                    <TextBlock Text="Run History" VerticalAlignment="Center"/>
                                                                 </StackPanel>
                                                             </MenuItem.Header>
                                                         </MenuItem>

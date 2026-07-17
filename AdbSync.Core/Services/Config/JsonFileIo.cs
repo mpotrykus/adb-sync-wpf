@@ -1,4 +1,3 @@
-using AdbSync.Core.Models.Config;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 

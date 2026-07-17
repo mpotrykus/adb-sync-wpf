@@ -1,6 +1,5 @@
-using AdbSync.Core.Models.Config;
-using AdbSync.Core.Services.Config;
 using AdbSync.Core.Models.Orchestration;
+using AdbSync.Core.Services.Config;
 using AdbSync.Core.Services.Orchestration;
 
 namespace AdbSync.Core.Tests.Orchestration;
@@ -27,7 +26,7 @@ public class CheckpointManagerTests : IDisposable
     [Fact]
     public async Task SaveAsync_ThenLoadAsync_RoundTrips()
     {
-        var checkpoint = new SyncCheckpoint(1, DateTimeOffset.UtcNow, 2, "JobName", SyncPhase.Push, 1,
+        var checkpoint = new SyncCheckpoint(1, DateTimeOffset.UtcNow, 2, "JobName", SyncPhase.Push, ["DeviceA"],
             new Dictionary<string, string> { ["DeviceA"] = "192.168.0.40:5555" });
 
         await _manager.SaveAsync("JobName", checkpoint);
@@ -37,14 +36,14 @@ public class CheckpointManagerTests : IDisposable
         Assert.Equal(2, loaded.ProjectIndex);
         Assert.Equal("JobName", loaded.ProjectName);
         Assert.Equal(SyncPhase.Push, loaded.Phase);
-        Assert.Equal(1, loaded.DeviceIndex);
+        Assert.Equal(["DeviceA"], loaded.CompletedDevices);
         Assert.Equal("192.168.0.40:5555", loaded.DeviceSerials["DeviceA"]);
     }
 
     [Fact]
     public async Task ClearAsync_RemovesCheckpointFile()
     {
-        await _manager.SaveAsync("Job", new SyncCheckpoint(1, DateTimeOffset.UtcNow, 0, "Job", SyncPhase.Pull, 0, []));
+        await _manager.SaveAsync("Job", new SyncCheckpoint(1, DateTimeOffset.UtcNow, 0, "Job", SyncPhase.Pull, [], []));
 
         await _manager.ClearAsync("Job");
 
@@ -60,8 +59,8 @@ public class CheckpointManagerTests : IDisposable
     [Fact]
     public async Task SaveAsync_Overwrite_ReplacesPreviousCheckpoint()
     {
-        await _manager.SaveAsync("Job", new SyncCheckpoint(1, DateTimeOffset.UtcNow, 0, "Job", SyncPhase.Pull, 0, []));
-        await _manager.SaveAsync("Job", new SyncCheckpoint(1, DateTimeOffset.UtcNow, 5, "Job", SyncPhase.Push, 3, []));
+        await _manager.SaveAsync("Job", new SyncCheckpoint(1, DateTimeOffset.UtcNow, 0, "Job", SyncPhase.Pull, [], []));
+        await _manager.SaveAsync("Job", new SyncCheckpoint(1, DateTimeOffset.UtcNow, 5, "Job", SyncPhase.Push, [], []));
 
         var loaded = await _manager.LoadAsync("Job");
 
@@ -71,8 +70,8 @@ public class CheckpointManagerTests : IDisposable
     [Fact]
     public async Task SaveAsync_DifferentJobs_DoNotClobberEachOther()
     {
-        await _manager.SaveAsync("JobA", new SyncCheckpoint(1, DateTimeOffset.UtcNow, 0, "JobA", SyncPhase.Pull, 0, []));
-        await _manager.SaveAsync("JobB", new SyncCheckpoint(1, DateTimeOffset.UtcNow, 1, "JobB", SyncPhase.Push, 2, []));
+        await _manager.SaveAsync("JobA", new SyncCheckpoint(1, DateTimeOffset.UtcNow, 0, "JobA", SyncPhase.Pull, [], []));
+        await _manager.SaveAsync("JobB", new SyncCheckpoint(1, DateTimeOffset.UtcNow, 1, "JobB", SyncPhase.Push, [], []));
 
         var loadedA = await _manager.LoadAsync("JobA");
         var loadedB = await _manager.LoadAsync("JobB");
@@ -84,8 +83,8 @@ public class CheckpointManagerTests : IDisposable
     [Fact]
     public async Task ClearAsync_OnOneJob_LeavesOtherJobsCheckpointIntact()
     {
-        await _manager.SaveAsync("JobA", new SyncCheckpoint(1, DateTimeOffset.UtcNow, 0, "JobA", SyncPhase.Pull, 0, []));
-        await _manager.SaveAsync("JobB", new SyncCheckpoint(1, DateTimeOffset.UtcNow, 1, "JobB", SyncPhase.Push, 2, []));
+        await _manager.SaveAsync("JobA", new SyncCheckpoint(1, DateTimeOffset.UtcNow, 0, "JobA", SyncPhase.Pull, [], []));
+        await _manager.SaveAsync("JobB", new SyncCheckpoint(1, DateTimeOffset.UtcNow, 1, "JobB", SyncPhase.Push, [], []));
 
         await _manager.ClearAsync("JobA");
 
@@ -102,8 +101,8 @@ public class CheckpointManagerTests : IDisposable
     [Fact]
     public async Task LoadAllAsync_ReturnsEveryJobsCheckpoint()
     {
-        await _manager.SaveAsync("JobA", new SyncCheckpoint(1, DateTimeOffset.UtcNow, 0, "JobA", SyncPhase.Pull, 0, []));
-        await _manager.SaveAsync("JobB", new SyncCheckpoint(1, DateTimeOffset.UtcNow, 1, "JobB", SyncPhase.Push, 2, []));
+        await _manager.SaveAsync("JobA", new SyncCheckpoint(1, DateTimeOffset.UtcNow, 0, "JobA", SyncPhase.Pull, [], []));
+        await _manager.SaveAsync("JobB", new SyncCheckpoint(1, DateTimeOffset.UtcNow, 1, "JobB", SyncPhase.Push, [], []));
 
         var all = await _manager.LoadAllAsync();
 

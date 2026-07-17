@@ -1,19 +1,24 @@
-using System.Collections.Concurrent;
 using AdbSync.Core.Models.Config;
 using AdbSync.Core.Models.Orchestration;
 using AdbSync.Core.Services.Orchestration;
 using AdbSync.Core.Services.Scheduling;
+using System.Collections.Concurrent;
 
 namespace AdbSync.App.Services;
 
 /// <summary>
 /// The one place that actually invokes <see cref="SyncJobRunner"/>, shared by the scheduler and manual
 /// "Run Now" triggers so LastRunAt/LastSuccessAt bookkeeping only lives in one spot. Gates concurrency two ways:
-/// a global cap sized from <see cref="GlobalSettings.MaxConcurrentJobs"/>, and a per-device-name lock so two jobs
-/// sharing a physical device can never contend on the same adb connection even when the global cap allows more
-/// than one job to run at once.
+/// a global cap sized from <see cref="GlobalSettings.MaxConcurrentJobs"/>, enforced here, and a per-device-name
+/// gate (<see cref="IDeviceAccessGate"/>, shared with <see cref="SyncJobRunner"/>, sized from
+/// <see cref="GlobalSettings.MaxConcurrentPerDevice"/>) so no more than that many things sharing a physical
+/// device contend on its adb connection at once. <see cref="SyncJobRunner"/> acquires its own device gates
+/// internally (one per device, concurrently, so one busy device never stalls the others) - this class only
+/// takes device gates itself for snapshot/restore, which don't go through the runner.
 /// </summary>
-public sealed class JobRunService(AppConfigService configService, SyncJobRunner runner, IDeviceSnapshotService snapshotService, ICheckpointManager checkpoints)
+public sealed class JobRunService(
+    AppConfigService configService, SyncJobRunner runner, IDeviceSnapshotService snapshotService,
+    ICheckpointManager checkpoints, IDeviceAccessGate deviceAccessGate, ISyncEventSink events)
 {
     // Sized once from settings.MaxConcurrentJobs on first use - restart to apply, the same tradeoff already
     // accepted for LogRetentionDays/PerLogFileMaxBytes at startup.
@@ -24,8 +29,6 @@ public sealed class JobRunService(AppConfigService configService, SyncJobRunner 
         return new SemaphoreSlim(max, max);
     });
 
-    private readonly ConcurrentDictionary<string, SemaphoreSlim> _deviceGates = new(StringComparer.OrdinalIgnoreCase);
-
     // Keyed by job index so the dashboard's Stop button can cancel a specific in-flight run without knowing
     // anything about how it was started (manual "Run Now", scheduler, or change-watch trigger).
     private readonly ConcurrentDictionary<int, CancellationTokenSource> _runningJobs = new();
@@ -34,30 +37,52 @@ public sealed class JobRunService(AppConfigService configService, SyncJobRunner 
     {
         var config = await configService.GetAsync();
         var job = config.Jobs[jobIndex];
-        await using var _ = await AcquireAsync(job, ct);
+        var globalGate = await _globalGate.Value;
 
-        job.Schedule.LastRunAt = DateTimeOffset.Now;
-        await configService.SaveAsync();
-
-        var resume = await checkpoints.LoadAsync(job.Name, ct);
-
+        // Registered before the gate wait (not after, like the rest of this method's bookkeeping) so Stop can
+        // cancel a job that's still queued behind the concurrency cap, not just one already handed off to the runner.
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         _runningJobs[jobIndex] = cts;
-        JobRunResult result;
         try
         {
-            result = await runner.RunAsync(job, jobIndex, config.Devices, config.Settings, resume, forcePush, cts.Token);
+            // Only reported if a slot isn't free immediately, so the common case (a slot is open) never
+            // flashes a "waiting" message before the real PreConnect phase takes over.
+            if (!await globalGate.WaitAsync(0, cts.Token))
+            {
+                events.JobQueued(job.Name, "Waiting to start - max concurrent jobs limit reached");
+                await globalGate.WaitAsync(cts.Token);
+            }
+
+            try
+            {
+                job.Schedule.LastRunAt = DateTimeOffset.Now;
+                await configService.SaveAsync();
+
+                var resume = await checkpoints.LoadAsync(job.Name, cts.Token);
+                var result = await runner.RunAsync(job, jobIndex, config.Devices, config.Settings, resume, forcePush, cts.Token);
+
+                if (result.Outcome is JobRunOutcome.Completed or JobRunOutcome.CompletedNoChanges)
+                    job.Schedule.LastSuccessAt = DateTimeOffset.Now;
+                await configService.SaveAsync();
+
+                return result;
+            }
+            finally
+            {
+                globalGate.Release();
+            }
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        {
+            // Only reachable while still queued - once runner.RunAsync is running, it catches its own
+            // cancellation internally and reports JobCancelled itself, so this never double-reports that case.
+            events.JobCancelled(job.Name);
+            return new JobRunResult(JobRunOutcome.Cancelled, null);
         }
         finally
         {
             _runningJobs.TryRemove(new KeyValuePair<int, CancellationTokenSource>(jobIndex, cts));
         }
-
-        if (result.Outcome is JobRunOutcome.Completed or JobRunOutcome.CompletedNoChanges)
-            job.Schedule.LastSuccessAt = DateTimeOffset.Now;
-        await configService.SaveAsync();
-
-        return result;
     }
 
     /// <summary>Requests that the given job's in-flight run stop at its next safe point. Returns false if the
@@ -97,13 +122,13 @@ public sealed class JobRunService(AppConfigService configService, SyncJobRunner 
         checkpoints.ClearAsync(jobName, ct);
 
     /// <summary>Pulls the current state of every device bound to the job into a new timestamped backup folder,
-    /// without touching master/staging/devices. Shares the same gates as <see cref="RunJobAsync"/> so it can't
-    /// race a sync run over the same device's adb connection.</summary>
+    /// without touching master/staging/devices. Shares the same device gates as <see cref="SyncJobRunner"/> so it
+    /// can't race a sync run over the same device's adb connection.</summary>
     public async Task<SnapshotResult> CreateSnapshotAsync(int jobIndex, CancellationToken ct = default)
     {
         var config = await configService.GetAsync();
         var job = config.Jobs[jobIndex];
-        await using var _ = await AcquireAsync(job, ct);
+        await using var _ = await AcquireDevicesAsync(job, config.Settings.MaxConcurrentPerDevice, ct);
         return await snapshotService.CreateSnapshotAsync(job, config.Devices, config.Settings, ct);
     }
 
@@ -115,14 +140,13 @@ public sealed class JobRunService(AppConfigService configService, SyncJobRunner 
         return snapshotService.ListSnapshots(job, config.Settings);
     }
 
-    /// <summary>Pushes a stored checkpoint back out to the job's devices. Shares the same gates as
-    /// <see cref="RunJobAsync"/>/<see cref="CreateSnapshotAsync"/> so it can't race a sync run over the same
-    /// device's adb connection.</summary>
+    /// <summary>Pushes a stored checkpoint back out to the job's devices. Shares the same device gates as
+    /// <see cref="CreateSnapshotAsync"/> so it can't race a sync run over the same device's adb connection.</summary>
     public async Task<SnapshotResult> RestoreSnapshotAsync(int jobIndex, string snapshotPath, CancellationToken ct = default)
     {
         var config = await configService.GetAsync();
         var job = config.Jobs[jobIndex];
-        await using var _ = await AcquireAsync(job, ct);
+        await using var _ = await AcquireDevicesAsync(job, config.Settings.MaxConcurrentPerDevice, ct);
         return await snapshotService.RestoreSnapshotAsync(job, config.Devices, config.Settings, snapshotPath, ct);
     }
 
@@ -153,9 +177,11 @@ public sealed class JobRunService(AppConfigService configService, SyncJobRunner 
     }
 
     /// <summary>Acquires the global concurrency cap plus one permit per device this job touches (sorted by name
-    /// first, so two jobs sharing more than one device always acquire in the same order and can't deadlock).
-    /// Dispose the result to release everything acquired.</summary>
-    private async Task<IAsyncDisposable> AcquireAsync(SyncJobConfig job, CancellationToken ct)
+    /// first, so two overlapping snapshot/restore calls always acquire in the same order and can't deadlock -
+    /// unlike <see cref="SyncJobRunner"/>, this does its device acquisition in one sequential pass rather than
+    /// one task per device, since snapshot/restore are rare, whole-operation actions rather than the hot path a
+    /// busy device shouldn't be allowed to stall). Dispose the result to release everything acquired.</summary>
+    private async Task<IAsyncDisposable> AcquireDevicesAsync(SyncJobConfig job, int maxConcurrentPerDevice, CancellationToken ct)
     {
         var globalGate = await _globalGate.Value;
         await globalGate.WaitAsync(ct);
@@ -166,20 +192,16 @@ public sealed class JobRunService(AppConfigService configService, SyncJobRunner 
             .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        var acquired = new List<SemaphoreSlim>();
+        var acquired = new List<IAsyncDisposable>();
         try
         {
             foreach (var name in deviceNames)
-            {
-                var gate = _deviceGates.GetOrAdd(name, _ => new SemaphoreSlim(1, 1));
-                await gate.WaitAsync(ct);
-                acquired.Add(gate);
-            }
+                acquired.Add(await deviceAccessGate.AcquireAsync(name, maxConcurrentPerDevice, ct));
         }
         catch
         {
-            foreach (var gate in acquired)
-                gate.Release();
+            foreach (var handle in acquired)
+                await handle.DisposeAsync();
             globalGate.Release();
             throw;
         }
@@ -187,14 +209,13 @@ public sealed class JobRunService(AppConfigService configService, SyncJobRunner 
         return new Releaser(globalGate, acquired);
     }
 
-    private sealed class Releaser(SemaphoreSlim globalGate, List<SemaphoreSlim> deviceGates) : IAsyncDisposable
+    private sealed class Releaser(SemaphoreSlim globalGate, List<IAsyncDisposable> deviceHandles) : IAsyncDisposable
     {
-        public ValueTask DisposeAsync()
+        public async ValueTask DisposeAsync()
         {
-            foreach (var gate in deviceGates)
-                gate.Release();
+            foreach (var handle in deviceHandles)
+                await handle.DisposeAsync();
             globalGate.Release();
-            return ValueTask.CompletedTask;
         }
     }
 }

@@ -1,12 +1,10 @@
 using AdbSync.Core.Models.Config;
-using AdbSync.Core.Services.Config;
-using AdbSync.Core.Models.Merge;
-using AdbSync.Core.Services.Merge;
 using AdbSync.Core.Models.Orchestration;
-using AdbSync.Core.Services.Orchestration;
-using AdbSync.Core.Models.Orchestration.RunHistory;
-using AdbSync.Core.Services.Orchestration.RunHistory;
+using AdbSync.Core.Services.Config;
 using AdbSync.Core.Services.Logging;
+using AdbSync.Core.Services.Merge;
+using AdbSync.Core.Services.Orchestration;
+using AdbSync.Core.Services.Orchestration.RunHistory;
 using AdbSync.Core.Tests.Orchestration.Fakes;
 
 namespace AdbSync.Core.Tests.Orchestration;
@@ -113,6 +111,181 @@ public class SyncJobRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task RunAsync_OneDeviceHeldByAnotherCaller_OtherDeviceStillPullsWithoutWaiting()
+    {
+        WriteDeviceFile("DeviceA", "a.txt", "from-a");
+        WriteDeviceFile("DeviceB", "b.txt", "from-b");
+        List<DeviceConfig> devices =
+        [
+            new() { Name = "DeviceA", Serial = "DeviceA" },
+            new() { Name = "DeviceB", Serial = "DeviceB" },
+        ];
+        var job = new SyncJobConfig
+        {
+            Name = "JobConcurrentDevices",
+            Devices =
+            [
+                new JobDeviceBinding { DeviceName = "DeviceA", RemotePath = "/sdcard/app" },
+                new JobDeviceBinding { DeviceName = "DeviceB", RemotePath = "/sdcard/app" },
+            ],
+        };
+
+        var gate = new DeviceAccessGate();
+        // Simulate another job/snapshot already holding DeviceA's sole adb connection slot.
+        var externalDeviceALock = await gate.AcquireAsync("DeviceA", 1);
+        var deviceBPulled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var sink = new DeviceObservingSyncEventSink((phase, deviceName) =>
+        {
+            if (phase == SyncPhase.Pull && deviceName == "DeviceB")
+                deviceBPulled.TrySetResult();
+        });
+
+        var runner = new SyncJobRunner(
+            new FakeDeviceResolver(),
+            new FakeAppRunningGuard(),
+            new SyncLockManager(),
+            new FakeAdbTransferEngine(new Dictionary<string, string>
+            {
+                ["DeviceA"] = DeviceFolder("DeviceA"),
+                ["DeviceB"] = DeviceFolder("DeviceB"),
+            }),
+            new TwoWayMergeEngine(),
+            new ManifestStore(_appPaths),
+            new PushSafetyGuard(_appPaths),
+            new CheckpointManager(_appPaths),
+            sink,
+            new RunHistoryStore(_appPaths),
+            deviceAccessGate: gate);
+
+        var runTask = runner.RunAsync(job, 0, devices, _settings, resumeFrom: null);
+
+        // DeviceB must make progress even though DeviceA is unavailable for the entire wait below.
+        var won = await Task.WhenAny(deviceBPulled.Task, Task.Delay(TimeSpan.FromSeconds(5)));
+        Assert.Same(deviceBPulled.Task, won);
+
+        await externalDeviceALock.DisposeAsync();
+        var result = await runTask;
+
+        Assert.Equal(JobRunOutcome.Completed, result.Outcome);
+    }
+
+    [Fact]
+    public async Task RunAsync_DeviceHeldByAnotherCaller_ReportsWaitingForDeviceBeforeItsOwnPullPhase()
+    {
+        WriteDeviceFile("DeviceA", "a.txt", "from-a");
+        var device = new DeviceConfig { Name = "DeviceA", Serial = "DeviceA" };
+        var job = new SyncJobConfig
+        {
+            Name = "JobWaitsOnDevice",
+            Devices = [new JobDeviceBinding { DeviceName = "DeviceA", RemotePath = "/sdcard/app" }],
+        };
+
+        var gate = new DeviceAccessGate();
+        var externalDeviceALock = await gate.AcquireAsync("DeviceA", 1);
+        var reportedWaiting = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var sink = new DeviceObservingSyncEventSink((phase, deviceName) =>
+        {
+            if (phase == SyncPhase.WaitingForDevice && deviceName == "DeviceA")
+                reportedWaiting.TrySetResult();
+        });
+
+        var runner = new SyncJobRunner(
+            new FakeDeviceResolver(),
+            new FakeAppRunningGuard(),
+            new SyncLockManager(),
+            new FakeAdbTransferEngine(new Dictionary<string, string> { ["DeviceA"] = DeviceFolder("DeviceA") }),
+            new TwoWayMergeEngine(),
+            new ManifestStore(_appPaths),
+            new PushSafetyGuard(_appPaths),
+            new CheckpointManager(_appPaths),
+            sink,
+            new RunHistoryStore(_appPaths),
+            deviceAccessGate: gate);
+
+        var runTask = runner.RunAsync(job, 0, [device], _settings, resumeFrom: null);
+
+        var won = await Task.WhenAny(reportedWaiting.Task, Task.Delay(TimeSpan.FromSeconds(5)));
+        Assert.Same(reportedWaiting.Task, won);
+
+        await externalDeviceALock.DisposeAsync();
+        var result = await runTask;
+
+        // DeviceA already holds the winning content (it's the file's origin), so the push phase has nothing
+        // left to send it - see RunAsync_SingleDeviceWithNewFile_MergesIntoMasterWithNoChangesToPush.
+        Assert.Equal(JobRunOutcome.CompletedNoChanges, result.Outcome);
+    }
+
+    [Fact]
+    public async Task RunAsync_ResumedPullWithOneDeviceAlreadyCompleted_SkipsThatDeviceButStillPushesToIt()
+    {
+        WriteDeviceFile("DeviceA", "a.txt", "from-a");
+        WriteDeviceFile("DeviceB", "b.txt", "from-b");
+        List<DeviceConfig> devices =
+        [
+            new() { Name = "DeviceA", Serial = "DeviceA" },
+            new() { Name = "DeviceB", Serial = "DeviceB" },
+        ];
+        var job = new SyncJobConfig
+        {
+            Name = "JobResumeSkip",
+            Devices =
+            [
+                new JobDeviceBinding { DeviceName = "DeviceA", RemotePath = "/sdcard/app" },
+                new JobDeviceBinding { DeviceName = "DeviceB", RemotePath = "/sdcard/app" },
+            ],
+        };
+        var pullPhaseDevices = new List<string>();
+        var sink = new DeviceObservingSyncEventSink((phase, deviceName) =>
+        {
+            if (phase == SyncPhase.Pull && deviceName is not null)
+                pullPhaseDevices.Add(deviceName);
+        });
+        var runner = new SyncJobRunner(
+            new FakeDeviceResolver(),
+            new FakeAppRunningGuard(),
+            new SyncLockManager(),
+            new FakeAdbTransferEngine(new Dictionary<string, string>
+            {
+                ["DeviceA"] = DeviceFolder("DeviceA"),
+                ["DeviceB"] = DeviceFolder("DeviceB"),
+            }),
+            new TwoWayMergeEngine(),
+            new ManifestStore(_appPaths),
+            new PushSafetyGuard(_appPaths),
+            new CheckpointManager(_appPaths),
+            sink,
+            new RunHistoryStore(_appPaths));
+
+        // Simulates a crash after DeviceA's pull+merge finished but before DeviceB's did.
+        var resumeFrom = new SyncCheckpoint(1, DateTimeOffset.UtcNow, 0, job.Name, SyncPhase.Pull, ["DeviceA"],
+            new Dictionary<string, string> { ["DeviceA"] = "DeviceA", ["DeviceB"] = "DeviceB" });
+
+        var result = await runner.RunAsync(job, 0, devices, _settings, resumeFrom);
+
+        Assert.Equal(JobRunOutcome.Completed, result.Outcome);
+        Assert.DoesNotContain("DeviceA", pullPhaseDevices);
+        Assert.Contains("DeviceB", pullPhaseDevices);
+        // The push phase isn't gated by the pull-phase checkpoint, so master (now containing b.txt from
+        // DeviceB's pull) still reaches DeviceA even though its own pull was skipped as already-done.
+        Assert.Equal("from-b", File.ReadAllText(Path.Combine(DeviceFolder("DeviceA"), "b.txt")));
+    }
+
+    private sealed class DeviceObservingSyncEventSink(Action<SyncPhase, string?> onPhaseChanged) : ISyncEventSink
+    {
+        public void PhaseChanged(string jobName, SyncPhase phase, string? deviceName = null) => onPhaseChanged(phase, deviceName);
+        public void JobQueued(string jobName, string reason) { }
+        public void JobSkipped(string jobName, string reason) { }
+        public void JobCompleted(string jobName, bool pushed) { }
+        public void JobFailed(string jobName, Exception exception) { }
+        public void JobCancelled(string jobName) { }
+        public void MergeConflictsDetected(string jobName, string deviceName, int conflictCount) { }
+        public void WatchStarted(string jobName, string deviceName, bool liveWatch) { }
+        public void WatchDegraded(string jobName, string deviceName, string reason) { }
+        public void WatchStopped(string jobName, string deviceName) { }
+        public void ChangeDetected(string jobName, string deviceName) { }
+    }
+
+    [Fact]
     public async Task RunAsync_FileFromOneDevicePushedToTwoOtherDevices_ReportsUniqueFileCountNotPerDeviceSum()
     {
         WriteDeviceFile("DeviceA", "photo.jpg", "content");
@@ -178,7 +351,7 @@ public class SyncJobRunnerTests : IDisposable
 
         // Simulate resuming a crashed run that jumps straight into the push phase - since nothing
         // changed since the baseline, push has nothing left to do and the run should read as a no-op.
-        var resumeFrom = new SyncCheckpoint(1, DateTimeOffset.UtcNow, 0, job.Name, SyncPhase.Push, 0, new Dictionary<string, string> { ["DeviceA"] = "DeviceA" });
+        var resumeFrom = new SyncCheckpoint(1, DateTimeOffset.UtcNow, 0, job.Name, SyncPhase.Push, [], new Dictionary<string, string> { ["DeviceA"] = "DeviceA" });
         var result = await runner.RunAsync(job, 0, [device], _settings, resumeFrom);
 
         Assert.Equal(JobRunOutcome.CompletedNoChanges, result.Outcome);
@@ -551,6 +724,7 @@ public class SyncJobRunnerTests : IDisposable
     private sealed class PhaseCapturingSyncEventSink(Action onPhaseChanged) : ISyncEventSink
     {
         public void PhaseChanged(string jobName, SyncPhase phase, string? deviceName = null) => onPhaseChanged();
+        public void JobQueued(string jobName, string reason) { }
         public void JobSkipped(string jobName, string reason) { }
         public void JobCompleted(string jobName, bool pushed) { }
         public void JobFailed(string jobName, Exception exception) { }

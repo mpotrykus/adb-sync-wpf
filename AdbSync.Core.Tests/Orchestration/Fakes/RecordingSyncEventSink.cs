@@ -15,6 +15,7 @@ public sealed class RecordingSyncEventSink : ISyncEventSink
     public List<(string JobName, string DeviceName)> ChangeDetectedCalls { get; } = [];
 
     public void PhaseChanged(string jobName, SyncPhase phase, string? deviceName = null) { }
+    public void JobQueued(string jobName, string reason) { }
     public void JobSkipped(string jobName, string reason) { }
     public void JobCompleted(string jobName, bool pushed) { }
 

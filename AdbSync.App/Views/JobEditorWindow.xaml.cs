@@ -1,15 +1,12 @@
+using AdbSync.Core.Models.Config;
+using AdbSync.Core.Services.Devices;
+using AdbSync.Core.Services.Transfer;
+using Microsoft.Win32;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
-using AdbSync.Core.Models.Config;
-using AdbSync.Core.Services.Config;
-using AdbSync.Core.Models.Devices;
-using AdbSync.Core.Services.Devices;
-using AdbSync.Core.Models.Transfer;
-using AdbSync.Core.Services.Transfer;
-using Microsoft.Win32;
 
 namespace AdbSync.App.Views;
 
