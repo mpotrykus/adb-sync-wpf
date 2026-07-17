@@ -1,0 +1,112 @@
+# Builds and tests the AdbSync solution on every push/PR to main. Pushing a
+# tag like v1.2.0 additionally publishes AdbSync.App as a self-contained
+# win-x64 exe and attaches it to an auto-created GitHub Release.
+#
+# There is no .sln or WAP packaging project in this repo, so this workflow
+# targets each .csproj directly and skips MSIX/signing entirely.
+
+name: .NET Desktop CI
+
+on:
+  push:
+    branches: [ "main" ]
+    tags: [ "v*.*.*" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  App_Project_Path: AdbSync.App\AdbSync.App.csproj
+  Cli_Project_Path: AdbSync.Cli\AdbSync.Cli.csproj
+  Tests_Project_Path: AdbSync.Core.Tests\AdbSync.Core.Tests.csproj
+  IntegrationTests_Project_Path: AdbSync.Core.IntegrationTests\AdbSync.Core.IntegrationTests.csproj
+
+jobs:
+  build-and-test:
+    strategy:
+      matrix:
+        configuration: [Debug, Release]
+
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: |
+          dotnet restore ${{ env.App_Project_Path }}
+          dotnet restore ${{ env.Cli_Project_Path }}
+          dotnet restore ${{ env.Tests_Project_Path }}
+          dotnet restore ${{ env.IntegrationTests_Project_Path }}
+
+      - name: Build
+        run: |
+          dotnet build ${{ env.App_Project_Path }} --configuration ${{ matrix.configuration }} --no-restore
+          dotnet build ${{ env.Cli_Project_Path }} --configuration ${{ matrix.configuration }} --no-restore
+
+      - name: Run unit tests
+        run: dotnet test ${{ env.Tests_Project_Path }} --configuration ${{ matrix.configuration }} --no-restore
+
+      - name: Run integration tests
+        # These self-skip unless ADBSYNC_TEST_SERIAL points at a real connected device, which
+        # CI runners don't have. Left unset here so the suite passes trivially.
+        run: dotnet test ${{ env.IntegrationTests_Project_Path }} --configuration ${{ matrix.configuration }} --no-restore
+
+  publish:
+    needs: build-and-test
+    if: github.event_name == 'push'
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Publish AdbSync.App (self-contained, single file, win-x64)
+        run: >
+          dotnet publish ${{ env.App_Project_Path }}
+          --configuration Release
+          --runtime win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -o publish\AdbSync.App
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AdbSync.App-win-x64
+          path: publish\AdbSync.App
+
+  release:
+    needs: publish
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: AdbSync.App-win-x64
+          path: publish\AdbSync.App
+
+      - name: Zip the published app
+        run: Compress-Archive -Path publish\AdbSync.App\* -DestinationPath AdbSync.App-${{ github.ref_name }}-win-x64.zip
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: AdbSync.App-${{ github.ref_name }}-win-x64.zip
+          generate_release_notes: true
