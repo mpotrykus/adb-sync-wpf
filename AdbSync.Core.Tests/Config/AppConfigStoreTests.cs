@@ -79,7 +79,7 @@ public class AppConfigStoreTests : IDisposable
 
         Assert.Empty(loaded.Devices);
         Assert.Empty(loaded.Jobs);
-        Assert.Equal(string.Empty, loaded.Settings.ProjectsDirectory);
+        Assert.Equal(GlobalSettings.DefaultProjectsDirectory, loaded.Settings.ProjectsDirectory);
     }
 
     [Fact]
