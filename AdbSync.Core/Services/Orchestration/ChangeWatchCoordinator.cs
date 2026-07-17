@@ -118,8 +118,6 @@ public sealed class ChangeWatchCoordinator(
             }
             catch (OperationCanceledException) when (rescanCts.IsCancellationRequested && !ct.IsCancellationRequested)
             {
-                // Rescan interval elapsed, not a real cancellation - loop back around to re-enumerate
-                // subdirectories (picks up folders created since the watch was last seeded) and re-watch.
             }
         }
     }

@@ -20,9 +20,9 @@ public class AdbExeTransferEngineTests : IDisposable
         string? capturedTempRoot = null;
         runner.Handlers["pull"] = args =>
         {
-            var tempRoot = args[4]; // -s serial pull remotePath tempRoot
+            var tempRoot = args[4];
             capturedTempRoot = tempRoot;
-            var pulledRoot = Path.Combine(tempRoot, "files"); // basename of "/sdcard/app/files"
+            var pulledRoot = Path.Combine(tempRoot, "files");
             Directory.CreateDirectory(pulledRoot);
             File.WriteAllText(Path.Combine(pulledRoot, "a.txt"), "hello");
             return new AdbProcessResult(0, "", "");

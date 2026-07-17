@@ -15,8 +15,6 @@ public sealed class DeviceSnapshotService(IAdbDeviceResolver deviceResolver, IAd
     {
         var eff = job.Resolve(settings);
         var checkpointsRoot = GetCheckpointsRoot(job, eff);
-        // Sibling of "master"/".sync_staging"/".sync_conflicts" - pull/push/merge only ever touch those by name,
-        // so this folder is never read from or written to by a sync run.
         var snapshotRoot = Path.Combine(checkpointsRoot, DateTimeOffset.Now.ToString(TimestampFormat));
         var exclude = new ExcludeMatcher(job.Exclude);
 
@@ -54,7 +52,7 @@ public sealed class DeviceSnapshotService(IAdbDeviceResolver deviceResolver, IAd
         {
             var name = Path.GetFileName(dir);
             if (!DateTimeOffset.TryParseExact(name, TimestampFormat, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out var createdAt))
-                continue; // not a checkpoint folder we created - ignore rather than fail the whole list
+                continue;
 
             var deviceNames = Directory.EnumerateDirectories(dir)
                 .Select(Path.GetFileName)
@@ -110,8 +108,6 @@ public sealed class DeviceSnapshotService(IAdbDeviceResolver deviceResolver, IAd
     private static string GetCheckpointsRoot(SyncJobConfig job, EffectiveJobSettings eff) =>
         Path.Combine(eff.ProjectsDirectory, job.Name, "checkpoints");
 
-    // Opportunistic sweep, mirroring SyncJobRunner.PruneConflictBackups: piggyback on the run that just
-    // created a new checkpoint rather than running a separate cleanup job.
     private static void PruneOldSnapshots(string checkpointsRoot, int retentionDays)
     {
         if (retentionDays <= 0 || !Directory.Exists(checkpointsRoot))

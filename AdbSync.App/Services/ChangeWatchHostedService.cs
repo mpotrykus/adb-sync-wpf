@@ -113,8 +113,6 @@ public sealed class ChangeWatchHostedService(
 
     private async Task TeardownActiveAsync(CancellationToken ct)
     {
-        // Stop any in-flight sync run first - it may be holding its own adb connection mid-transfer, independent
-        // of the watch connections torn down below.
         jobRunService.CancelAllRunning();
 
         await _reconcileGate.WaitAsync(CancellationToken.None);
@@ -125,8 +123,6 @@ public sealed class ChangeWatchHostedService(
                 active.RetryCts.Cancel();
                 active.RetryCts.Dispose();
 
-                // Capped independently of the caller's token: on suspend/shutdown there is no shutdown deadline
-                // to inherit, and we want the adb connection closed quickly either way.
                 using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 timeoutCts.CancelAfter(TimeSpan.FromSeconds(5));
                 try
@@ -135,8 +131,6 @@ public sealed class ChangeWatchHostedService(
                 }
                 catch (OperationCanceledException)
                 {
-                    // Deadline hit while a watch loop was still unwinding - abandon it rather than block
-                    // shutdown/suspend any further.
                     logger.LogWarning("Watch for job '{Job}' didn't stop within the deadline; abandoning it", jobName);
                 }
             }
@@ -189,8 +183,6 @@ public sealed class ChangeWatchHostedService(
                     .ToList();
 
                 var jobName = job.Name;
-                // Owns only the wait-for-app-close retry below - cancelled on teardown so a job that's disabled
-                // or removed while its app is still open doesn't leave a blocked adb connection behind.
                 var retryCts = new CancellationTokenSource();
                 var coordinator = new ChangeWatchCoordinator(
                     jobName, bindings, watcher, deviceResolver, events,
@@ -200,9 +192,6 @@ public sealed class ChangeWatchHostedService(
                 coordinator.Start();
                 _active[job.Name] = new ActiveWatch(coordinator, Signature(job), retryCts);
 
-                // The watch only reacts to changes from here forward - it won't notice anything that happened
-                // while the job was disabled (or under its old config). Run once now so enabling/reconfiguring
-                // an OnChange job always leaves it caught up, instead of sitting stale until the next real change.
                 _ = TriggerAsync(jobName, retryCts.Token);
             }
         }
@@ -238,22 +227,13 @@ public sealed class ChangeWatchHostedService(
                 if (result.Outcome != JobRunOutcome.SkippedAppRunning)
                     return;
 
-                // Lost a race - the app was reopened, or another bound device had it open, between our check
-                // above and the run actually starting. Loop back and wait again rather than dropping the sync.
             }
         }
         catch (OperationCanceledException) when (cts.IsCancellationRequested)
         {
             if (manualStopCts.IsCancellationRequested)
-                // The user hit Stop while this job was waiting for its app to close - it never reached
-                // JobRunService.RunJobAsync, so report it the same way a mid-run stop does rather than as a
-                // watch teardown. (A job stopped while merely queued behind the concurrency cap doesn't reach
-                // here at all - JobRunService.RunJobAsync catches that itself and reports JobCancelled directly,
-                // returning a Cancelled result instead of throwing.)
                 events.JobCancelled(jobName);
             else
-                // The watch for this job was stopped/reconciled away while waiting for the app to close - reset
-                // the dashboard row so it doesn't sit on "Waiting for app to close" forever with nothing to update it.
                 events.JobSkipped(jobName, "watch stopped");
         }
         finally
@@ -304,8 +284,6 @@ public sealed class ChangeWatchHostedService(
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // adb connection dropped (device unplugged, wifi hiccup, etc) before the app closed - back off briefly
-            // and let the outer loop in TriggerAsync re-check rather than spinning on a broken connection.
             logger.LogWarning(ex, "Lost the wait-for-app-close connection for job '{Job}'; retrying shortly", jobName);
             await Task.Delay(TimeSpan.FromSeconds(15), ct);
         }

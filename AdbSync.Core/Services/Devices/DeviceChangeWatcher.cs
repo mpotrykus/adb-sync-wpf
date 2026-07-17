@@ -16,11 +16,6 @@ namespace AdbSync.Core.Services.Devices;
 /// </summary>
 public sealed class DeviceChangeWatcher(IAdbClient adbClient) : IDeviceChangeWatcher
 {
-    // inotifyd isn't recursive - watching a large tree means registering one inotify watch per directory in a
-    // single command. Past a few hundred, registering them all at once floods the adb shell connection with
-    // self-triggered events (each new watch looks like an "access" event to its already-registered parent), which
-    // *can* break the connection outright under load (e.g. over a slower Wi-Fi hop). This is a recommendation,
-    // not a hard requirement - trees past it have been observed to work fine - so it only produces a warning.
     private const int RecommendedMaxWatchedDirectories = 200;
 
     public async Task<WatchAvailability> CheckAvailabilityAsync(string serial, string remotePath, IExcludeMatcher exclude, CancellationToken ct = default)
@@ -53,11 +48,6 @@ public sealed class DeviceChangeWatcher(IAdbClient adbClient) : IDeviceChangeWat
 
         var device = new DeviceData { Serial = serial, State = DeviceState.Online };
 
-        // "-" as PROG means "no program to run, just print each event to stdout" (toybox mirrors busybox here).
-        // ":ndmy" restricts each watch to real directory-entry changes (created/deleted/moved-in/moved-out).
-        // Without it, toybox's default mask includes "a" (accessed) - a sync run's own pull (which reads every
-        // file under the watched tree) triggers a flood of self-generated access events, which without this
-        // filter looks indistinguishable from a real change and re-triggers the job the moment it finishes.
         var command = "inotifyd - " + string.Join(' ', paths.Select(p => Quote(p) + ":ndmy"));
 
         await foreach (var _ in adbClient.ExecuteRemoteEnumerableAsync(command, device, Encoding.UTF8, ct))

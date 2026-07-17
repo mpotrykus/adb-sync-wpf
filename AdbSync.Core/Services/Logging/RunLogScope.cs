@@ -5,8 +5,6 @@ namespace AdbSync.Core.Services.Logging;
 /// <summary>Accumulates the log lines recorded for one run; disposing ends capture for the ambient scope.</summary>
 internal sealed class RunLogScope(string? jobName = null, ILiveRunLogSink? liveSink = null) : IDisposable
 {
-    // A job's devices now pull/push concurrently (see SyncJobRunner), so several of them can log through this
-    // same ambient scope at once - the list needs its own lock rather than relying on single-writer access.
     private readonly List<string> _lines = [];
 
     public void Append(LogLevel level, string message, Exception? exception)

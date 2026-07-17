@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace AdbSync.Core.Services.Transfer;
+namespace AdbSync.Core.Services.Common;
 
 /// <summary>Wraps a stream and delays reads/writes so cumulative throughput stays under <paramref name="maxBytesPerSecond"/>.</summary>
 internal sealed class ThrottledStream(Stream inner, long maxBytesPerSecond) : Stream

@@ -136,7 +136,7 @@ public sealed partial class JobStatusViewModel(string name) : ObservableObject
     {
         var elapsed = DateTimeOffset.Now - t;
         if (elapsed < TimeSpan.Zero)
-            elapsed = TimeSpan.Zero; // guard against clock skew making this negative
+            elapsed = TimeSpan.Zero;
 
         return elapsed switch
         {

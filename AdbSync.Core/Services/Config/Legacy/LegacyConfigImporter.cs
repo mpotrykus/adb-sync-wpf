@@ -1,4 +1,5 @@
 using AdbSync.Core.Models.Config;
+using AdbSync.Core.Services.Common;
 
 namespace AdbSync.Core.Services.Config.Legacy;
 
@@ -24,7 +25,6 @@ public sealed class LegacyConfigImporter : ILegacyConfigImporter
                 Devices = p.Devices
                     .Select(pd => new JobDeviceBinding { DeviceName = pd.DeviceName, RemotePath = NormalizeRemotePath(pd.RemotePath) })
                     .ToList(),
-                // No scheduling existed in the old tool - the user opts each job into the new scheduler explicitly.
                 Schedule = new JobSchedule { Kind = ScheduleKind.Manual },
                 Enabled = true,
             })

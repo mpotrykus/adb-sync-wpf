@@ -94,7 +94,7 @@ public class EffectiveJobSettingsTests
     [InlineData("21:59", false)]
     [InlineData("22:00", true)]
     [InlineData("23:30", true)]
-    [InlineData("03:00", true)] // wraps past midnight
+    [InlineData("03:00", true)]
     [InlineData("06:59", true)]
     [InlineData("07:00", false)]
     [InlineData("12:00", false)]

@@ -34,7 +34,6 @@ public partial class DeviceEditorWindow : Window
         }
         catch
         {
-            // adb server unreachable - fall back to showing every device as disconnected
         }
 
         bool IsConnected(DeviceConfig d) => d.Ip is not null
@@ -64,7 +63,7 @@ public partial class DeviceEditorWindow : Window
             return;
 
         NameBox.Text = _selected.Name;
-        NameBox.IsEnabled = false; // renaming would break job device-bindings referencing this name
+        NameBox.IsEnabled = false;
         if (_selected.Ip is not null)
         {
             WifiRadio.IsChecked = true;

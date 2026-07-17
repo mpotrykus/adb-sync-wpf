@@ -85,8 +85,6 @@ public partial class RunHistoryWindow : Window
         }
 
         var succeeded = runs.Count(r => r.Outcome != JobRunOutcome.Failed);
-        // Skipped runs return before any pull/push work starts, so their near-zero duration would drag the
-        // average down without reflecting how long the job actually takes when it runs.
         var ranRuns = runs.Where(r => r.Outcome is not (JobRunOutcome.Skipped or JobRunOutcome.SkippedAppRunning)).ToList();
         var avgDuration = ranRuns.Count > 0
             ? TimeSpan.FromTicks((long)ranRuns.Average(r => (r.CompletedAt - r.StartedAt).Ticks))

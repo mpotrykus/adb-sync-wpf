@@ -12,8 +12,6 @@ public class DeviceAccessGateTests
         var handleA = await gate.AcquireAsync("DeviceA", 1);
         var acquireB = gate.AcquireAsync("DeviceB", 1);
 
-        // A held lock on one device must never block acquisition of a different device - this is the whole
-        // point of per-device gating: a caller waiting on a busy device can still make progress elsewhere.
         var completed = await Task.WhenAny(acquireB, Task.Delay(TimeSpan.FromSeconds(2)));
         Assert.Same(acquireB, completed);
 

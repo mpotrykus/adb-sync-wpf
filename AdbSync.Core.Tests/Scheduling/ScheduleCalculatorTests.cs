@@ -5,7 +5,7 @@ namespace AdbSync.Core.Tests.Scheduling;
 
 public class ScheduleCalculatorTests
 {
-    private static readonly DateTimeOffset Now = new(2026, 6, 15, 12, 0, 0, TimeSpan.Zero); // a Monday, noon
+    private static readonly DateTimeOffset Now = new(2026, 6, 15, 12, 0, 0, TimeSpan.Zero);
 
     [Fact]
     public void Manual_IsNeverDue()
@@ -99,7 +99,6 @@ public class ScheduleCalculatorTests
     [Fact]
     public void DailyAt_MissedWhileAppWasClosed_CatchesUpImmediately()
     {
-        // 06:00 run was due but never happened (app was closed); it's now noon and the job last ran yesterday.
         var schedule = new JobSchedule
         {
             Kind = ScheduleKind.DailyAt,
@@ -130,7 +129,6 @@ public class ScheduleCalculatorTests
     [Fact]
     public void DailyAt_NeverRunBefore_DoesNotCatchUpOnCreation()
     {
-        // A brand-new job (LastRunAt still null) shouldn't fire immediately just because today's time already passed.
         var schedule = new JobSchedule { Kind = ScheduleKind.DailyAt, DailyTimes = [new TimeOnly(6, 0)], LastRunAt = null };
 
         var due = ScheduleCalculator.NextDueUtc(schedule, Now, runMissedSchedules: true);
@@ -141,7 +139,6 @@ public class ScheduleCalculatorTests
     [Fact]
     public void DailyAt_AlreadyRunSinceMissedTime_DoesNotRerun()
     {
-        // Already caught up (or ran normally) after the 06:00 slot - shouldn't be treated as missed again.
         var schedule = new JobSchedule
         {
             Kind = ScheduleKind.DailyAt,
@@ -157,7 +154,6 @@ public class ScheduleCalculatorTests
     [Fact]
     public void Interval_MissedWhileAppWasClosed_CatchUpDisabled_ResyncsToGridInsteadOfFiringImmediately()
     {
-        // Interval is 4h and last ran 10h ago - two whole cycles were missed while the app was closed.
         var schedule = new JobSchedule
         {
             Kind = ScheduleKind.Interval,

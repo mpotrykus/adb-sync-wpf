@@ -38,7 +38,7 @@ public partial class DeviceFolderBrowserWindow : Window
     {
         if (e.Key != Key.Enter)
             return;
-        e.Handled = true; // otherwise Enter also activates the IsDefault "Select Folder" button
+        e.Handled = true;
         await NavigateAsync(PathBox.Text);
     }
 

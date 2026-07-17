@@ -50,7 +50,6 @@ public class TwoWayMergeEngineTests : IDisposable
     private static string Read(string root, string relativePath) => File.ReadAllText(Path.Combine(root, relativePath));
     private static bool Exists(string root, string relativePath) => File.Exists(Path.Combine(root, relativePath));
 
-    // Row: S, ¬M, ¬K -> new in staging, copy to master.
     [Fact]
     public async Task NewInStagingOnly_IsCopiedToMaster()
     {
@@ -64,7 +63,6 @@ public class TwoWayMergeEngineTests : IDisposable
         Assert.True(result.UpdatedManifest.Entries.ContainsKey("a.txt"));
     }
 
-    // Row: ¬S, M, ¬K -> new in master, copy to staging.
     [Fact]
     public async Task NewInMasterOnly_IsCopiedToStaging()
     {
@@ -76,7 +74,6 @@ public class TwoWayMergeEngineTests : IDisposable
         Assert.Equal("from-master", Read(_stagingPath, "a.txt"));
     }
 
-    // Row: S, M, ¬K, staging newer -> independent creation conflict, staging wins.
     [Fact]
     public async Task CreatedIndependentlyOnBothSides_NewerStagingWins_BacksUpMaster()
     {
@@ -92,7 +89,6 @@ public class TwoWayMergeEngineTests : IDisposable
         Assert.Equal("master-version", File.ReadAllText(result.Conflicts[0].BackupPath!));
     }
 
-    // Row: S, M, ¬K, master newer -> independent creation conflict, master wins.
     [Fact]
     public async Task CreatedIndependentlyOnBothSides_NewerMasterWins_BacksUpStaging()
     {
@@ -107,7 +103,6 @@ public class TwoWayMergeEngineTests : IDisposable
         Assert.Equal("staging-version", File.ReadAllText(result.Conflicts[0].BackupPath!));
     }
 
-    // Row: S, M, ¬K, but both sides already agree -> not a real conflict, just seed the manifest.
     [Fact]
     public async Task PresentOnBothSidesWithNoBaseline_ButAlreadyIdentical_NoConflictAndManifestSeeded()
     {
@@ -124,7 +119,6 @@ public class TwoWayMergeEngineTests : IDisposable
         Assert.Equal(SizeOf(_stagingPath, "a.txt"), entry!.Size);
     }
 
-    // Row: S, ¬M, K, staging unchanged vs baseline -> master's delete propagates to staging.
     [Fact]
     public async Task DeletedFromMaster_StagingUnchanged_PropagatesDeleteToStaging()
     {
@@ -138,22 +132,20 @@ public class TwoWayMergeEngineTests : IDisposable
         Assert.False(result.UpdatedManifest.Entries.ContainsKey("a.txt"));
     }
 
-    // Row: S, ¬M, K, staging changed vs baseline -> conflict: staging was modified after master deleted it, staging wins.
     [Fact]
     public async Task DeletedFromMaster_ButStagingModifiedAfter_ConflictStagingWinsWithNoBackup()
     {
         Write(_stagingPath, "a.txt", "modified-after-delete", T0.AddMinutes(10));
-        var manifest = ManifestWith("a.txt", 999, T0); // baseline stat no longer matches staging's current stat
+        var manifest = ManifestWith("a.txt", 999, T0);
 
         var result = await _engine.MergeAsync(_stagingPath, _masterPath, manifest, new MergeOptions());
 
         Assert.Single(result.Conflicts);
         Assert.Equal("staging", result.Conflicts[0].WinningSide);
-        Assert.Null(result.Conflicts[0].BackupPath); // master never had a file to back up
+        Assert.Null(result.Conflicts[0].BackupPath);
         Assert.Equal("modified-after-delete", Read(_masterPath, "a.txt"));
     }
 
-    // Row: ¬S, M, K, master unchanged vs baseline -> staging's delete propagates to master.
     [Fact]
     public async Task DeletedFromStaging_MasterUnchanged_PropagatesDeleteToMaster()
     {
@@ -166,7 +158,6 @@ public class TwoWayMergeEngineTests : IDisposable
         Assert.False(Exists(_masterPath, "a.txt"));
     }
 
-    // Row: ¬S, M, K, master changed vs baseline -> conflict: master was modified after staging deleted it, master wins.
     [Fact]
     public async Task DeletedFromStaging_ButMasterModifiedAfter_ConflictMasterWinsWithNoBackup()
     {
@@ -181,7 +172,6 @@ public class TwoWayMergeEngineTests : IDisposable
         Assert.Equal("modified-after-delete", Read(_stagingPath, "a.txt"));
     }
 
-    // Row: ¬S, ¬M, K -> deleted on both sides already; just drop the manifest entry, no filesystem action.
     [Fact]
     public async Task DeletedFromBothSides_RemovesManifestEntryAsNoOp()
     {
@@ -193,7 +183,6 @@ public class TwoWayMergeEngineTests : IDisposable
         Assert.False(result.UpdatedManifest.Entries.ContainsKey("a.txt"));
     }
 
-    // Row: S, M, K, neither changed -> no-op, manifest entry carried forward unchanged.
     [Fact]
     public async Task UnchangedOnBothSides_IsNoOp()
     {
@@ -207,7 +196,6 @@ public class TwoWayMergeEngineTests : IDisposable
         Assert.True(result.UpdatedManifest.Entries.ContainsKey("a.txt"));
     }
 
-    // Row: S, M, K, only staging changed -> propagate to master.
     [Fact]
     public async Task OnlyStagingChangedSinceBaseline_PropagatesToMaster()
     {
@@ -222,7 +210,6 @@ public class TwoWayMergeEngineTests : IDisposable
         Assert.Equal("staging-edited", Read(_masterPath, "a.txt"));
     }
 
-    // Row: S, M, K, only master changed -> propagate to staging.
     [Fact]
     public async Task OnlyMasterChangedSinceBaseline_PropagatesToStaging()
     {
@@ -237,7 +224,6 @@ public class TwoWayMergeEngineTests : IDisposable
         Assert.Equal("master-edited", Read(_stagingPath, "a.txt"));
     }
 
-    // Row: S, M, K, both changed differently -> true conflict, newer wins, older backed up.
     [Fact]
     public async Task BothChangedDifferentlySinceBaseline_NewerWinsAndOlderIsBackedUp()
     {
@@ -277,16 +263,12 @@ public class TwoWayMergeEngineTests : IDisposable
         Assert.Null(result.Conflicts[0].BackupPath);
     }
 
-    // Row: S, M, K, both look changed vs a stale baseline, but staging and master already agree with each
-    // other - the baseline was just never refreshed (e.g. by an earlier push-phase-only update on another
-    // device). Must reconcile quietly instead of manufacturing a conflict, and must refresh the baseline
-    // rather than carrying the stale one forward.
     [Fact]
     public async Task BothLookChangedVsStaleBaseline_ButAlreadyAgree_ReconcilesWithoutConflict()
     {
         Write(_stagingPath, "a.txt", "same-content", T0.AddDays(1));
         Write(_masterPath, "a.txt", "same-content", T0.AddDays(1));
-        var manifest = ManifestWith("a.txt", 999, T0); // stale: matches neither side's current size nor mtime
+        var manifest = ManifestWith("a.txt", 999, T0);
 
         var result = await _engine.MergeAsync(_stagingPath, _masterPath, manifest, new MergeOptions());
 
@@ -296,30 +278,26 @@ public class TwoWayMergeEngineTests : IDisposable
         Assert.Equal("same-content", Read(_stagingPath, "a.txt"));
         Assert.True(result.UpdatedManifest.Entries.TryGetValue("a.txt", out var entry));
         Assert.Equal(SizeOf(_stagingPath, "a.txt"), entry!.Size);
-        Assert.Equal(T0.AddDays(1), entry.ModifiedUtc); // refreshed, not left at the stale T0 baseline
+        Assert.Equal(T0.AddDays(1), entry.ModifiedUtc);
     }
 
-    // Row: S, M, ¬K, size+mtime coincidentally match but content genuinely differs - the hash tiebreaker
-    // must still catch this as a real conflict rather than silently treating it as agreement.
     [Fact]
     public async Task PresentOnBothSidesWithNoBaseline_SameSizeAndMtimeButDifferentContent_StillConflicts()
     {
         Write(_masterPath, "a.txt", "aaaaaaaaaa", T0);
-        Write(_stagingPath, "a.txt", "bbbbbbbbbb", T0); // same size, same mtime, different bytes
+        Write(_stagingPath, "a.txt", "bbbbbbbbbb", T0);
 
         var result = await _engine.MergeAsync(_stagingPath, _masterPath, EmptyManifest(), new MergeOptions());
 
         Assert.Single(result.Conflicts);
     }
 
-    // Row: S, M, K, same coincidental size+mtime match but different content, against a stale baseline -
-    // must still be treated as a real conflict rather than silently reconciled.
     [Fact]
     public async Task StaleBaseline_SameSizeAndMtimeButDifferentContent_StillTreatedAsConflict()
     {
         Write(_stagingPath, "a.txt", "aaaaaaaaaa", T0.AddDays(1));
-        Write(_masterPath, "a.txt", "bbbbbbbbbb", T0.AddDays(1)); // same size+mtime as staging, different bytes
-        var manifest = ManifestWith("a.txt", 999, T0); // stale baseline
+        Write(_masterPath, "a.txt", "bbbbbbbbbb", T0.AddDays(1));
+        var manifest = ManifestWith("a.txt", 999, T0);
 
         var result = await _engine.MergeAsync(_stagingPath, _masterPath, manifest, new MergeOptions());
 

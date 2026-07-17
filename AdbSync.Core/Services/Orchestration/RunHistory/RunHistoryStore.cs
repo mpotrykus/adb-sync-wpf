@@ -15,8 +15,6 @@ public sealed class RunHistoryStore : IRunHistoryStore
     public RunHistoryStore(AppPaths paths)
     {
         Directory.CreateDirectory(paths.Root);
-        // Pooling off: each call already opens/closes its own connection, and pooled handles would otherwise
-        // keep the file locked past Dispose - fatal for tests that delete their temp AppPaths root right after.
         _connectionString = $"Data Source={paths.RunHistoryDbFile};Pooling=False";
     }
 
@@ -117,7 +115,6 @@ public sealed class RunHistoryStore : IRunHistoryStore
         var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync(ct);
 
-        // SQLite enforces this per-connection (not persisted in the database file), so it must run on every open.
         await using (var pragma = connection.CreateCommand())
         {
             pragma.CommandText = "PRAGMA foreign_keys = ON;";
@@ -128,8 +125,6 @@ public sealed class RunHistoryStore : IRunHistoryStore
         return connection;
     }
 
-    // Columns added after the initial release - applied via ALTER TABLE so existing run-history.db files
-    // (which only have the original columns) pick them up instead of losing their history.
     private static readonly (string Name, string Definition)[] AddedRunColumns =
     [
         ("FilesCopied", "INTEGER NOT NULL DEFAULT 0"),

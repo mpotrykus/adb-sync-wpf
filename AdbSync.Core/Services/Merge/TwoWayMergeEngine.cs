@@ -1,5 +1,6 @@
 using AdbSync.Core.Models.Merge;
 using AdbSync.Core.Models.Transfer;
+using AdbSync.Core.Services.Common;
 using AdbSync.Core.Services.Transfer;
 using System.Globalization;
 
@@ -48,15 +49,10 @@ public sealed class TwoWayMergeEngine : ITwoWayMergeEngine
                     if (k is not null)
                         newEntries[path] = k;
                     else if (s is not null)
-                        // no baseline yet, but both sides already agree - seed the manifest without flagging a conflict
                         newEntries[path] = new ManifestEntry(s.Size, s.ModifiedUtc);
                     break;
 
                 case DecisionKind.ReconcileBaseline:
-                    // staging and master already agree - the recorded baseline was just stale, not a real
-                    // conflict. Refresh it to the agreed values instead of leaving the stale one in place,
-                    // otherwise a later legitimate one-sided change (e.g. a delete) gets compared against
-                    // ancient data and misclassified as a conflict.
                     newEntries[path] = new ManifestEntry(s!.Size, s.ModifiedUtc);
                     break;
 
@@ -135,32 +131,28 @@ public sealed class TwoWayMergeEngine : ITwoWayMergeEngine
         var kPresent = k is not null;
 
         if (sPresent && !mPresent && !kPresent)
-            return DecisionKind.CopyToMaster; // new in staging
+            return DecisionKind.CopyToMaster;
 
         if (!sPresent && mPresent && !kPresent)
-            return DecisionKind.CopyToStaging; // new in master
+            return DecisionKind.CopyToStaging;
 
         if (sPresent && mPresent && !kPresent)
         {
-            // no shared baseline yet, but if both sides already agree there's nothing to resolve - just seed the manifest
             if (AreEqual(stagingPath, masterPath, s!, m!))
                 return DecisionKind.NoOp;
 
-            // created independently on both sides with genuinely different content - newer wins
             return s!.ModifiedUtc >= m!.ModifiedUtc ? DecisionKind.ConflictStagingWins : DecisionKind.ConflictMasterWins;
         }
 
         if (sPresent && !mPresent && kPresent)
-            // master no longer has it; staging unchanged since baseline -> propagate delete, else staging wins
             return IsUnchanged(s!, k!) ? DecisionKind.DeleteFromStaging : DecisionKind.ConflictStagingWins;
 
         if (!sPresent && mPresent && kPresent)
             return IsUnchanged(m!, k!) ? DecisionKind.DeleteFromMaster : DecisionKind.ConflictMasterWins;
 
         if (!sPresent && !mPresent && kPresent)
-            return DecisionKind.RemoveFromManifest; // deleted on both sides (or already synced away)
+            return DecisionKind.RemoveFromManifest;
 
-        // sPresent && mPresent && kPresent
         var sChanged = !IsUnchanged(s!, k!);
         var mChanged = !IsUnchanged(m!, k!);
 
@@ -168,9 +160,6 @@ public sealed class TwoWayMergeEngine : ITwoWayMergeEngine
         if (sChanged && !mChanged) return DecisionKind.CopyToMaster;
         if (!sChanged) return DecisionKind.CopyToStaging;
 
-        // both sides look changed relative to the baseline, but that baseline can simply be stale (e.g. this
-        // device's manifest never saw a change that the push phase already carried to its file) - if staging
-        // and master in fact already agree, there's nothing to fight over
         if (AreEqual(stagingPath, masterPath, s!, m!))
             return DecisionKind.ReconcileBaseline;
 
@@ -183,7 +172,6 @@ public sealed class TwoWayMergeEngine : ITwoWayMergeEngine
     private static bool AreEqual(string stagingPath, string masterPath, FileEntry staging, FileEntry master) =>
         staging.Size == master.Size
         && (staging.ModifiedUtc - master.ModifiedUtc).Duration() <= ModifiedTolerance
-        // size + mtime match is not proof of identical content - hash to rule out a coincidental match
         && ContentHasher.FilesAreIdentical(Path.Combine(stagingPath, staging.RelativePath), Path.Combine(masterPath, master.RelativePath));
 
     private static void CopyFile(string sourceRoot, string destRoot, string relativePath, FileEntry sourceEntry)

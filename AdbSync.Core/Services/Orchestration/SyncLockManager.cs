@@ -21,8 +21,6 @@ public sealed class SyncLockManager : ISyncLockManager
             if (!await IsStaleAsync(lockPath, staleAfter, ct))
                 return null;
 
-            // Stale/corrupt lock implies the previous run crashed mid-flight; its staging content may be
-            // a partial pull, so wipe it rather than risk merging in inconsistent data.
             if (Directory.Exists(stagingRoot))
                 Directory.Delete(stagingRoot, recursive: true);
         }
@@ -65,7 +63,7 @@ public sealed class SyncLockManager : ISyncLockManager
         }
         catch (ArgumentException)
         {
-            return true; // no such process
+            return true;
         }
     }
 

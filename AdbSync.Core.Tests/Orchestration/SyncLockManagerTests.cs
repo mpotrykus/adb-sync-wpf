@@ -42,7 +42,7 @@ public class SyncLockManagerTests : IDisposable
     {
         var lockPath = SyncLockManager.GetLockPath(_projectRoot);
         Directory.CreateDirectory(Path.GetDirectoryName(lockPath)!);
-        await File.WriteAllTextAsync(lockPath, $"pid=999999\nstart={DateTimeOffset.UtcNow:o}"); // extremely unlikely to be a live PID
+        await File.WriteAllTextAsync(lockPath, $"pid=999999\nstart={DateTimeOffset.UtcNow:o}");
 
         var handle = await _manager.TryAcquireAsync(_projectRoot, StaleAfter);
 

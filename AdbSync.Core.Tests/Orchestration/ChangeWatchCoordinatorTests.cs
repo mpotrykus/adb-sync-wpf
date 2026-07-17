@@ -39,7 +39,7 @@ public class ChangeWatchCoordinatorTests
         }
 
         await WaitUntilAsync(() => triggerCount >= 1, timeout: TimeSpan.FromSeconds(2));
-        await Task.Delay(150); // give any errant extra trigger a chance to land before asserting
+        await Task.Delay(150);
 
         Assert.Equal(1, triggerCount);
         Assert.Contains(events.WatchStartedCalls, c => c is ("Job", "Phone", true));
@@ -58,7 +58,7 @@ public class ChangeWatchCoordinatorTests
             onTriggered: () =>
             {
                 Interlocked.Increment(ref triggerCount);
-                watcher.EmitSignal(); // simulates the triggered push writing into the watched path
+                watcher.EmitSignal();
                 return Task.CompletedTask;
             },
             pollInterval: PollInterval, reconnectBackoff: ReconnectBackoff,
@@ -70,7 +70,7 @@ public class ChangeWatchCoordinatorTests
         watcher.EmitSignal();
 
         await WaitUntilAsync(() => triggerCount >= 1, timeout: TimeSpan.FromSeconds(2));
-        await Task.Delay(200); // give the self-caused signal a chance to wrongly re-trigger before asserting
+        await Task.Delay(200);
 
         Assert.Equal(1, triggerCount);
     }
@@ -81,7 +81,7 @@ public class ChangeWatchCoordinatorTests
         var watcher = new FakeDeviceChangeWatcher
         {
             Availability = new(false, "inotifyd not present on this device's shell"),
-            SnapshotSequence = call => call == 0 ? "v1" : "v2", // first snapshot vs. every poll after
+            SnapshotSequence = call => call == 0 ? "v1" : "v2",
         };
         var events = new RecordingSyncEventSink();
         var triggerCount = 0;
@@ -106,7 +106,7 @@ public class ChangeWatchCoordinatorTests
     {
         var watcher = new FakeDeviceChangeWatcher
         {
-            ThrowOnWatchCall = callIndex => callIndex == 0, // first connection drops, second succeeds
+            ThrowOnWatchCall = callIndex => callIndex == 0,
         };
         var events = new RecordingSyncEventSink();
         var resolveCalls = new ConcurrentBag<DateTime>();
@@ -123,9 +123,6 @@ public class ChangeWatchCoordinatorTests
 
         coordinator.Start();
 
-        // First attempt fails (WatchAsyncCallCount becomes 1 immediately since the fake throws synchronously
-        // from inside the iterator on first MoveNextAsync); the coordinator should reconnect and retry rather
-        // than exiting the binding loop.
         await WaitUntilAsync(() => watcher.WatchAsyncCallCount >= 2, timeout: TimeSpan.FromSeconds(2));
         Assert.True(resolveCalls.Count >= 2, "expected the coordinator to re-resolve the device after the stream failure");
 

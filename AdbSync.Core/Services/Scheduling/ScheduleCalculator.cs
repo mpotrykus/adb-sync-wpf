@@ -20,7 +20,7 @@ public static class ScheduleCalculator
         ScheduleKind.Manual => null,
         ScheduleKind.Interval => NextIntervalDue(schedule, now, runMissedSchedules),
         ScheduleKind.DailyAt => NextDailyOccurrence(schedule.DailyTimes, now, schedule.LastRunAt, runMissedSchedules),
-        ScheduleKind.OnChange => null, // never "due" via polling - the change watcher triggers runs directly
+        ScheduleKind.OnChange => null,
         _ => null,
     };
 
@@ -30,8 +30,6 @@ public static class ScheduleCalculator
         if (runMissedSchedules || due > now || schedule.Interval <= TimeSpan.Zero)
             return due;
 
-        // Catch-up disabled: fast-forward past whatever cycles were already missed instead of firing on the
-        // very next tick, so the schedule resyncs to its regular grid rather than running immediately.
         var missedCycles = (long)((now - due) / schedule.Interval) + 1;
         return due + TimeSpan.FromTicks(schedule.Interval.Ticks * missedCycles);
     }

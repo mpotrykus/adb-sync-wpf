@@ -1,4 +1,5 @@
 using AdbSync.Core.Models.Transfer;
+using AdbSync.Core.Services.Common;
 
 namespace AdbSync.Core.Services.Transfer;
 
@@ -55,9 +56,6 @@ public sealed class AdbExeTransferEngine(IAdbProcessRunner adb, IMirrorDiffer di
         {
             foreach (var childPath in Directory.EnumerateFileSystemEntries(localPath))
             {
-                // Checked before starting each item, not passed into the push below: once a push is in flight
-                // it always runs to completion, so a stop request can only take effect between items, never
-                // orphan a still-running adb.exe mid-transfer (see AdbProcessRunner.RunAsync).
                 ct.ThrowIfCancellationRequested();
 
                 var childName = Path.GetFileName(childPath);
@@ -84,8 +82,6 @@ public sealed class AdbExeTransferEngine(IAdbProcessRunner adb, IMirrorDiffer di
         return new TransferResult(pushed, deleted, bytesCopied, errors, copiedPaths, deletedPaths);
     }
 
-    // adb push sends the whole raw subtree for a directory child (unfiltered by nested excludes), so this
-    // mirrors that by summing every file under it rather than relying on the already-exclude-filtered scan.
     private static long GetLocalSize(string path, bool isDirectory) => isDirectory
         ? Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories).Sum(f => new FileInfo(f).Length)
         : new FileInfo(path).Length;

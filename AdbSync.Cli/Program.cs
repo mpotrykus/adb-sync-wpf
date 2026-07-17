@@ -95,7 +95,7 @@ async Task<int> RunAllAsync(bool useNativeTransfer)
     var orchestrator = new SyncOrchestrator(BuildRunner(useNativeTransfer), checkpoints);
     var results = await orchestrator.RunAllAsync(config);
 
-    await configStore.SaveAsync(config); // persist any newly-resolved device CachedHostPort values
+    await configStore.SaveAsync(config);
     return PrintResultsAndExitCode(config, results);
 }
 
@@ -119,8 +119,6 @@ async Task<int> RunOneAsync(string jobName, bool useNativeTransfer, bool forcePu
     return PrintResultsAndExitCode(config, [result], [jobName]);
 }
 
-// Standalone console logger for the on-demand diagnostic commands ("device test"/"device pair") - unlike
-// BuildRunner's file logger, these are run interactively specifically to see *why* a connect is failing.
 ILogger<T> CreateConsoleLogger<T>() =>
     LoggerFactory.Create(b => b.AddConsole().SetMinimumLevel(LogLevel.Debug)).CreateLogger<T>();
 
@@ -131,7 +129,6 @@ SyncJobRunner BuildRunner(bool useNativeTransfer)
         ? new NativeAdbTransferEngine(new AdbRemoteFileSystemFactory(adbClient), new MirrorDiffer())
         : new AdbExeTransferEngine(new AdbProcessRunner(), new MirrorDiffer());
 
-    // Not disposed here - the CLI process is short-lived, and the runner returned below keeps using this logger.
     var loggerFactory = LoggerFactory.Create(b => b.AddSerilog(
         AdbSyncLogging.CreateFileLogger(paths, retentionDays: 30, maxBytesPerFile: 5 * 1024 * 1024), dispose: true));
 

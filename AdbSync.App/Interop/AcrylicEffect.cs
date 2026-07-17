@@ -145,7 +145,6 @@ public static class AcrylicEffect
         Round = 2,
     }
 
-    // Sentinel COLORREF value documented for DWMWA_BORDER_COLOR meaning "no border".
     private const int DwmwaColorNone = unchecked((int)0xFFFFFFFE);
 
     [DllImport("dwmapi.dll")]

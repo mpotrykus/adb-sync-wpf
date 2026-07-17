@@ -35,7 +35,6 @@ public class RunHistoryStoreTests : IDisposable
         var runs = await _store.ListRunsAsync("Job");
 
         Assert.Equal(3, runs.Count);
-        // Most recent first, and the trim must have kept the newest 3 (minutes 2, 3, 4), not the oldest.
         Assert.Equal(baseTime.AddMinutes(4), runs[0].StartedAt);
         Assert.Equal(baseTime.AddMinutes(3), runs[1].StartedAt);
         Assert.Equal(baseTime.AddMinutes(2), runs[2].StartedAt);
@@ -50,7 +49,6 @@ public class RunHistoryStoreTests : IDisposable
 
         Assert.Equal(5, (await _store.ListRunsAsync("Job")).Count);
 
-        // A later save with a tighter cap re-trims the whole job's history down immediately.
         await _store.SaveRunAsync(MakeRecord("Job", baseTime.AddMinutes(5)), "log-5", maxRuns: 2);
 
         var runs = await _store.ListRunsAsync("Job");

@@ -70,8 +70,6 @@ public sealed class DashboardViewModel : ISyncEventSink
         {
             if (deviceName is null)
             {
-                // A job-level phase (currently only PreConnect) - starts a fresh run, so any per-device text
-                // left over from the last run (or a device this run hasn't reached yet) must not linger.
                 vm.ClearDevicePhases();
                 vm.PhaseText = phase.ToString();
             }
@@ -90,8 +88,6 @@ public sealed class DashboardViewModel : ISyncEventSink
                 vm.ConflictCountThisRun = 0;
         });
 
-    // PhaseChanged (fired once the run actually starts, e.g. PreConnect) naturally overwrites this once the
-    // queue clears - no need to clear it explicitly here.
     public void JobQueued(string jobName, string reason) =>
         UpdateJob(jobName, vm => vm.PhaseText = reason);
 

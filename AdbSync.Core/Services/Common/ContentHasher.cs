@@ -1,6 +1,6 @@
 using System.Security.Cryptography;
 
-namespace AdbSync.Core.Services.Merge;
+namespace AdbSync.Core.Services.Common;
 
 /// <summary>
 /// Tiebreaker for the rare case where two files already agree on size and mtime (within tolerance) but that

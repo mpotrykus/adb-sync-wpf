@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 
-namespace AdbSync.Core.Services.Config;
+namespace AdbSync.Core.Services.Common;
 
 /// <summary>Shared read/atomic-write helpers for every JSON file the app persists (config, checkpoint, manifests).</summary>
 internal static class JsonFileIo

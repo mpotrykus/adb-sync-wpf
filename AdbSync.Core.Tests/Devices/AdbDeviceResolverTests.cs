@@ -79,8 +79,8 @@ public class AdbDeviceResolverTests
         var device = new DeviceConfig { Name = "S23+", Ip = "192.168.0.40" };
         _adbClient.GetDevicesAsync(Arg.Any<CancellationToken>())
             .Returns(
-                Devices(), // no devices connected yet
-                Devices(new DeviceData { Serial = "192.168.0.40:41000", State = DeviceState.Online })); // online after connect
+                Devices(),
+                Devices(new DeviceData { Serial = "192.168.0.40:41000", State = DeviceState.Online }));
         _mdns.BrowseAsync(Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
             .Returns(new List<MdnsAnnouncement>
             {
@@ -115,7 +115,7 @@ public class AdbDeviceResolverTests
     public async Task EnsureConnectedAsync_ConnectDoesNotComeOnline_ThrowsDeviceConnectException()
     {
         var device = new DeviceConfig { Name = "S23+", Ip = "192.168.0.40" };
-        _adbClient.GetDevicesAsync(Arg.Any<CancellationToken>()).Returns(Devices()); // never comes online
+        _adbClient.GetDevicesAsync(Arg.Any<CancellationToken>()).Returns(Devices());
         _mdns.BrowseAsync(Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
             .Returns(new List<MdnsAnnouncement>
             {
@@ -139,12 +139,11 @@ public class AdbDeviceResolverTests
             });
 
         var firstCall = _resolver.EnsureConnectedAsync(device);
-        await Task.Delay(50); // let the first call actually enter and block on startServerGate
+        await Task.Delay(50);
 
         var secondCall = _resolver.EnsureConnectedAsync(device);
         var wonRace = await Task.WhenAny(secondCall, Task.Delay(TimeSpan.FromMilliseconds(200)));
         Assert.NotSame(secondCall, wonRace);
-        // If the two calls weren't serialized, the second would have reached StartServerAsync by now too.
         Assert.Equal(1, startServerCallCount);
 
         startServerGate.SetResult(StartServerResult.Started);
@@ -161,15 +160,13 @@ public class AdbDeviceResolverTests
         var deviceB = new DeviceConfig { Name = "BlueStacks", Serial = "emulator-5556" };
         var startServerGate = new TaskCompletionSource<StartServerResult>();
         var startServerCallCount = 0;
-        // Only the first call (deviceA's) blocks - deviceA and deviceB are locked independently, so if deviceB
-        // waited behind deviceA it would never reach this second, non-blocking invocation either.
         _adbServer.StartServerAsync("adb", restartServerIfNewer: false, Arg.Any<CancellationToken>())
             .Returns(_ => Interlocked.Increment(ref startServerCallCount) == 1
                 ? startServerGate.Task
                 : Task.FromResult(StartServerResult.Started));
 
         var firstCall = _resolver.EnsureConnectedAsync(deviceA);
-        await Task.Delay(50); // let the first call actually enter and block on startServerGate
+        await Task.Delay(50);
 
         var secondCall = _resolver.EnsureConnectedAsync(deviceB);
         var wonRace = await Task.WhenAny(secondCall, Task.Delay(TimeSpan.FromSeconds(2)));

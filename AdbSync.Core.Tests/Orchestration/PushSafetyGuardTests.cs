@@ -40,16 +40,16 @@ public class PushSafetyGuardTests : IDisposable
     {
         WriteMasterFiles(1);
 
-        await _guard.AssertSafeToPushAsync("Job1", _masterPath, minimumPercent: 25); // should not throw
+        await _guard.AssertSafeToPushAsync("Job1", _masterPath, minimumPercent: 25);
     }
 
     [Fact]
     public async Task AssertSafeToPushAsync_AtOrAboveQuarterOfHistoricalMax_Allows()
     {
         await _guard.RecordDeviceSnapshotAsync("Job1", "DeviceA", 100);
-        WriteMasterFiles(25); // exactly 25% of 100
+        WriteMasterFiles(25);
 
-        await _guard.AssertSafeToPushAsync("Job1", _masterPath, minimumPercent: 25); // should not throw
+        await _guard.AssertSafeToPushAsync("Job1", _masterPath, minimumPercent: 25);
     }
 
     [Fact]
@@ -65,8 +65,8 @@ public class PushSafetyGuardTests : IDisposable
     public async Task RecordDeviceSnapshotAsync_OnlyRaisesTheMax_NeverLowersIt()
     {
         await _guard.RecordDeviceSnapshotAsync("Job1", "DeviceA", 100);
-        await _guard.RecordDeviceSnapshotAsync("Job1", "DeviceA", 10); // a later, smaller pull shouldn't erase the baseline
-        WriteMasterFiles(24); // still below 25% of the original 100 baseline
+        await _guard.RecordDeviceSnapshotAsync("Job1", "DeviceA", 10);
+        WriteMasterFiles(24);
 
         await Assert.ThrowsAsync<PushSafetyException>(() => _guard.AssertSafeToPushAsync("Job1", _masterPath, minimumPercent: 25));
     }
@@ -76,7 +76,7 @@ public class PushSafetyGuardTests : IDisposable
     {
         await _guard.RecordDeviceSnapshotAsync("Job1", "DeviceA", 20);
         await _guard.RecordDeviceSnapshotAsync("Job1", "DeviceB", 200);
-        WriteMasterFiles(24); // below 25% of 200, even though it's above 25% of DeviceA's 20
+        WriteMasterFiles(24);
 
         await Assert.ThrowsAsync<PushSafetyException>(() => _guard.AssertSafeToPushAsync("Job1", _masterPath, minimumPercent: 25));
     }
@@ -85,12 +85,11 @@ public class PushSafetyGuardTests : IDisposable
     public async Task ForcePushAsync_RebasesBaselineToCurrentMasterCount_WithoutThrowing()
     {
         await _guard.RecordDeviceSnapshotAsync("Job1", "DeviceA", 100);
-        WriteMasterFiles(2); // far below 25% of 100 - would normally trip the guard
+        WriteMasterFiles(2);
 
-        await _guard.ForcePushAsync("Job1", _masterPath); // should not throw
+        await _guard.ForcePushAsync("Job1", _masterPath);
 
-        // The rebased baseline (2) makes a normal check at the same level pass from now on.
-        await _guard.AssertSafeToPushAsync("Job1", _masterPath, minimumPercent: 25); // should not throw
+        await _guard.AssertSafeToPushAsync("Job1", _masterPath, minimumPercent: 25);
     }
 
     [Fact]
@@ -98,8 +97,8 @@ public class PushSafetyGuardTests : IDisposable
     {
         WriteMasterFiles(1);
 
-        await _guard.ForcePushAsync("Job1", _masterPath); // should not throw
-        await _guard.AssertSafeToPushAsync("Job1", _masterPath, minimumPercent: 25); // still no history -> allowed
+        await _guard.ForcePushAsync("Job1", _masterPath);
+        await _guard.AssertSafeToPushAsync("Job1", _masterPath, minimumPercent: 25);
     }
 
     [Fact]
@@ -108,6 +107,6 @@ public class PushSafetyGuardTests : IDisposable
         await _guard.RecordDeviceSnapshotAsync("JobA", "DeviceA", 100);
         WriteMasterFiles(1);
 
-        await _guard.AssertSafeToPushAsync("JobB", _masterPath, minimumPercent: 25); // JobB has no history of its own -> allowed
+        await _guard.AssertSafeToPushAsync("JobB", _masterPath, minimumPercent: 25);
     }
 }

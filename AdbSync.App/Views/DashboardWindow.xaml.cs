@@ -36,15 +36,12 @@ public partial class DashboardWindow : Window
     private readonly IDevicePackageLister _packageLister;
     private readonly DispatcherTimer _relativeTimeTimer;
 
-    // Keyed by job name; the "Add Job" editor uses this sentinel since it has no job name yet.
     private const string NewJobKey = "\0new-job";
     private readonly Dictionary<string, JobEditorWindow> _openJobEditors = new();
     private readonly Dictionary<string, RunHistoryWindow> _openRunHistoryWindows = new();
     private DeviceEditorWindow? _deviceEditorWindow;
     private SettingsWindow? _settingsWindow;
 
-    // The user's last chosen sort column/direction, kept for the life of the window (it's hidden, not recreated,
-    // between tray show/hide cycles) so it survives every SyncFrom-driven refresh rather than resetting to default.
     private string _sortMemberPath = nameof(JobStatusViewModel.Name);
     private ListSortDirection _sortDirection = ListSortDirection.Ascending;
 
@@ -67,8 +64,6 @@ public partial class DashboardWindow : Window
         _packageLister = packageLister;
         DataContext = viewModel;
 
-        // Only ticks while the window is visible - it's tray-resident and hidden (not closed) most of the time,
-        // so IsVisibleChanged (not Loaded/Closed) is what actually tracks when it's worth updating.
         _relativeTimeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _relativeTimeTimer.Tick += (_, _) =>
         {
@@ -119,9 +114,6 @@ public partial class DashboardWindow : Window
         await PopulateLastOutcomesAsync(config);
         await PopulateCheckpointsAsync(config);
 
-        // SyncFrom adds/removes rows in the same ObservableCollection, so its default CollectionView normally
-        // keeps sorting itself automatically - this reapplies explicitly so a refresh can never drop the user's
-        // chosen sort column/direction or leave a stale arrow on the header.
         ApplySort();
     }
 
@@ -151,9 +143,6 @@ public partial class DashboardWindow : Window
         foreach (var column in JobsGrid.Columns)
             column.SortDirection = column.SortMemberPath == _sortMemberPath ? _sortDirection : null;
 
-        // Driven from code rather than a XAML Trigger.EnterActions storyboard: BeginAnimation always cleanly
-        // replaces whatever's currently animating the property, so repeated toggles (unlike trigger-driven
-        // storyboards, which only reliably fire the first time a given trigger becomes active) always animate.
         foreach (var header in FindVisualChildren<DataGridColumnHeader>(JobsGrid))
         {
             if (header.Column is not { } column || header.Template?.FindName("SortArrowRotate", header) is not RotateTransform rotate)
@@ -183,9 +172,6 @@ public partial class DashboardWindow : Window
         }
     }
 
-    // SyncFrom only knows the last-run timestamp from job config; the human-readable outcome text lives in run
-    // history and is otherwise only populated by live JobCompleted/JobFailed/JobSkipped events, so on a fresh
-    // app start the dashboard would show a blank result until the first run since launch.
     private async Task PopulateLastOutcomesAsync(AppConfig config)
     {
         foreach (var job in config.Jobs)
@@ -208,9 +194,6 @@ public partial class DashboardWindow : Window
         }
     }
 
-    // Populates the checkpoint badge from whatever's on disk (AdbSync.Core.Services.Orchestration.CheckpointManager),
-    // not from run outcomes - a checkpoint can be left behind by a hard crash that never got the chance to report
-    // any outcome at all, which is exactly the case this badge exists to surface.
     private async Task PopulateCheckpointsAsync(AppConfig config)
     {
         var checkpoints = await _jobRunService.GetAllCheckpointsAsync();
@@ -230,8 +213,6 @@ public partial class DashboardWindow : Window
         var job = config.Jobs.FirstOrDefault(j => j.Name == vm.Name);
         var totalDevices = job?.Devices.Count ?? 0;
 
-        // Devices within a phase now run concurrently, so more than one can be mid-flight at once - a count
-        // of what's done is meaningful here where a single device name no longer would be.
         var where = totalDevices > 0
             ? $"{checkpoint.Phase} ({checkpoint.CompletedDevices.Count}/{totalDevices} devices done)"
             : checkpoint.Phase.ToString();
@@ -267,7 +248,6 @@ public partial class DashboardWindow : Window
 
     protected override void OnClosing(CancelEventArgs e)
     {
-        // Tray-resident app: hide rather than destroy, so re-opening from the tray reuses this window.
         e.Cancel = true;
         Hide();
     }
@@ -321,7 +301,7 @@ public partial class DashboardWindow : Window
                 return;
             var index = config.Jobs.IndexOf(job);
             if (index < 0)
-                return; // job was removed from another window while this editor was open
+                return;
             config.Jobs[index] = editor.Result;
             await _configService.SaveAsync();
             await RefreshAsync();
@@ -351,17 +331,12 @@ public partial class DashboardWindow : Window
         var config = await _configService.GetAsync();
         config.Jobs.RemoveAll(j => j.Name == vm.Name);
         await _configService.SaveAsync();
-        await _jobRunService.DiscardCheckpointAsync(vm.Name); // best-effort - don't leave an orphan checkpoint file for a job that no longer exists
+        await _jobRunService.DiscardCheckpointAsync(vm.Name);
         await RefreshAsync();
     }
 
     private async void JobEnabledToggle_Click(object sender, RoutedEventArgs e)
     {
-        // Read the checkbox's own IsChecked rather than the bound JobStatusViewModel.Enabled: inside this
-        // DataGrid template column, the TwoWay binding's target-to-source push lags behind the Click event
-        // (the click handler otherwise observes the pre-toggle value), so trusting the viewmodel here silently
-        // re-saves the old state. JobEditorWindow's EnabledCheckBox doesn't hit this because it reads straight
-        // off the control too, never through a bound viewmodel property.
         if (sender is not CheckBox { DataContext: JobStatusViewModel vm } checkBox)
             return;
 
@@ -388,10 +363,8 @@ public partial class DashboardWindow : Window
         if (index < 0)
             return;
 
-        await _jobRunService.RunJobAsync(index); // live status flows back via ISyncEventSink while this runs
+        await _jobRunService.RunJobAsync(index);
 
-        // Re-check against disk rather than assume from the outcome: a run that fails or gets stopped mid-push
-        // may have just written a *new* checkpoint, while a clean completion clears the old one.
         var checkpoint = await _jobRunService.GetCheckpointAsync(vm.Name);
         if (checkpoint is not null)
             ApplyCheckpoint(vm, checkpoint, await _configService.GetAsync());
@@ -406,8 +379,6 @@ public partial class DashboardWindow : Window
         if (vm.IsStopping)
             return;
 
-        // Only push can leave devices in a mismatched state if interrupted partway - pull/merge/pre-connect
-        // stop without ceremony since nothing device-visible is left half-done.
         if (vm.PhaseText.Contains("Push", StringComparison.Ordinal))
         {
             var confirmed = ConfirmDialog.Show(this, "Stop Job",
@@ -420,10 +391,6 @@ public partial class DashboardWindow : Window
 
         var config = await _configService.GetAsync();
         var index = config.Jobs.FindIndex(j => j.Name == vm.Name);
-        // A change-watch job waiting for its app to close hasn't handed off to JobRunService yet, so
-        // CancelJob(index) has nothing to cancel there - fall back to interrupting the watch's own wait/trigger
-        // cycle instead. (A job queued behind the concurrency cap *is* registered with JobRunService already,
-        // so CancelJob(index) covers that case on its own.)
         var cancelled = index >= 0 && _jobRunService.CancelJob(index);
         cancelled |= _changeWatchHostedService.CancelJob(vm.Name);
         if (cancelled)
@@ -463,7 +430,7 @@ public partial class DashboardWindow : Window
         var config = await _configService.GetAsync();
         var index = config.Jobs.FindIndex(j => j.Name == vm.Name);
         if (index >= 0)
-            _ = _jobRunService.RunJobAsync(index, forcePush: true); // fire-and-forget; live status flows back via ISyncEventSink
+            _ = _jobRunService.RunJobAsync(index, forcePush: true);
     }
 
     private async void Snapshot_Click(object sender, RoutedEventArgs e)
@@ -495,7 +462,6 @@ public partial class DashboardWindow : Window
 
     private async Task CreateSnapshotWorkflowAsync(JobStatusViewModel vm, int index)
     {
-        // No SyncJobRunner/ISyncEventSink involved here, so this handler drives the row's phase/outcome text itself.
         vm.PhaseText = "Snapshot";
         try
         {
@@ -615,7 +581,6 @@ public partial class DashboardWindow : Window
 
     private async void Settings_Click(object sender, RoutedEventArgs e) => await OpenSettingsAsync();
 
-    // Public so other entry points (e.g. the tray icon menu) reuse this window instead of spawning their own.
     public async Task OpenSettingsAsync()
     {
         if (_settingsWindow is not null)

@@ -34,7 +34,7 @@ public class AdbSyncRemoteFileSystemTests : IAsyncLifetime
     public async Task PushThenPullThenDelete_RoundTripsAFile()
     {
         if (_serial is null)
-            return; // set ADBSYNC_TEST_SERIAL to a connected device/emulator serial to actually run this
+            return;
 
         var remotePath = $"{RemoteTestRoot}/roundtrip.txt";
         var localSource = Path.GetTempFileName();
@@ -69,7 +69,7 @@ public class AdbSyncRemoteFileSystemTests : IAsyncLifetime
     public async Task NestedDirectory_IsReportedWithDirectoryFileMode()
     {
         if (_serial is null)
-            return; // set ADBSYNC_TEST_SERIAL to a connected device/emulator serial to actually run this
+            return;
 
         var nestedDir = $"{RemoteTestRoot}/nested";
         try

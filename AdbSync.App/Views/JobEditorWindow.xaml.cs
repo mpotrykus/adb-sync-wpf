@@ -42,7 +42,7 @@ public partial class JobEditorWindow : Window
         {
             Title = $"Edit Job - {job.Name}";
             NameBox.Text = job.Name;
-            NameBox.IsEnabled = false; // renaming would orphan the job's master folder/manifests on disk
+            NameBox.IsEnabled = false;
             AppPackageBox.Text = job.AppPackage ?? "";
             ProjectDirectoryBox.Text = job.ProjectDirectory ?? "";
             ExcludeBox.Text = string.Join(Environment.NewLine, job.Exclude);
@@ -50,7 +50,7 @@ public partial class JobEditorWindow : Window
                 _bindings.Add(new JobDeviceBindingRow(binding.DeviceName, binding.RemotePath));
             EnabledCheckBox.IsChecked = job.Enabled;
 
-            IntervalUnitCombo.SelectedIndex = 2; // Hours
+            IntervalUnitCombo.SelectedIndex = 2;
             switch (job.Schedule.Kind)
             {
                 case ScheduleKind.Interval:
@@ -92,11 +92,9 @@ public partial class JobEditorWindow : Window
             EnabledCheckBox.IsChecked = true;
             ScheduleManual.IsChecked = true;
             IntervalValueBox.Text = "4";
-            IntervalUnitCombo.SelectedIndex = 2; // Hours
+            IntervalUnitCombo.SelectedIndex = 2;
             DebounceSecondsBox.Text = "10";
             RescanIntervalMinutesBox.Text = "15";
-            // Indeterminate = inherit the global default - CheckBox's own default (unchecked/false) would
-            // otherwise silently save as an explicit "off" override the user never asked for.
             ShowInfoNotificationsOverrideBox.IsChecked = null;
             ShowErrorNotificationsOverrideBox.IsChecked = null;
             BackupConflictLosersOverrideBox.IsChecked = null;
@@ -244,7 +242,6 @@ public partial class JobEditorWindow : Window
             return;
 
         var schedule = BuildSchedule();
-        // Preserve run history across edits - otherwise editing a job resets its interval clock to "due now".
         schedule.LastRunAt = _originalJob?.Schedule.LastRunAt;
         schedule.LastSuccessAt = _originalJob?.Schedule.LastSuccessAt;
 
@@ -275,8 +272,6 @@ public partial class JobEditorWindow : Window
 
     private static int? ParseIntOrNull(string text) => int.TryParse(text, out var value) ? value : null;
 
-    // Seconds, Minutes, Hours, Days, Weeks, Months, Years - indices match IntervalUnitCombo's items.
-    // Months/years are fixed-length approximations (30/365 days) since JobSchedule.Interval is a plain TimeSpan.
     private static readonly double[] IntervalUnitSeconds = [1, 60, 3600, 86400, 604800, 2_592_000, 31_536_000];
 
     private static (double Value, int UnitIndex) DecomposeInterval(TimeSpan interval)

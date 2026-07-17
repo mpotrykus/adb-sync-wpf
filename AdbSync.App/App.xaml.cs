@@ -40,14 +40,8 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
-        // Without an explicit AUMID, Windows auto-assigns a generated one (shown as "NotifyIconGeneratedAumid_*"
-        // in Settings > Notifications) and may reset the user's per-app notification prefs across rebuilds/moves
-        // since the generated ID is tied to the exe path. Must be set before any window/tray icon/toast is created.
         SetCurrentProcessExplicitAppUserModelID("AdbSync");
 
-        // A tray-resident background tool must never crash to desktop unannounced - this is the last line of
-        // defense for bugs in fire-and-forget "async void" event handlers (menu clicks, PropertyChanged, etc.),
-        // which by default terminate the process on WPF if left unhandled.
         DispatcherUnhandledException += (_, args) =>
         {
             Services?.GetService<ILogger<App>>()?.LogError(args.Exception, "Unhandled UI exception");
@@ -107,7 +101,6 @@ public partial class App : Application
         }
         catch (Exception ex)
         {
-            // File logger isn't set up yet at this point in startup, so there's nowhere better to send this.
             Debug.WriteLine($"Failed to read log settings; using defaults ({defaultDays} days, {defaultMaxBytes} bytes). {ex}");
             return (defaultDays, defaultMaxBytes);
         }

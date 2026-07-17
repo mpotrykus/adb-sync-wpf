@@ -17,18 +17,8 @@ public sealed class AdbDeviceResolver(
     private const string AdbTlsPairingServiceType = "_adb-tls-pairing._tcp";
     private static readonly TimeSpan MdnsBrowseTimeout = TimeSpan.FromSeconds(5);
 
-    // Wrapped so every diagnostic below also lands in the failing run's saved log (RunLogCapture), not just the
-    // rolling file log - "why did connect fail" is otherwise a black box, since ConnectAsync/mDNS give no detail.
     private readonly ILogger<AdbDeviceResolver> _logger = new RunCapturingLogger<AdbDeviceResolver>(logger ?? NullLogger<AdbDeviceResolver>.Instance);
 
-    // Two jobs can share a device, and with concurrent job execution (see SyncJobRunner/JobRunService) their
-    // PreConnect phases can now land here at the same time. This is deliberately its own short-lived
-    // per-device lock rather than SyncJobRunner's job-lifetime IDeviceAccessGate: it exists only to stop two
-    // concurrent calls from racing on the same DeviceConfig's CachedHostPort/CachedAt fields (AppConfigService
-    // hands out one shared, mutable AppConfig/DeviceConfig instance to every caller) and on the underlying adb
-    // server/mDNS calls, which were never verified safe for concurrent use against the same device. It's held
-    // only for the duration of resolving a connection, not for the rest of the run, so one device connecting
-    // slowly (e.g. waiting its turn behind another job) never delays a sibling device's own connect+pull.
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _connectGates = new(StringComparer.OrdinalIgnoreCase);
 
     public async Task<string> EnsureConnectedAsync(DeviceConfig device, CancellationToken ct = default)
@@ -48,7 +38,8 @@ public sealed class AdbDeviceResolver(
     private async Task<string> EnsureConnectedCoreAsync(DeviceConfig device, CancellationToken ct)
     {
         var startResult = await adbServer.StartServerAsync(adbExecutablePath, restartServerIfNewer: false, ct);
-        _logger.LogDebug("Device '{Device}': adb server start result: {Result}", device.Name, startResult);
+        if (startResult != StartServerResult.AlreadyRunning)
+            _logger.LogDebug("Device '{Device}': adb server start result: {Result}", device.Name, startResult);
 
         if (device.Ip is null)
         {

@@ -13,7 +13,6 @@ public sealed class FakeAdbProcessRunner : IAdbProcessRunner
     public Task<AdbProcessResult> RunAsync(IReadOnlyList<string> arguments, CancellationToken ct = default)
     {
         Calls.Add(arguments);
-        // Every call is shaped "-s <serial> <subcommand> ...".
         var subcommand = arguments.Count > 2 ? arguments[2] : string.Empty;
         var result = Handlers.TryGetValue(subcommand, out var handler) ? handler(arguments) : Default;
         return Task.FromResult(result);

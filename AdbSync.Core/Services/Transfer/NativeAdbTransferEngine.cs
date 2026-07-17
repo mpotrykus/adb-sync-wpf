@@ -82,7 +82,6 @@ public sealed class NativeAdbTransferEngine(IRemoteFileSystemFactory remoteFacto
         var plan = differ.Diff(localEntries, remoteEntries);
         var errors = new List<string>();
 
-        // Shallowest directories first so a child's remote parent always exists before it's needed.
         foreach (var dirEntry in plan.ToCopy.Where(e => e.IsDirectory).OrderBy(e => e.RelativePath.Count(c => c == '/')))
         {
             try
@@ -100,8 +99,6 @@ public sealed class NativeAdbTransferEngine(IRemoteFileSystemFactory remoteFacto
         var copiedPaths = new List<string>();
         foreach (var entry in plan.ToCopy.Where(e => !e.IsDirectory))
         {
-            // Checked before starting each item, not passed into the push below: once a push is in flight it
-            // always runs to completion, so a stop request can only take effect between items.
             ct.ThrowIfCancellationRequested();
             try
             {

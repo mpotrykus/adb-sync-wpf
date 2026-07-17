@@ -71,8 +71,6 @@ public class SyncJobRunnerTests : IDisposable
 
         var result = await runner.RunAsync(job, 0, [device], _settings, resumeFrom: null);
 
-        // Outcome reflects the push phase only: DeviceA already has photo.jpg (it's the file's origin), so
-        // pushing back to it copies nothing even though the pull did populate the master mirror.
         Assert.Equal(JobRunOutcome.CompletedNoChanges, result.Outcome);
         var masterPath = Path.Combine(_projectsDirectory, "JobOne", "master");
         Assert.Equal("content", File.ReadAllText(Path.Combine(masterPath, "photo.jpg")));
@@ -131,7 +129,6 @@ public class SyncJobRunnerTests : IDisposable
         };
 
         var gate = new DeviceAccessGate();
-        // Simulate another job/snapshot already holding DeviceA's sole adb connection slot.
         var externalDeviceALock = await gate.AcquireAsync("DeviceA", 1);
         var deviceBPulled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var sink = new DeviceObservingSyncEventSink((phase, deviceName) =>
@@ -159,7 +156,6 @@ public class SyncJobRunnerTests : IDisposable
 
         var runTask = runner.RunAsync(job, 0, devices, _settings, resumeFrom: null);
 
-        // DeviceB must make progress even though DeviceA is unavailable for the entire wait below.
         var won = await Task.WhenAny(deviceBPulled.Task, Task.Delay(TimeSpan.FromSeconds(5)));
         Assert.Same(deviceBPulled.Task, won);
 
@@ -210,8 +206,6 @@ public class SyncJobRunnerTests : IDisposable
         await externalDeviceALock.DisposeAsync();
         var result = await runTask;
 
-        // DeviceA already holds the winning content (it's the file's origin), so the push phase has nothing
-        // left to send it - see RunAsync_SingleDeviceWithNewFile_MergesIntoMasterWithNoChangesToPush.
         Assert.Equal(JobRunOutcome.CompletedNoChanges, result.Outcome);
     }
 
@@ -256,7 +250,6 @@ public class SyncJobRunnerTests : IDisposable
             sink,
             new RunHistoryStore(_appPaths));
 
-        // Simulates a crash after DeviceA's pull+merge finished but before DeviceB's did.
         var resumeFrom = new SyncCheckpoint(1, DateTimeOffset.UtcNow, 0, job.Name, SyncPhase.Pull, ["DeviceA"],
             new Dictionary<string, string> { ["DeviceA"] = "DeviceA", ["DeviceB"] = "DeviceB" });
 
@@ -265,8 +258,6 @@ public class SyncJobRunnerTests : IDisposable
         Assert.Equal(JobRunOutcome.Completed, result.Outcome);
         Assert.DoesNotContain("DeviceA", pullPhaseDevices);
         Assert.Contains("DeviceB", pullPhaseDevices);
-        // The push phase isn't gated by the pull-phase checkpoint, so master (now containing b.txt from
-        // DeviceB's pull) still reaches DeviceA even though its own pull was skipped as already-done.
         Assert.Equal("from-b", File.ReadAllText(Path.Combine(DeviceFolder("DeviceA"), "b.txt")));
     }
 
@@ -346,11 +337,8 @@ public class SyncJobRunnerTests : IDisposable
         };
         var runner = CreateRunner(new Dictionary<string, string> { ["DeviceA"] = DeviceFolder("DeviceA") });
 
-        // Establish a baseline where master and the device already agree.
         await runner.RunAsync(job, 0, [device], _settings, resumeFrom: null);
 
-        // Simulate resuming a crashed run that jumps straight into the push phase - since nothing
-        // changed since the baseline, push has nothing left to do and the run should read as a no-op.
         var resumeFrom = new SyncCheckpoint(1, DateTimeOffset.UtcNow, 0, job.Name, SyncPhase.Push, [], new Dictionary<string, string> { ["DeviceA"] = "DeviceA" });
         var result = await runner.RunAsync(job, 0, [device], _settings, resumeFrom);
 
@@ -417,7 +405,7 @@ public class SyncJobRunnerTests : IDisposable
     public async Task RunAsync_PushSafetyTripped_ReturnsFailedWithoutThrowing()
     {
         var pushSafety = new PushSafetyGuard(_appPaths);
-        await pushSafety.RecordDeviceSnapshotAsync("JobSix", "DeviceA", 100); // seed a much higher historical baseline
+        await pushSafety.RecordDeviceSnapshotAsync("JobSix", "DeviceA", 100);
 
         WriteDeviceFile("DeviceA", "only-one-file.txt", "content");
         var device = new DeviceConfig { Name = "DeviceA", Serial = "DeviceA" };
@@ -438,7 +426,7 @@ public class SyncJobRunnerTests : IDisposable
     public async Task RunAsync_ForcePushWithSafetyTripped_CompletesAndRebasesBaseline()
     {
         var pushSafety = new PushSafetyGuard(_appPaths);
-        await pushSafety.RecordDeviceSnapshotAsync("JobSeven", "DeviceA", 100); // seed a much higher historical baseline
+        await pushSafety.RecordDeviceSnapshotAsync("JobSeven", "DeviceA", 100);
 
         WriteDeviceFile("DeviceA", "only-one-file.txt", "content");
         var device = new DeviceConfig { Name = "DeviceA", Serial = "DeviceA" };
@@ -450,11 +438,8 @@ public class SyncJobRunnerTests : IDisposable
         var runner = CreateRunner(new Dictionary<string, string> { ["DeviceA"] = DeviceFolder("DeviceA") }, pushSafety: pushSafety);
 
         var result = await runner.RunAsync(job, 0, [device], _settings, resumeFrom: null, forcePush: true);
-        // Both runs push back to the very same device the content came from, so nothing is actually copied out -
-        // the push-phase file count is what drives the outcome, so these correctly read as no-op pushes.
         Assert.Equal(JobRunOutcome.CompletedNoChanges, result.Outcome);
 
-        // Baseline is now rebased to the 1-file master, so a normal (non-forced) run at the same level no longer trips the guard.
         WriteDeviceFile("DeviceA", "only-one-file.txt", "content edited");
         var secondResult = await runner.RunAsync(job, 0, [device], _settings, resumeFrom: null);
         Assert.Equal(JobRunOutcome.CompletedNoChanges, secondResult.Outcome);
@@ -537,8 +522,6 @@ public class SyncJobRunnerTests : IDisposable
     [Fact]
     public async Task RunAsync_IndependentConflictingCreate_ReportsConflictViaEventSink()
     {
-        // Master already has a file with no manifest baseline (e.g. from a previous device), and the device
-        // independently has a *different* version of the same file - classic no-shared-history conflict.
         var masterPath = Path.Combine(_projectsDirectory, "JobConflict", "master");
         Directory.CreateDirectory(masterPath);
         File.WriteAllText(Path.Combine(masterPath, "a.txt"), "master-version");
@@ -558,8 +541,6 @@ public class SyncJobRunnerTests : IDisposable
 
         var result = await runner.RunAsync(job, 0, [device], _settings, resumeFrom: null);
 
-        // The device already holds the winning content, so the push phase has nothing left to send it -
-        // "no changes" describes what left the machine, not whether a conflict was resolved along the way.
         Assert.Equal(JobRunOutcome.CompletedNoChanges, result.Outcome);
         Assert.Equal(1, recordingSink.TotalConflictsReported);
         Assert.Equal("device-version-newer", File.ReadAllText(Path.Combine(masterPath, "a.txt")));
@@ -587,13 +568,10 @@ public class SyncJobRunnerTests : IDisposable
 
         await runner.RunAsync(job, 0, [device], _settings, resumeFrom: null);
 
-        // The losing side (master's stale copy) must still be backed up somewhere after the run completes...
         var backupDir = Path.Combine(projectRoot, ".sync_conflicts", "DeviceA");
         Assert.True(Directory.Exists(backupDir) && Directory.EnumerateFiles(backupDir).Any(),
             "Expected a conflict backup to survive under the project root.");
 
-        // ...and that location must not be inside master, or it would get mirrored out to every other device
-        // on the next push.
         Assert.DoesNotContain(
             Directory.EnumerateFileSystemEntries(masterPath, "*", SearchOption.AllDirectories),
             p => p.Contains(".conflicts", StringComparison.Ordinal));
@@ -669,7 +647,6 @@ public class SyncJobRunnerTests : IDisposable
         var pushSafety = new PushSafetyGuard(_appPaths);
         await pushSafety.RecordDeviceSnapshotAsync("JobPercentOverride", "DeviceA", 100);
 
-        // 24 files is below the global default (25%) but at/above a job-level override of 20%.
         WriteDeviceFile("DeviceA", "one.txt", "content");
         for (var i = 1; i < 24; i++)
             WriteDeviceFile("DeviceA", $"file{i}.txt", "content");
@@ -699,8 +676,6 @@ public class SyncJobRunnerTests : IDisposable
         };
         var liveLog = new LiveRunLogSink();
         var wasLiveDuringRun = false;
-        // PhaseChanged fires synchronously from inside RunAsync, so this snapshots the sink's state mid-run
-        // without needing real concurrency - FakeAdbTransferEngine completes each phase synchronously too.
         var sink = new PhaseCapturingSyncEventSink(() => wasLiveDuringRun |= liveLog.TryGet(job.Name, out _, out _));
         var runner = new SyncJobRunner(
             new FakeDeviceResolver(),

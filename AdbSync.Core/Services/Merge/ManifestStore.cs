@@ -1,5 +1,6 @@
 using AdbSync.Core.Models.Merge;
 using AdbSync.Core.Models.Transfer;
+using AdbSync.Core.Services.Common;
 using AdbSync.Core.Services.Config;
 using AdbSync.Core.Services.Transfer;
 
@@ -40,6 +41,5 @@ public sealed class ManifestStore(AppPaths paths) : IManifestStore
     private static bool IsSame(string stagingPath, string masterPath, FileEntry staging, FileEntry master) =>
         staging.Size == master.Size
         && (staging.ModifiedUtc - master.ModifiedUtc).Duration() <= ModifiedTolerance
-        // size + mtime match is not proof of identical content - hash to rule out a coincidental match
         && ContentHasher.FilesAreIdentical(Path.Combine(stagingPath, staging.RelativePath), Path.Combine(masterPath, master.RelativePath));
 }

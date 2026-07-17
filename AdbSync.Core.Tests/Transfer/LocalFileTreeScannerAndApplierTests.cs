@@ -58,7 +58,7 @@ public class LocalFileTreeScannerAndApplierTests : IDisposable
 
         Assert.Equal(1, copied);
         Assert.Equal(0, deleted);
-        Assert.Equal(5, bytesCopied); // "hello"
+        Assert.Equal(5, bytesCopied);
         var destPath = Path.Combine(_destDir, "a.txt");
         Assert.True(File.Exists(destPath));
         Assert.Equal("hello", File.ReadAllText(destPath));

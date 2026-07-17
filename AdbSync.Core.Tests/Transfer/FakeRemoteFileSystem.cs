@@ -53,7 +53,7 @@ public sealed class FakeRemoteFileSystem : IRemoteFileSystem
 
             var relative = prefix.Length == 0 ? path : path[(prefix.Length + 1)..];
             if (relative.Contains('/'))
-                continue; // not an immediate child
+                continue;
 
             results.Add(new RemoteFileInfo(relative, node.IsDirectory, node.Content.Length, node.ModifiedUtc));
         }

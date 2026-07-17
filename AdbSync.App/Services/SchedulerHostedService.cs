@@ -29,8 +29,6 @@ public sealed class SchedulerHostedService(
                 }
                 catch (Exception ex)
                 {
-                    // Individual job failures already surface via JobRunResult/ISyncEventSink; a hard failure
-                    // here (e.g. config file corruption) shouldn't kill the recurring timer loop.
                     logger.LogWarning(ex, "Scheduler tick failed");
                 }
             }

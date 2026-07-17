@@ -20,8 +20,6 @@ public sealed class JobRunService(
     AppConfigService configService, SyncJobRunner runner, IDeviceSnapshotService snapshotService,
     ICheckpointManager checkpoints, IDeviceAccessGate deviceAccessGate, ISyncEventSink events)
 {
-    // Sized once from settings.MaxConcurrentJobs on first use - restart to apply, the same tradeoff already
-    // accepted for LogRetentionDays/PerLogFileMaxBytes at startup.
     private readonly Lazy<Task<SemaphoreSlim>> _globalGate = new(async () =>
     {
         var config = await configService.GetAsync();
@@ -29,8 +27,6 @@ public sealed class JobRunService(
         return new SemaphoreSlim(max, max);
     });
 
-    // Keyed by job index so the dashboard's Stop button can cancel a specific in-flight run without knowing
-    // anything about how it was started (manual "Run Now", scheduler, or change-watch trigger).
     private readonly ConcurrentDictionary<int, CancellationTokenSource> _runningJobs = new();
 
     public async Task<JobRunResult> RunJobAsync(int jobIndex, bool forcePush = false, CancellationToken ct = default)
@@ -39,14 +35,10 @@ public sealed class JobRunService(
         var job = config.Jobs[jobIndex];
         var globalGate = await _globalGate.Value;
 
-        // Registered before the gate wait (not after, like the rest of this method's bookkeeping) so Stop can
-        // cancel a job that's still queued behind the concurrency cap, not just one already handed off to the runner.
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         _runningJobs[jobIndex] = cts;
         try
         {
-            // Only reported if a slot isn't free immediately, so the common case (a slot is open) never
-            // flashes a "waiting" message before the real PreConnect phase takes over.
             if (!await globalGate.WaitAsync(0, cts.Token))
             {
                 events.JobQueued(job.Name, "Waiting to start - max concurrent jobs limit reached");
@@ -74,8 +66,6 @@ public sealed class JobRunService(
         }
         catch (OperationCanceledException) when (cts.IsCancellationRequested)
         {
-            // Only reachable while still queued - once runner.RunAsync is running, it catches its own
-            // cancellation internally and reports JobCancelled itself, so this never double-reports that case.
             events.JobCancelled(job.Name);
             return new JobRunResult(JobRunOutcome.Cancelled, null);
         }

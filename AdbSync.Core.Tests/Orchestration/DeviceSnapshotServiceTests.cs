@@ -39,7 +39,6 @@ public class DeviceSnapshotServiceTests : IDisposable
         var service = new DeviceSnapshotService(
             new FakeDeviceResolver(), new FakeAdbTransferEngine(new Dictionary<string, string> { ["DeviceA"] = DeviceFolder("DeviceA") }));
 
-        // Seed a stale checkpoint folder directly (older than retention) alongside a fresh one.
         var checkpointsRoot = Path.Combine(_projectsDirectory, "JobSnap", "checkpoints");
         Directory.CreateDirectory(checkpointsRoot);
         var staleDir = Path.Combine(checkpointsRoot, "2020-01-01_00-00-00");
@@ -62,7 +61,7 @@ public class DeviceSnapshotServiceTests : IDisposable
         var job = new SyncJobConfig
         {
             Name = "JobSnapOverride",
-            CheckpointRetentionDays = 2, // tighter than the global default
+            CheckpointRetentionDays = 2,
             Devices = [new JobDeviceBinding { DeviceName = "DeviceA", RemotePath = "/sdcard/app" }],
         };
         var device = new DeviceConfig { Name = "DeviceA", Serial = "DeviceA" };
@@ -72,7 +71,6 @@ public class DeviceSnapshotServiceTests : IDisposable
 
         var checkpointsRoot = Path.Combine(_projectsDirectory, "JobSnapOverride", "checkpoints");
         Directory.CreateDirectory(checkpointsRoot);
-        // 5 days old: within the global 30-day retention, but past the job's 2-day override.
         var midAgeDir = Path.Combine(checkpointsRoot, DateTimeOffset.Now.AddDays(-5).ToString("yyyy-MM-dd_HH-mm-ss"));
         Directory.CreateDirectory(midAgeDir);
 

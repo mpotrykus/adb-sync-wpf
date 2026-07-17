@@ -1,4 +1,4 @@
-namespace AdbSync.Core.Services.Transfer;
+namespace AdbSync.Core.Services.Common;
 
 internal static class RelativePathUtil
 {

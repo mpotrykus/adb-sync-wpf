@@ -64,8 +64,8 @@ public class ManifestStoreTests : IDisposable
     [Fact]
     public async Task GetOrBootstrapAsync_SameSizeAndMtimeButDifferentContent_IsNotIncludedInBaseline()
     {
-        Write(_stagingPath, "coincidence.txt", "aaaaaaaaaa", T0); // same size and mtime as master...
-        Write(_masterPath, "coincidence.txt", "bbbbbbbbbb", T0); // ...but genuinely different bytes
+        Write(_stagingPath, "coincidence.txt", "aaaaaaaaaa", T0);
+        Write(_masterPath, "coincidence.txt", "bbbbbbbbbb", T0);
 
         var manifest = await _store.GetOrBootstrapAsync("Job1", "DeviceA", _stagingPath, _masterPath);
 
@@ -81,7 +81,6 @@ public class ManifestStoreTests : IDisposable
         };
         await _store.SaveAsync("Job1", "DeviceA", toSave);
 
-        // Even though staging/master disagree, a persisted manifest should be returned as-is, not re-bootstrapped.
         Write(_stagingPath, "a.txt", "irrelevant", T0);
         var loaded = await _store.GetOrBootstrapAsync("Job1", "DeviceA", _stagingPath, _masterPath);
 

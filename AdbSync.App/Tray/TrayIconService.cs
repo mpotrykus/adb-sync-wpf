@@ -47,10 +47,6 @@ public sealed class TrayIconService(
 
         _icon.ForceCreate(enablesEfficiencyMode: false);
 
-        // ToolTipText must be set after ForceCreate, not in the object initializer above - H.NotifyIcon builds
-        // its hover popup (TrayToolTipResolved) from a property-changed callback that requires the icon to
-        // already be created, so a pre-creation value never gets a popup built for it and the very first hover
-        // (before any job has touched ToolTipText post-creation) silently shows nothing.
         _icon.ToolTipText = "AdbSync: idle";
         _icon.TrayMouseDoubleClick += (_, _) => OpenDashboard();
 
@@ -111,9 +107,6 @@ public sealed class TrayIconService(
             : jobs.Any(j => j.PhaseText.Contains("Merge", StringComparison.Ordinal)) ? _mergeIcon
             : _appIcon;
 
-        // TaskbarIcon.Icon disposes whatever the *previous* value was as soon as a new one is assigned, so the
-        // cached master icons above must never be handed to it directly - only a throwaway clone each time,
-        // or the second reuse of a master (e.g. pull.ico on device #2) throws ObjectDisposedException mid-run.
         _icon.Icon = (System.Drawing.Icon)master.Clone();
     }
 
