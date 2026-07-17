@@ -1,6 +1,7 @@
 # Builds and tests the AdbSync solution on every push/PR to main. Pushing a
-# tag like v1.2.0 additionally publishes AdbSync.App as a self-contained
-# win-x64 exe and attaches it to an auto-created GitHub Release.
+# tag like v1.2.0 additionally publishes AdbSync.App as a single self-contained
+# win-x64 exe (native WPF/SQLite deps bundled in, self-extracted to a temp
+# cache on first launch) and attaches it to an auto-created GitHub Release.
 #
 # There is no .sln or WAP packaging project in this repo, so this workflow
 # targets each .csproj directly and skips MSIX/signing entirely.
@@ -80,13 +81,15 @@ jobs:
           --runtime win-x64
           --self-contained true
           -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:DebugType=none
           -o publish\AdbSync.App
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: AdbSync.App-win-x64
-          path: publish\AdbSync.App
+          path: publish\AdbSync.App\AdbSync.App.exe
 
   release:
     needs: publish
@@ -102,11 +105,11 @@ jobs:
           name: AdbSync.App-win-x64
           path: publish\AdbSync.App
 
-      - name: Zip the published app
-        run: Compress-Archive -Path publish\AdbSync.App\* -DestinationPath AdbSync.App-${{ github.ref_name }}-win-x64.zip
+      - name: Rename exe with version
+        run: Rename-Item -Path publish\AdbSync.App\AdbSync.App.exe -NewName AdbSync.App-${{ github.ref_name }}-win-x64.exe
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: AdbSync.App-${{ github.ref_name }}-win-x64.zip
+          files: publish\AdbSync.App\AdbSync.App-${{ github.ref_name }}-win-x64.exe
           generate_release_notes: true
