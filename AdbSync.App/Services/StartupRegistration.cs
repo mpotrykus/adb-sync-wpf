@@ -23,10 +23,4 @@ public static class StartupRegistration
             key.DeleteValue(ValueName, throwOnMissingValue: false);
         }
     }
-
-    public static bool IsEnabled()
-    {
-        using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath, writable: false);
-        return key?.GetValue(ValueName) is not null;
-    }
 }

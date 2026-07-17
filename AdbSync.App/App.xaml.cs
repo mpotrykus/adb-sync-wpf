@@ -81,8 +81,7 @@ public partial class App : Application
     private static async Task ApplyStartAtLoginAsync()
     {
         var config = await Services.GetRequiredService<AppConfigService>().GetAsync();
-        if (StartupRegistration.IsEnabled() != config.Settings.StartAtLogin)
-            StartupRegistration.SetEnabled(config.Settings.StartAtLogin);
+        StartupRegistration.SetEnabled(config.Settings.StartAtLogin);
     }
 
     private static (int RetentionDays, long MaxBytesPerFile) ReadLogSettingsOrDefault(AppPaths paths)
