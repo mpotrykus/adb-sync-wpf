@@ -3,6 +3,7 @@ using AdbSync.Core.Models.Orchestration;
 using AdbSync.Core.Services.Devices;
 using AdbSync.Core.Services.Orchestration;
 using AdbSync.Core.Services.Transfer;
+using AdvancedSharpAdbClient;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Win32;
@@ -15,6 +16,7 @@ public sealed class ChangeWatchHostedService(
     IDeviceChangeWatcher watcher,
     IAdbDeviceResolver deviceResolver,
     IAppRunningGuard appGuard,
+    IAdbServer adbServer,
     ISyncEventSink events,
     JobRunService jobRunService,
     ILogger<ChangeWatchHostedService> logger) : BackgroundService
@@ -144,11 +146,30 @@ public sealed class ChangeWatchHostedService(
         await DisconnectWifiDevicesAsync();
     }
 
+    /// <summary>
+    /// Per-device <see cref="IAdbDeviceResolver.DisconnectAsync"/> only asks the adb server to drop one transport;
+    /// if the server is already wedged (e.g. mid-reconnect when suspend hit) that request can fail without ever
+    /// closing the underlying WiFi socket. Killing the server process outright guarantees every socket it holds is
+    /// closed at the OS level - the server restarts itself on the next EnsureConnectedAsync after resume.
+    /// </summary>
     private async Task DisconnectWifiDevicesAsync()
     {
         var config = await configService.GetAsync();
-        foreach (var device in config.Devices.Where(d => d.Ip is not null))
+        var wifiDevices = config.Devices.Where(d => d.Ip is not null).ToList();
+        foreach (var device in wifiDevices)
             await deviceResolver.DisconnectAsync(device);
+
+        if (wifiDevices.Count > 0)
+        {
+            try
+            {
+                await adbServer.StopServerAsync(CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to stop the adb server before suspend");
+            }
+        }
     }
 
     private async Task ReconcileAsync(CancellationToken ct)
