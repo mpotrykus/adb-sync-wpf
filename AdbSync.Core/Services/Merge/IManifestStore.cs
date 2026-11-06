@@ -12,4 +12,10 @@ public interface IManifestStore
     Task<SyncManifest> GetOrBootstrapAsync(string jobName, string deviceName, string stagingPath, string masterPath, CancellationToken ct = default);
 
     Task SaveAsync(string jobName, string deviceName, SyncManifest manifest, CancellationToken ct = default);
+
+    /// <summary>Discards every device manifest for the job. Returns how many were removed.</summary>
+    int Clear(string jobName);
+
+    /// <summary>True when at least one persisted manifest for the job records files.</summary>
+    Task<bool> AnyEntriesAsync(string jobName, CancellationToken ct = default);
 }

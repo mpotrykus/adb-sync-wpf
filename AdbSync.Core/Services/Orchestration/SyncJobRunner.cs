@@ -104,6 +104,22 @@ public sealed class SyncJobRunner(
             var anyChange = resumeFrom is { Phase: SyncPhase.Push };
             if (!anyChange)
             {
+                var masterIsEmpty = !Directory.EnumerateFiles(masterPath, "*", SearchOption.AllDirectories).Any();
+                if (masterIsEmpty && await manifests.AnyEntriesAsync(job.Name, ct))
+                {
+                    if (eff.DryRun)
+                    {
+                        _logger.LogWarning("Job '{Job}' master is empty but manifests record files - a real run would discard them", job.Name);
+                    }
+                    else
+                    {
+                        var cleared = manifests.Clear(job.Name);
+                        _logger.LogWarning(
+                            "Job '{Job}' master is empty but {Count} manifest(s) record previously synced files - discarded them so the missing master is not treated as deletions",
+                            job.Name, cleared);
+                    }
+                }
+
                 var pullStopwatch = Stopwatch.StartNew();
                 var pullStats = await RunPullPhaseAsync(job, jobIndex, masterPath, serials, exclude, resumeFrom, eff, settings.MaxConcurrentPerDevice, ct);
                 pullDuration = pullStopwatch.Elapsed;

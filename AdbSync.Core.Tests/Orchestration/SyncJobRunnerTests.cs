@@ -1,4 +1,5 @@
 using AdbSync.Core.Models.Config;
+using AdbSync.Core.Models.Merge;
 using AdbSync.Core.Models.Orchestration;
 using AdbSync.Core.Services.Config;
 using AdbSync.Core.Services.Logging;
@@ -420,6 +421,34 @@ public class SyncJobRunnerTests : IDisposable
 
         Assert.Equal(JobRunOutcome.Failed, result.Outcome);
         Assert.Contains("Safety check blocked", result.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task RunAsync_EmptyMasterWithStaleManifests_DiscardsManifestsAndRestoresMasterInsteadOfDeleting()
+    {
+        WriteDeviceFile("DeviceA", "keep.txt", "content");
+        var devicePath = Path.Combine(DeviceFolder("DeviceA"), "keep.txt");
+        var info = new FileInfo(devicePath);
+        var manifests = new ManifestStore(_appPaths);
+        await manifests.SaveAsync("JobStale", "DeviceA", new SyncManifest
+        {
+            Version = 1,
+            Entries = new Dictionary<string, ManifestEntry> { ["keep.txt"] = new(info.Length, new DateTimeOffset(info.LastWriteTimeUtc, TimeSpan.Zero)) },
+        });
+
+        var device = new DeviceConfig { Name = "DeviceA", Serial = "DeviceA" };
+        var job = new SyncJobConfig
+        {
+            Name = "JobStale",
+            Devices = [new JobDeviceBinding { DeviceName = "DeviceA", RemotePath = "/sdcard/app" }],
+        };
+        var runner = CreateRunner(new Dictionary<string, string> { ["DeviceA"] = DeviceFolder("DeviceA") });
+
+        var result = await runner.RunAsync(job, 0, [device], _settings, resumeFrom: null);
+
+        Assert.NotEqual(JobRunOutcome.Failed, result.Outcome);
+        Assert.Equal("content", File.ReadAllText(Path.Combine(_projectsDirectory, "JobStale", "master", "keep.txt")));
+        Assert.True(File.Exists(devicePath));
     }
 
     [Fact]

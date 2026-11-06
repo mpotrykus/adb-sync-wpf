@@ -35,6 +35,33 @@ public sealed class ManifestStore(AppPaths paths) : IManifestStore
     public Task SaveAsync(string jobName, string deviceName, SyncManifest manifest, CancellationToken ct = default) =>
         JsonFileIo.WriteAtomicAsync(GetManifestPath(jobName, deviceName), manifest, AppConfigJsonContext.Default.SyncManifest, ct);
 
+    public int Clear(string jobName)
+    {
+        var dir = Path.Combine(paths.ManifestsDir, jobName);
+        if (!Directory.Exists(dir))
+            return 0;
+
+        var files = Directory.GetFiles(dir, "*.manifest.json");
+        foreach (var file in files)
+            File.Delete(file);
+        return files.Length;
+    }
+
+    public async Task<bool> AnyEntriesAsync(string jobName, CancellationToken ct = default)
+    {
+        var dir = Path.Combine(paths.ManifestsDir, jobName);
+        if (!Directory.Exists(dir))
+            return false;
+
+        foreach (var file in Directory.GetFiles(dir, "*.manifest.json"))
+        {
+            var manifest = await JsonFileIo.ReadAsync(file, AppConfigJsonContext.Default.SyncManifest, ct);
+            if (manifest is { Entries.Count: > 0 })
+                return true;
+        }
+        return false;
+    }
+
     private string GetManifestPath(string jobName, string deviceName) =>
         Path.Combine(paths.ManifestsDir, jobName, $"{deviceName}.manifest.json");
 
