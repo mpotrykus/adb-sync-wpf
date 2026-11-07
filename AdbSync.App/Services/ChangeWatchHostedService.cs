@@ -233,6 +233,7 @@ public sealed class ChangeWatchHostedService(
         using var manualStopCts = new CancellationTokenSource();
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct, manualStopCts.Token);
         _manualStops[jobName] = manualStopCts;
+        var lostConnections = 0;
         try
         {
             while (true)
@@ -242,7 +243,10 @@ public sealed class ChangeWatchHostedService(
                 if (index < 0 || !config.Jobs[index].Enabled)
                     return;
 
-                await WaitForAppToCloseAsync(jobName, config, index, cts.Token);
+                if (await WaitForAppToCloseAsync(jobName, config, index, cts.Token))
+                    lostConnections = 0;
+                else
+                    await Task.Delay(RetryDelay(++lostConnections), cts.Token);
 
                 var result = await jobRunService.RunJobAsync(index, ct: cts.Token);
                 if (result.Outcome != JobRunOutcome.SkippedAppRunning)
@@ -276,11 +280,15 @@ public sealed class ChangeWatchHostedService(
         return true;
     }
 
-    private async Task WaitForAppToCloseAsync(string jobName, AppConfig config, int index, CancellationToken ct)
+    private static TimeSpan RetryDelay(int lostConnections) =>
+        TimeSpan.FromSeconds(Math.Min(15 * Math.Pow(2, Math.Min(lostConnections - 1, 3)), 120));
+
+    /// <summary>Returns false if the adb connection was lost while waiting, so the caller can back off before retrying.</summary>
+    private async Task<bool> WaitForAppToCloseAsync(string jobName, AppConfig config, int index, CancellationToken ct)
     {
         var job = config.Jobs[index];
         if (job.AppPackage is null)
-            return;
+            return true;
 
         var serials = new List<string>();
         var deviceNamesBySerial = new Dictionary<string, string>();
@@ -294,7 +302,7 @@ public sealed class ChangeWatchHostedService(
 
         var runningSerial = await appGuard.FindRunningSerialAsync(job.AppPackage, serials, ct);
         if (runningSerial is null)
-            return;
+            return true;
 
         var deviceName = deviceNamesBySerial.GetValueOrDefault(runningSerial, runningSerial);
         events.PhaseChanged(jobName, SyncPhase.WaitingForAppClose, deviceName);
@@ -302,11 +310,12 @@ public sealed class ChangeWatchHostedService(
         try
         {
             await appGuard.WaitUntilStoppedAsync(job.AppPackage, runningSerial, ct);
+            return true;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning(ex, "Lost the wait-for-app-close connection for job '{Job}'; retrying shortly", jobName);
-            await Task.Delay(TimeSpan.FromSeconds(15), ct);
+            return false;
         }
     }
 

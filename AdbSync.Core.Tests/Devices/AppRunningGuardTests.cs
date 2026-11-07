@@ -12,7 +12,7 @@ public class AppRunningGuardTests
     private readonly IAdbClient _adbClient = Substitute.For<IAdbClient>();
     private readonly AppRunningGuard _guard;
 
-    public AppRunningGuardTests() => _guard = new AppRunningGuard(_adbClient);
+    public AppRunningGuardTests() => _guard = new AppRunningGuard(_adbClient, TimeSpan.FromMilliseconds(1));
 
     private void SetPidofOutput(string serial, params string[] lines)
     {
@@ -71,15 +71,38 @@ public class AppRunningGuardTests
     }
 
     [Fact]
-    public async Task WaitUntilStoppedAsync_RunsABlockingPollLoopOnTheDevice()
+    public async Task WaitUntilStoppedAsync_PollsWithShortPidofCallsUntilAppExits()
     {
+        var outputs = new Queue<string?>(["111", "111", null]);
+        _adbClient
+            .When(c => c.ExecuteRemoteCommandAsync(
+                Arg.Any<string>(), Arg.Any<DeviceData>(), Arg.Any<IShellOutputReceiver>(), Arg.Any<Encoding>(), Arg.Any<CancellationToken>()))
+            .Do(call =>
+            {
+                var receiver = call.ArgAt<IShellOutputReceiver>(2);
+                if (outputs.Dequeue() is { } pid)
+                    receiver.AddOutput(pid);
+                receiver.Flush();
+            });
+
         await _guard.WaitUntilStoppedAsync("com.example.app", "device-a");
 
-        await _adbClient.Received(1).ExecuteRemoteCommandAsync(
-            Arg.Is<string>(cmd => cmd.Contains("pidof com.example.app") && cmd.Contains("sleep")),
+        await _adbClient.Received(3).ExecuteRemoteCommandAsync(
+            "pidof com.example.app",
             Arg.Is<DeviceData>(d => d.Serial == "device-a"),
             Arg.Any<IShellOutputReceiver>(),
             Arg.Any<Encoding>(),
             Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task WaitUntilStoppedAsync_ConnectionDrops_Throws()
+    {
+        _adbClient
+            .ExecuteRemoteCommandAsync(
+                Arg.Any<string>(), Arg.Any<DeviceData>(), Arg.Any<IShellOutputReceiver>(), Arg.Any<Encoding>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new IOException("connection closed")));
+
+        await Assert.ThrowsAsync<IOException>(() => _guard.WaitUntilStoppedAsync("com.example.app", "device-a"));
     }
 }

@@ -5,17 +5,17 @@ using System.Text;
 
 namespace AdbSync.Core.Services.Devices;
 
-public sealed class AppRunningGuard(IAdbClient adbClient) : IAppRunningGuard
+public sealed class AppRunningGuard(IAdbClient adbClient, TimeSpan? pollInterval = null) : IAppRunningGuard
 {
+    private static readonly TimeSpan DefaultPollInterval = TimeSpan.FromSeconds(5);
+
+    private readonly TimeSpan _pollInterval = pollInterval ?? DefaultPollInterval;
+
     public async Task<string?> FindRunningSerialAsync(string appPackage, IEnumerable<string> deviceSerials, CancellationToken ct = default)
     {
         foreach (var serial in deviceSerials)
         {
-            var receiver = new ConsoleOutputReceiver();
-            var device = new DeviceData { Serial = serial, State = DeviceState.Online };
-            await adbClient.ExecuteRemoteCommandAsync($"pidof {appPackage}", device, receiver, Encoding.UTF8, ct);
-
-            if (!string.IsNullOrWhiteSpace(receiver.ToString()))
+            if (await IsRunningAsync(appPackage, serial, ct))
                 return serial;
         }
 
@@ -24,9 +24,15 @@ public sealed class AppRunningGuard(IAdbClient adbClient) : IAppRunningGuard
 
     public async Task WaitUntilStoppedAsync(string appPackage, string serial, CancellationToken ct = default)
     {
+        while (await IsRunningAsync(appPackage, serial, ct))
+            await Task.Delay(_pollInterval, ct);
+    }
+
+    private async Task<bool> IsRunningAsync(string appPackage, string serial, CancellationToken ct)
+    {
         var receiver = new ConsoleOutputReceiver();
         var device = new DeviceData { Serial = serial, State = DeviceState.Online };
-        var command = $"while pidof {appPackage} >/dev/null 2>&1; do sleep 1; done";
-        await adbClient.ExecuteRemoteCommandAsync(command, device, receiver, Encoding.UTF8, ct);
+        await adbClient.ExecuteRemoteCommandAsync($"pidof {appPackage}", device, receiver, Encoding.UTF8, ct);
+        return !string.IsNullOrWhiteSpace(receiver.ToString());
     }
 }
