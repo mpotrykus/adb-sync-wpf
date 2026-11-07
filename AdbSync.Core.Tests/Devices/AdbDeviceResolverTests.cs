@@ -24,6 +24,12 @@ public class AdbDeviceResolverTests
         Task.FromResult<IEnumerable<DeviceData>>(devices);
 
     [Fact]
+    public void Construction_DisablesAdbBuiltInMdns_SoSpawnedServersDoNotCrashOnNsecRecords()
+    {
+        Assert.NotNull(Environment.GetEnvironmentVariable("ADB_MDNS"));
+    }
+
+    [Fact]
     public async Task EnsureConnectedAsync_UsbSerialDevice_ReturnsSerialWithoutAnyDiscovery()
     {
         var device = new DeviceConfig { Name = "BlueStacks", Serial = "emulator-5554" };

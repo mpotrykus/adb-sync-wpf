@@ -17,6 +17,15 @@ public sealed class AdbDeviceResolver(
     private const string AdbTlsPairingServiceType = "_adb-tls-pairing._tcp";
     private static readonly TimeSpan MdnsBrowseTimeout = TimeSpan.FromSeconds(5);
 
+    static AdbDeviceResolver()
+    {
+        // adb 36's built-in (openscreen) mDNS backend aborts the whole server on NSEC records, dropping every
+        // wireless transport and re-raising the device's "wireless debugging connected" notification each time.
+        // We browse mDNS ourselves and connect to an explicit ip:port, so adb's own discovery isn't needed.
+        if (Environment.GetEnvironmentVariable("ADB_MDNS") is null)
+            Environment.SetEnvironmentVariable("ADB_MDNS", "0");
+    }
+
     private readonly ILogger<AdbDeviceResolver> _logger = new RunCapturingLogger<AdbDeviceResolver>(logger ?? NullLogger<AdbDeviceResolver>.Instance);
 
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _connectGates = new(StringComparer.OrdinalIgnoreCase);
