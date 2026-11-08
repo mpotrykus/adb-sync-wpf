@@ -14,7 +14,8 @@ class ProgressReceiver : BroadcastReceiver() {
             val fp = intent.getStringExtra(Protocol.EXTRA_FP)
             if (url != null && token != null && fp != null) {
                 val pc = intent.getStringExtra(Protocol.EXTRA_PC) ?: "PC"
-                if (PcConfig.save(context, PcConfig(url, token, fp, pc))) Log.i(TAG, "PC server set to $url ($pc)")
+                val device = intent.getStringExtra(Protocol.EXTRA_DEVICE)
+                if (PcConfig.save(context, PcConfig(url, token, fp, pc, device))) Log.i(TAG, "PC server set to $url ($pc)")
             }
             return
         }

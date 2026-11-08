@@ -52,8 +52,8 @@ public static class CompanionBroadcast
     }
 
     /// <summary>Tells the app where to reach the PC's companion server, which bearer token to send, and the
-    /// SHA-256 fingerprint of the server certificate to pin.</summary>
-    public static string BuildConfigCommand(string url, string token, string certSha256, string pcName)
+    /// SHA-256 fingerprint of the server certificate to pin, and the name the PC knows this device by.</summary>
+    public static string BuildConfigCommand(string url, string token, string certSha256, string pcName, string deviceName)
     {
         var sb = new StringBuilder("am broadcast -n ").Append(Component).Append(" -a ").Append(Action);
         AppendString(sb, "event", "config");
@@ -61,8 +61,13 @@ public static class CompanionBroadcast
         AppendString(sb, "token", token);
         AppendString(sb, "fp", certSha256);
         AppendString(sb, "pc", pcName);
+        AppendString(sb, "device", deviceName);
         return sb.ToString();
     }
+
+    /// <summary>Lets the app toggle wireless debugging (<c>adb_wifi_enabled</c>). Shell can grant this
+    /// development permission; it's a no-op if already granted and fails harmlessly if the app isn't installed.</summary>
+    public const string GrantSecureSettingsCommand = "pm grant " + PackageName + " android.permission.WRITE_SECURE_SETTINGS";
 
     public static string ShellQuote(string value) => "'" + value.Replace("'", "'\\''") + "'";
 

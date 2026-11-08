@@ -23,6 +23,7 @@ import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
 import java.net.HttpURLConnection
@@ -39,6 +40,8 @@ class MainActivity : Activity() {
     private lateinit var batteryStatus: TextView
     private lateinit var adbTimeoutStatus: TextView
     private lateinit var serviceStatus: TextView
+    private lateinit var wifiDebugStatus: TextView
+    private lateinit var autoEnableSwitch: Switch
 
     private val jobs = linkedMapOf<String, RemoteJob>()
     private var feedActive: AtomicBoolean? = null
@@ -85,6 +88,19 @@ class MainActivity : Activity() {
             startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
         })
 
+        wifiDebugStatus = body()
+        column.addView(wifiDebugStatus)
+        autoEnableSwitch = Switch(this).apply {
+            text = "Turn wireless debugging back on when Wi-Fi connects"
+            textSize = 15f
+            setOnCheckedChangeListener { _, checked ->
+                WirelessDebugging.setAutoEnable(this@MainActivity, checked)
+                if (checked) CompanionJobService.scheduleEnable(this@MainActivity)
+            }
+        }
+        column.addView(autoEnableSwitch)
+        column.addView(button("Pair with PC over Wi-Fi") { startPairing() })
+
         serviceStatus = body()
         column.addView(serviceStatus)
         column.addView(button("Simulate a 10s sync") { simulateSync() })
@@ -105,6 +121,8 @@ class MainActivity : Activity() {
         PcConfig.prefs(this).registerOnSharedPreferenceChangeListener(prefsListener)
         refreshSetup()
         startFeed()
+        CompanionJobService.armWatch(this)
+        CompanionJobService.scheduleEnable(this)
     }
 
     override fun onPause() {
@@ -313,7 +331,30 @@ class MainActivity : Activity() {
                 "in developer options."
         }
 
+        wifiDebugStatus.text = buildString {
+            append(if (WirelessDebugging.canWrite(this@MainActivity)) {
+                "✓ Can control wireless debugging"
+            } else {
+                "✗ Can't control wireless debugging yet. AdbSync grants this automatically the next time it reaches this phone over adb."
+            })
+            append(if (WirelessDebugging.isEnabled(this@MainActivity)) " (currently on)" else " (currently off)")
+        }
+        autoEnableSwitch.isChecked = WirelessDebugging.autoEnable(this)
+
         serviceStatus.text = if (SyncService.isRunning) "Sync service running (locks held)" else "Sync service idle"
+    }
+
+    private fun startPairing() {
+        val config = PcConfig.load(this)
+        if (config?.deviceName == null) {
+            Toast.makeText(this, "Connect this phone to AdbSync over adb once first (USB works).", Toast.LENGTH_LONG).show()
+            return
+        }
+        if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            Toast.makeText(this, "Allow notifications first; the code is entered in a notification.", Toast.LENGTH_LONG).show()
+            return
+        }
+        Pairing.start(this)
     }
 
     private fun readAdbAuthTimeoutDisabled(): Boolean? = try {

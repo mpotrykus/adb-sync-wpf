@@ -34,10 +34,11 @@ public class CompanionBroadcastTests
     [Fact]
     public void BuildConfigCommand_IncludesUrlTokenAndPc()
     {
-        var command = CompanionBroadcast.BuildConfigCommand("https://192.168.0.10:47615", "abc123", "ff00", "DESKTOP-1");
+        var command = CompanionBroadcast.BuildConfigCommand("https://192.168.0.10:47615", "abc123", "ff00", "DESKTOP-1", "Mitch S23+");
 
         Assert.EndsWith(
-            "--es event 'config' --es url 'https://192.168.0.10:47615' --es token 'abc123' --es fp 'ff00' --es pc 'DESKTOP-1'",
+            "--es event 'config' --es url 'https://192.168.0.10:47615' --es token 'abc123' --es fp 'ff00' " +
+            "--es pc 'DESKTOP-1' --es device 'Mitch S23+'",
             command);
     }
 

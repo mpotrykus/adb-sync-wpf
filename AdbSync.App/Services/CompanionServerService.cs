@@ -1,4 +1,5 @@
 using AdbSync.Core.Services.Companion;
+using AdbSync.Core.Services.Devices;
 using AdbSync.Core.Services.Logging;
 using AdbSync.Core.Services.Orchestration.RunHistory;
 using Microsoft.AspNetCore.Builder;
@@ -26,6 +27,10 @@ public sealed record CompanionJobDto(
 
 public sealed record CompanionStatusDto(string Pc, IReadOnlyList<CompanionJobDto> Jobs);
 
+public sealed record CompanionEndpointReport(int Port);
+
+public sealed record CompanionPairRequest(int Port, string Code);
+
 /// <summary>LAN HTTPS feed for the companion app: a status snapshot, an SSE stream of job changes, the job's log
 /// tail, and run/stop actions. Every request needs the bearer token from <c>GlobalSettings.CompanionServerToken</c>.</summary>
 public sealed class CompanionServerService(
@@ -36,6 +41,7 @@ public sealed class CompanionServerService(
     IRunHistoryStore runHistory,
     ILiveRunLogSink liveLog,
     CompanionCertificateStore certificates,
+    IAdbDeviceResolver deviceResolver,
     ILogger<CompanionServerService> logger) : IHostedService
 {
     private static readonly TimeSpan PingInterval = TimeSpan.FromSeconds(20);
@@ -82,6 +88,8 @@ public sealed class CompanionServerService(
         app.MapGet("/api/jobs/{name}/log", GetLogAsync);
         app.MapPost("/api/jobs/{name}/run", RunJobAsync);
         app.MapPost("/api/jobs/{name}/stop", StopJobAsync);
+        app.MapPost("/api/devices/{name}/endpoint", ReportEndpointAsync);
+        app.MapPost("/api/devices/{name}/pair", PairDeviceAsync);
 
         try
         {
@@ -228,6 +236,66 @@ public sealed class CompanionServerService(
             }
         });
         return Results.Accepted();
+    }
+
+    /// <summary>The phone's wireless-debugging port after it (re)enabled wireless debugging. The IP comes from the
+    /// connection itself rather than the request body, so a report can only ever point at the phone that sent it.</summary>
+    private async Task<IResult> ReportEndpointAsync(string name, CompanionEndpointReport report, HttpContext ctx)
+    {
+        if (report.Port is < 1 or > 65535)
+            return Results.BadRequest("port out of range");
+
+        var config = await configService.GetAsync();
+        var device = config.Devices.FirstOrDefault(d => d.Name == name);
+        if (device is null)
+            return Results.NotFound();
+        if (device.Ip is null || ctx.Connection.RemoteIpAddress is not { } remote)
+            return Results.BadRequest("not a wireless device");
+
+        var ip = remote.MapToIPv4().ToString();
+        var hostPort = $"{ip}:{report.Port}";
+        if (device.CachedHostPort == hostPort && device.Ip == ip)
+            return Results.NoContent();
+
+        if (device.Ip != ip)
+            logger.LogInformation("Device '{Device}' reported a new IP {Ip} (was {OldIp})", name, ip, device.Ip);
+        logger.LogInformation("Device '{Device}' reported wireless debugging at {HostPort}", name, hostPort);
+        device.Ip = ip;
+        device.CachedHostPort = hostPort;
+        device.CachedAt = DateTimeOffset.UtcNow;
+        await configService.SaveAsync();
+        return Results.NoContent();
+    }
+
+    private async Task<IResult> PairDeviceAsync(string name, CompanionPairRequest request, HttpContext ctx)
+    {
+        if (request.Port is < 1 or > 65535 || request.Code is not { Length: 6 } code || !code.All(char.IsAsciiDigit))
+            return Results.BadRequest("expected a port and a 6-digit code");
+
+        var config = await configService.GetAsync();
+        var device = config.Devices.FirstOrDefault(d => d.Name == name);
+        if (device is null)
+            return Results.NotFound();
+        if (device.Ip is null || ctx.Connection.RemoteIpAddress is not { } remote)
+            return Results.BadRequest("not a wireless device");
+
+        device.Ip = remote.MapToIPv4().ToString();
+        logger.LogInformation("Companion app requested pairing for '{Device}' at {Ip}:{Port}", name, device.Ip, request.Port);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ctx.RequestAborted, _stopping.Token);
+        timeout.CancelAfter(TimeSpan.FromSeconds(30));
+        try
+        {
+            await deviceResolver.PairAtAsync(device, request.Port, code, timeout.Token);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !_stopping.IsCancellationRequested)
+        {
+            logger.LogWarning(ex, "Companion pairing for '{Device}' failed", name);
+            return Results.UnprocessableEntity(ex.Message);
+        }
+
+        await configService.SaveAsync();
+        logger.LogInformation("Paired with '{Device}'", name);
+        return Results.Ok();
     }
 
     private async Task<IResult> StopJobAsync(string name)

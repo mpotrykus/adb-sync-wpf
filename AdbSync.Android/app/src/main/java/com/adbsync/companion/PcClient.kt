@@ -63,6 +63,31 @@ class PcClient(private val config: PcConfig) {
 
     fun stop(job: String) = post("/api/jobs/${encode(job)}/stop")
 
+    fun reportEndpoint(device: String, port: Int): Int =
+        postJson("/api/devices/${encode(device)}/endpoint", JSONObject().put("port", port)).first
+
+    /** Returns the HTTP status and the PC's error text, if any. */
+    fun pair(device: String, port: Int, code: String): Pair<Int, String> =
+        postJson("/api/devices/${encode(device)}/pair", JSONObject().put("port", port).put("code", code), readTimeoutMs = 45_000)
+
+    private fun postJson(path: String, body: JSONObject, readTimeoutMs: Int = 10_000): Pair<Int, String> {
+        val bytes = body.toString().toByteArray(Charsets.UTF_8)
+        val conn = open(path, readTimeoutMs)
+        try {
+            conn.requestMethod = "POST"
+            conn.doOutput = true
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.setFixedLengthStreamingMode(bytes.size)
+            conn.outputStream.use { it.write(bytes) }
+            val code = conn.responseCode
+            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+            val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty().trim().removeSurrounding("\"")
+            return code to text
+        } finally {
+            conn.disconnect()
+        }
+    }
+
     fun log(job: String): String {
         val conn = open("/api/jobs/${encode(job)}/log", readTimeoutMs = 10_000)
         try {

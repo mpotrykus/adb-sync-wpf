@@ -29,6 +29,7 @@ public sealed class CompanionBroadcastService : BackgroundService
     private readonly ILogger<CompanionBroadcastService> _logger;
     private readonly Channel<CompanionEvent> _queue =
         Channel.CreateUnbounded<CompanionEvent>(new UnboundedChannelOptions { SingleReader = true });
+    private readonly HashSet<string> _granted = new(StringComparer.OrdinalIgnoreCase);
 
     public CompanionBroadcastService(
         IAdbClient adbClient, AppConfigService configService, CompanionCertificateStore certificates,
@@ -119,14 +120,25 @@ public sealed class CompanionBroadcastService : BackgroundService
             if (!settings.CompanionServerEnabled || string.IsNullOrEmpty(settings.CompanionServerToken))
                 return;
 
-            foreach (var device in await GetOnlineAsync(config.Devices, cts.Token))
+            var online = (await GetOnlineAsync(config.Devices, cts.Token)).ToList();
+            foreach (var deviceConfig in config.Devices)
             {
+                var device = online.FirstOrDefault(d =>
+                    string.Equals(d.Serial, deviceConfig.CachedHostPort, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(d.Serial, deviceConfig.Serial, StringComparison.OrdinalIgnoreCase));
+                if (device is null)
+                    continue;
+
                 var localIp = LocalAddressFor(device.Serial);
                 if (localIp is null)
                     continue;
+
+                if (_granted.Add(device.Serial))
+                    await ShellAsync(device, CompanionBroadcast.GrantSecureSettingsCommand, "pm grant", cts.Token);
+
                 var url = $"https://{localIp}:{settings.CompanionServerPort}";
                 var command = CompanionBroadcast.BuildConfigCommand(
-                    url, settings.CompanionServerToken, _certificates.Sha256Fingerprint, Environment.MachineName);
+                    url, settings.CompanionServerToken, _certificates.Sha256Fingerprint, Environment.MachineName, deviceConfig.Name);
                 await ShellAsync(device, command, "config", cts.Token);
             }
         }

@@ -60,8 +60,10 @@ public sealed class AdbDeviceResolver(
         {
             if (await IsOnlineAsync(device.CachedHostPort, ct))
                 return device.CachedHostPort;
+            if (await TryConnectCachedAsync(device, ct))
+                return device.CachedHostPort;
             _logger.LogDebug(
-                "Device '{Device}': cached host:port {HostPort} is no longer online, re-discovering", device.Name, device.CachedHostPort);
+                "Device '{Device}': cached host:port {HostPort} is no longer reachable, re-discovering", device.Name, device.CachedHostPort);
         }
 
         var existing = await FindOnlineHostPortAsync(device, ct);
@@ -134,11 +136,50 @@ public sealed class AdbDeviceResolver(
                 "No pairing announcement found. Open 'Pair device with pairing code' under Wireless debugging on the device and try again.");
         }
 
-        var response = await adbClient.PairAsync(device.Ip, candidate.Port, pairingCode, ct);
-        if (!response.Contains("Successfully paired", StringComparison.OrdinalIgnoreCase))
-            throw new DevicePairException(device.Name, device.Ip, response);
+        return await PairCoreAsync(device, device.Ip, candidate.Port, pairingCode, ct);
+    }
 
-        return $"{device.Ip}:{candidate.Port}";
+    public async Task<string> PairAtAsync(DeviceConfig device, int pairingPort, string pairingCode, CancellationToken ct = default)
+    {
+        if (device.Ip is null)
+            throw new InvalidOperationException($"Device '{device.Name}' has no IP configured; pairing only applies to WiFi devices.");
+
+        await adbServer.StartServerAsync(adbExecutablePath, restartServerIfNewer: false, ct);
+        return await PairCoreAsync(device, device.Ip, pairingPort, pairingCode, ct);
+    }
+
+    private async Task<string> PairCoreAsync(DeviceConfig device, string ip, int port, string pairingCode, CancellationToken ct)
+    {
+        var response = await adbClient.PairAsync(ip, port, pairingCode, ct);
+        if (!response.Contains("Successfully paired", StringComparison.OrdinalIgnoreCase))
+            throw new DevicePairException(device.Name, ip, response);
+
+        return $"{ip}:{port}";
+    }
+
+    private async Task<bool> TryConnectCachedAsync(DeviceConfig device, CancellationToken ct)
+    {
+        var hostPort = device.CachedHostPort!;
+        var (host, port) = SplitHostPort(hostPort);
+        if (host != device.Ip)
+            return false;
+
+        try
+        {
+            await adbClient.ConnectAsync(host, port, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogDebug(ex, "Device '{Device}': adb connect to cached {HostPort} threw", device.Name, hostPort);
+            return false;
+        }
+
+        if (!await IsOnlineAsync(hostPort, ct))
+            return false;
+
+        _logger.LogDebug("Device '{Device}': reconnected to cached {HostPort}", device.Name, hostPort);
+        Cache(device, hostPort);
+        return true;
     }
 
     private async Task<string?> FindOnlineHostPortAsync(DeviceConfig device, CancellationToken ct)

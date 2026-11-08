@@ -108,6 +108,31 @@ Phone:
 
 Verified from the PC: 401 without token, TLS 1.3, plain HTTP refused, served cert fingerprint equals the one provisioned to the S23, SSE shows per-device phases through a full run, run/log endpoints work, stop returns 409 for an idle job. On the S23 over pinned HTTPS: "Connected to MITCH-PC", live job list, "Run now" on Test ran it (PC log: "Companion app requested a run of 'Test'") and the row flipped to "Success", "Log" showed the run's log. Stop from the phone wasn't exercised on a live run (Test finishes in ~1.5s; Nomad is a real job).
 
+## Phase 3: as built (2026-11-08)
+
+- Provisioning now also sends the AdbSync device name (`--es device`) and, once per device per session, runs `pm grant com.adbsync.companion android.permission.WRITE_SECURE_SETTINGS` over adb. No manual USB step.
+- `POST /api/devices/{name}/endpoint {port}`: the IP is taken from the connection, not the body. Updates `DeviceConfig.Ip`/`CachedHostPort`/`CachedAt` and saves (no-op if unchanged).
+- `AdbDeviceResolver` now tries `adb connect` to the cached `ip:port` before falling back to mDNS, so a reported port is actually used.
+- Phone (`CompanionJobService`, `WirelessDebugging`):
+  - Job 1 (requires Wi-Fi): enable `adb_wifi_enabled` if allowed and off, then find our own `_adb-tls-connect._tcp` port via `NsdManager` (matched on our Wi-Fi IPv4) and report it.
+  - Job 3: content trigger on `Settings.Global adb_wifi_enabled`, re-armed every run. Off while not on Wi-Fi schedules job 1 (re-enable on rejoin); off while on Wi-Fi is treated as the user's choice; on schedules a port report.
+  - Job 4: periodic (15 min), Wi-Fi, persisted; reports the port.
+  - `BootReceiver` re-arms on boot and app update; `MainActivity` re-arms on resume. Toggle "Turn wireless debugging back on when Wi-Fi connects" (default on).
+
+Findings on the S23 (Android 17):
+- **Android 17 re-enables wireless debugging by itself** on trusted networks (`AdbWifiNetworkMonitor ... Attempting to start adb over Wi-Fi`), on a new port each time, and keeps `adb_wifi_enabled=1` throughout, so job 3 never fires there. The PC's own mDNS rediscovery found the new port within ~20-40s. The re-enable path (job 3 → job 1) is for Android ≤16 and is untested.
+- A `ConnectivityManager.registerNetworkCallback(PendingIntent)` registration did not survive the app process being killed on this device, so it was replaced with the jobs above.
+- Port reports verified (HTTP 204) after install, on resume, and when wireless debugging toggled.
+
+## Phase 4: as built (2026-11-08)
+
+- "Pair with PC over Wi-Fi" posts a notification with a RemoteInput and opens developer options (highlighting `toggle_adb_wireless`). The user opens "Pair device with pairing code" and types the code into the notification.
+- `PairingReceiver` validates the 6 digits and schedules job 2: find our own `_adb-tls-pairing._tcp` port via NSD, `POST /api/devices/{name}/pair {port, code}`; the PC runs `IAdbDeviceResolver.PairAtAsync` (new: explicit port, no mDNS) with a 30s timeout and returns 422 with adb's message on failure. On success the phone reports its connect port.
+- Needs the phone to have been provisioned once (it needs the PC URL/token/fingerprint), so it covers re-pairing after the 7-day key revocation or a cleared key, not a brand-new phone with no adb at all.
+- Verified on the S23: a wrong code returned "Wrong password or connection was dropped"; the retry paired ("Paired with 'Mitch S23+'").
+
+Known flaky test (pre-existing, unrelated): `SyncJobRunnerTests.RunAsync_FileFromOneDevicePushedToTwoOtherDevices_ReportsUniqueFileCountNotPerDeviceSum` failed once in a full run and passed on 4 reruns.
+
 ## Open questions
 
 - Device model and Android version to target first.
