@@ -11,6 +11,12 @@ object Protocol {
     const val EXTRA_DEVICE = "device"
     const val EXTRA_MESSAGE = "message"
     const val EXTRA_PUSHED = "pushed"
+    const val EXTRA_URL = "url"
+    const val EXTRA_TOKEN = "token"
+    const val EXTRA_FP = "fp"
+    const val EXTRA_PC = "pc"
+
+    const val EVENT_CONFIG = "config"
 
     const val EVENT_PHASE = "phase"
     const val EVENT_QUEUED = "queued"

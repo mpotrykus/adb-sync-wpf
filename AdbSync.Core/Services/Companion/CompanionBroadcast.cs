@@ -51,6 +51,19 @@ public static class CompanionBroadcast
         return sb.ToString();
     }
 
+    /// <summary>Tells the app where to reach the PC's companion server, which bearer token to send, and the
+    /// SHA-256 fingerprint of the server certificate to pin.</summary>
+    public static string BuildConfigCommand(string url, string token, string certSha256, string pcName)
+    {
+        var sb = new StringBuilder("am broadcast -n ").Append(Component).Append(" -a ").Append(Action);
+        AppendString(sb, "event", "config");
+        AppendString(sb, "url", url);
+        AppendString(sb, "token", token);
+        AppendString(sb, "fp", certSha256);
+        AppendString(sb, "pc", pcName);
+        return sb.ToString();
+    }
+
     public static string ShellQuote(string value) => "'" + value.Replace("'", "'\\''") + "'";
 
     private static void AppendString(StringBuilder sb, string key, string value) =>

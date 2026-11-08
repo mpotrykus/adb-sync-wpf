@@ -2,6 +2,7 @@ using AdbSync.App.Services;
 using AdbSync.App.Tray;
 using AdbSync.App.ViewModels;
 using AdbSync.App.Views;
+using AdbSync.Core.Services.Companion;
 using AdbSync.Core.Services.Config;
 using AdbSync.Core.Services.Devices;
 using AdbSync.Core.Services.Logging;
@@ -153,12 +154,15 @@ public partial class App : Application
         services.AddSingleton<ILiveRunLogSink, LiveRunLogSink>();
 
         services.AddSingleton<DashboardViewModel>();
+        services.AddSingleton<CompanionCertificateStore>();
         services.AddSingleton<CompanionBroadcastService>();
         services.AddHostedService(sp => sp.GetRequiredService<CompanionBroadcastService>());
+        services.AddSingleton<JobStatusTracker>();
         services.AddSingleton<ISyncEventSink>(sp => new CompositeSyncEventSink(
         [
             sp.GetRequiredService<DashboardViewModel>(),
             sp.GetRequiredService<CompanionBroadcastService>().Sink,
+            sp.GetRequiredService<JobStatusTracker>(),
         ]));
         services.AddSingleton<SyncJobRunner>();
         services.AddSingleton<JobRunService>();
@@ -168,6 +172,9 @@ public partial class App : Application
 
         services.AddSingleton<ChangeWatchHostedService>();
         services.AddHostedService(sp => sp.GetRequiredService<ChangeWatchHostedService>());
+
+        services.AddSingleton<CompanionServerService>();
+        services.AddHostedService(sp => sp.GetRequiredService<CompanionServerService>());
 
         services.AddSingleton<TrayIconService>();
         services.AddTransient<DashboardWindow>();

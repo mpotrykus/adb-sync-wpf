@@ -89,6 +89,25 @@ End-to-end verified 2026-11-08 with the dev build: "Run Now" on the Test job lit
 
 Not yet done: Tab S9 (Android 16), a settings UI toggle, and confirming the DUMP guard rejects a non-shell sender. Both phones in a multi-device job get the same message, so the device label is whichever device last changed phase.
 
+## Phase 2: as built (2026-11-08)
+
+PC:
+- `JobStatusTracker` (Core/Services/Companion): thread-safe per-job snapshot (running, phase, per-device phases, last result), seeded from run history at server start.
+- `CompanionServerService` (App/Services): Kestrel (`Microsoft.AspNetCore.App` framework reference) on `0.0.0.0:CompanionServerPort` (default 47615), HTTPS only. Endpoints, all needing `Authorization: Bearer <CompanionServerToken>`:
+  - `GET /api/status`: `{pc, jobs:[{name, enabled, running, phase, devices:[{device, phase}], lastResult, lastFailed, lastResultAt}]}`
+  - `GET /api/events`: SSE. `snapshot` event (same shape as status) on connect, then a `job` event per change, `: ping` every 20s.
+  - `GET /api/jobs/{name}/log`: last 200 lines (live log while running, otherwise the latest run's).
+  - `POST /api/jobs/{name}/run` (202) and `POST /api/jobs/{name}/stop` (202, or 409 if not running).
+- TLS: `CompanionCertificateStore` creates a self-signed ECDSA P-256 cert once (`%LOCALAPPDATA%\AdbSync\companion-cert.pfx`, 10 years, regenerated if missing, corrupt or within 30 days of expiry).
+- Provisioning: `CompanionBroadcastService` sends `--es event config --es url https://<pc-ip>:<port> --es token <t> --es fp <cert sha256> --es pc <machine>` to every configured device adb has online, 10s after start and every 5 min. The PC IP is the local address of the route to the device.
+- Token generated on first start into `GlobalSettings.CompanionServerToken`.
+
+Phone:
+- `PcConfig` stores url/token/fingerprint (https only). `PcClient` pins the exact leaf certificate (SHA-256) and skips hostname checks (the cert can't name a DHCP IP). Cleartext is disabled.
+- `MainActivity` streams `/api/events` while in the foreground (reconnect with 1s→30s backoff) and shows each job with Run now / Stop (confirms when pushing) / Log.
+
+Verified from the PC: 401 without token, TLS 1.3, plain HTTP refused, served cert fingerprint equals the one provisioned to the S23, SSE shows per-device phases through a full run, run/log endpoints work, stop returns 409 for an idle job. On the S23 over pinned HTTPS: "Connected to MITCH-PC", live job list, "Run now" on Test ran it (PC log: "Companion app requested a run of 'Test'") and the row flipped to "Success", "Log" showed the run's log. Stop from the phone wasn't exercised on a live run (Test finishes in ~1.5s; Nomad is a real job).
+
 ## Open questions
 
 - Device model and Android version to target first.

@@ -32,6 +32,16 @@ public class CompanionBroadcastTests
     }
 
     [Fact]
+    public void BuildConfigCommand_IncludesUrlTokenAndPc()
+    {
+        var command = CompanionBroadcast.BuildConfigCommand("https://192.168.0.10:47615", "abc123", "ff00", "DESKTOP-1");
+
+        Assert.EndsWith(
+            "--es event 'config' --es url 'https://192.168.0.10:47615' --es token 'abc123' --es fp 'ff00' --es pc 'DESKTOP-1'",
+            command);
+    }
+
+    [Fact]
     public void BuildCommand_FlattensAndTruncatesMessage()
     {
         var message = "line one\r\nline two " + new string('x', 400);

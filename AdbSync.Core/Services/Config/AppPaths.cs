@@ -13,6 +13,7 @@ public sealed class AppPaths(string root)
     public string CheckpointsDir => Path.Combine(Root, "checkpoints");
     public string RunHistoryDbFile => Path.Combine(Root, "run-history.db");
     public string LocalStateFile => Path.Combine(Root, "local-state.json");
+    public string CompanionCertificateFile => Path.Combine(Root, "companion-cert.pfx");
 
     public static AppPaths Default { get; } = new(
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AdbSync"));

@@ -62,6 +62,15 @@ public sealed class GlobalSettings
     /// devices that are already connected. Harmless on devices without the app installed.</summary>
     public bool CompanionBroadcastsEnabled { get; set; } = true;
 
+    /// <summary>Serves job status and run/stop actions to the companion app over the LAN (HTTP + SSE). The
+    /// phone learns the address and <see cref="CompanionServerToken"/> automatically over adb. Restart to apply.</summary>
+    public bool CompanionServerEnabled { get; set; } = true;
+
+    public int CompanionServerPort { get; set; } = 47615;
+
+    /// <summary>Bearer token the companion app must send. Generated on first server start when empty.</summary>
+    public string? CompanionServerToken { get; set; }
+
     /// <summary>True if the given time falls within the configured quiet hours window.</summary>
     public bool IsQuietNow(TimeOnly? nowOverride = null)
     {
