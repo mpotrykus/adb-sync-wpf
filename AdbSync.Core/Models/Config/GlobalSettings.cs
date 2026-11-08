@@ -58,6 +58,10 @@ public sealed class GlobalSettings
     /// once at the next opportunity instead of silently rolling forward to the next scheduled occurrence.</summary>
     public bool RunMissedSchedules { get; set; } = true;
 
+    /// <summary>Sends job progress to the AdbSync Companion Android app (via <c>adb shell am broadcast</c>) on
+    /// devices that are already connected. Harmless on devices without the app installed.</summary>
+    public bool CompanionBroadcastsEnabled { get; set; } = true;
+
     /// <summary>True if the given time falls within the configured quiet hours window.</summary>
     public bool IsQuietNow(TimeOnly? nowOverride = null)
     {

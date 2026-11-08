@@ -153,7 +153,13 @@ public partial class App : Application
         services.AddSingleton<ILiveRunLogSink, LiveRunLogSink>();
 
         services.AddSingleton<DashboardViewModel>();
-        services.AddSingleton<ISyncEventSink>(sp => sp.GetRequiredService<DashboardViewModel>());
+        services.AddSingleton<CompanionBroadcastService>();
+        services.AddHostedService(sp => sp.GetRequiredService<CompanionBroadcastService>());
+        services.AddSingleton<ISyncEventSink>(sp => new CompositeSyncEventSink(
+        [
+            sp.GetRequiredService<DashboardViewModel>(),
+            sp.GetRequiredService<CompanionBroadcastService>().Sink,
+        ]));
         services.AddSingleton<SyncJobRunner>();
         services.AddSingleton<JobRunService>();
 

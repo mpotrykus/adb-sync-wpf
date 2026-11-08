@@ -34,6 +34,8 @@ public sealed class SyncJobRunner(
     ILiveRunLogSink? liveLog = null,
     IDeviceAccessGate? deviceAccessGate = null)
 {
+    public const string AlreadyRunningReason = "already running";
+
     private readonly ILogger<SyncJobRunner> _logger = new RunCapturingLogger<SyncJobRunner>(logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<SyncJobRunner>.Instance);
     private readonly IDeviceAccessGate _deviceAccessGate = deviceAccessGate ?? new DeviceAccessGate();
 
@@ -74,7 +76,7 @@ public sealed class SyncJobRunner(
             if (@lock is null)
             {
                 _logger.LogInformation("Job '{Job}' skipped - already running", job.Name);
-                events.JobSkipped(job.Name, "already running");
+                events.JobSkipped(job.Name, AlreadyRunningReason);
                 return await FinishAsync(JobRunOutcome.Skipped);
             }
 
