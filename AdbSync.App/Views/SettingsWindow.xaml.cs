@@ -34,6 +34,10 @@ public partial class SettingsWindow : Window
 
         RunMissedSchedulesBox.IsChecked = settings.RunMissedSchedules;
 
+        CompanionBroadcastsEnabledBox.IsChecked = settings.CompanionBroadcastsEnabled;
+        CompanionServerEnabledBox.IsChecked = settings.CompanionServerEnabled;
+        CompanionServerPortBox.Text = settings.CompanionServerPort.ToString();
+
         StaleLockHoursBox.Text = settings.StaleLockHours.ToString();
         LogRetentionDaysBox.Text = settings.LogRetentionDays.ToString();
         PerLogFileMaxMegabytesBox.Text = (settings.PerLogFileMaxBytes / (1024 * 1024)).ToString();
@@ -93,6 +97,11 @@ public partial class SettingsWindow : Window
             _config.Settings.QuietHoursEnd = quietEnd;
 
         _config.Settings.RunMissedSchedules = RunMissedSchedulesBox.IsChecked == true;
+
+        _config.Settings.CompanionBroadcastsEnabled = CompanionBroadcastsEnabledBox.IsChecked == true;
+        _config.Settings.CompanionServerEnabled = CompanionServerEnabledBox.IsChecked == true;
+        if (int.TryParse(CompanionServerPortBox.Text, out var companionPort) && companionPort is >= 1024 and <= 65535)
+            _config.Settings.CompanionServerPort = companionPort;
 
         if (int.TryParse(StaleLockHoursBox.Text, out var staleHours) && staleHours > 0)
             _config.Settings.StaleLockHours = staleHours;

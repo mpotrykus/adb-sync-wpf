@@ -91,6 +91,32 @@
                     </Border>
 
                     <Border Style="{StaticResource CardBorder}">
+                        <StackPanel>
+                            <TextBlock Text="Companion App" Style="{StaticResource SectionLabel}"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                <CheckBox x:Name="CompanionBroadcastsEnabledBox" Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"/>
+                                <TextBlock Text="Show sync progress on connected phones" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                <CheckBox x:Name="CompanionServerEnabledBox" Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"/>
+                                <TextBlock VerticalAlignment="Center" Margin="10,0,0,0">
+                                    <Run Text="Let the app view and run jobs over Wi-Fi "/><Run Text="(restart to apply)" Style="{StaticResource DescriptorRun}"/>
+                                </TextBlock>
+                            </StackPanel>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="90"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" VerticalAlignment="Center">
+                                    <Run Text="Server port "/><Run Text="(restart to apply)" Style="{StaticResource DescriptorRun}"/>
+                                </TextBlock>
+                                <TextBox Grid.Column="1" x:Name="CompanionServerPortBox" controls:TextBoxHelper.Placeholder="47615"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource CardBorder}">
                         <Expander Header="Advanced" IsExpanded="False">
                             <StackPanel>
                                 <Border Style="{StaticResource NestedSection}">
