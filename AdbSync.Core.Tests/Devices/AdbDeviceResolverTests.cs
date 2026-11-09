@@ -65,6 +65,58 @@ public class AdbDeviceResolverTests
     }
 
     [Fact]
+    public async Task EnsureConnectedAsync_CachedHostPortOffline_ReconnectsDirectlyWithoutMdns()
+    {
+        var device = new DeviceConfig { Name = "S23+", Ip = "192.168.0.40", CachedHostPort = "192.168.0.40:41000" };
+        _adbClient.GetDevicesAsync(Arg.Any<CancellationToken>())
+            .Returns(
+                Devices(),
+                Devices(new DeviceData { Serial = "192.168.0.40:41000", State = DeviceState.Online }));
+
+        var result = await _resolver.EnsureConnectedAsync(device);
+
+        Assert.Equal("192.168.0.40:41000", result);
+        await _adbClient.Received(1).ConnectAsync("192.168.0.40", 41000, Arg.Any<CancellationToken>());
+        await _mdns.DidNotReceiveWithAnyArgs().BrowseAsync(default!, default, default);
+    }
+
+    [Fact]
+    public async Task EnsureConnectedAsync_CachedHostPortUnreachable_FallsBackToMdns()
+    {
+        var device = new DeviceConfig { Name = "S23+", Ip = "192.168.0.40", CachedHostPort = "192.168.0.40:39999" };
+        _adbClient.GetDevicesAsync(Arg.Any<CancellationToken>())
+            .Returns(
+                Devices(),
+                Devices(),
+                Devices(new DeviceData { Serial = "192.168.0.40:41000", State = DeviceState.Online }));
+        _adbClient.ConnectAsync("192.168.0.40", 39999, Arg.Any<CancellationToken>())
+            .Returns<string>(_ => throw new IOException("refused"));
+        _mdns.BrowseAsync(Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns(new List<MdnsAnnouncement>
+            {
+                new("instance", "host.local", 41000, [IPAddress.Parse("192.168.0.40")]),
+            });
+
+        var result = await _resolver.EnsureConnectedAsync(device);
+
+        Assert.Equal("192.168.0.40:41000", result);
+        Assert.Equal("192.168.0.40:41000", device.CachedHostPort);
+    }
+
+    [Fact]
+    public async Task PairAtAsync_UsesGivenPortWithoutMdns()
+    {
+        var device = new DeviceConfig { Name = "S23+", Ip = "192.168.0.40" };
+        _adbClient.PairAsync("192.168.0.40", 40111, "123456", Arg.Any<CancellationToken>())
+            .Returns("Successfully paired to 192.168.0.40:40111");
+
+        var result = await _resolver.PairAtAsync(device, 40111, "123456");
+
+        Assert.Equal("192.168.0.40:40111", result);
+        await _mdns.DidNotReceiveWithAnyArgs().BrowseAsync(default!, default, default);
+    }
+
+    [Fact]
     public async Task EnsureConnectedAsync_AlreadyConnectedViaAdbDevices_CachesAndReturnsWithoutMdns()
     {
         var device = new DeviceConfig { Name = "S23+", Ip = "192.168.0.40" };

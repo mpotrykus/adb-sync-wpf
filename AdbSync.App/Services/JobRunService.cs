@@ -29,7 +29,7 @@ public sealed class JobRunService(
 
     private readonly ConcurrentDictionary<int, CancellationTokenSource> _runningJobs = new();
 
-    public async Task<JobRunResult> RunJobAsync(int jobIndex, bool forcePush = false, CancellationToken ct = default)
+    public async Task<JobRunResult> RunJobAsync(int jobIndex, bool forcePush = false, CancellationToken ct = default, bool dryRun = false)
     {
         var config = await configService.GetAsync();
         var job = config.Jobs[jobIndex];
@@ -47,11 +47,14 @@ public sealed class JobRunService(
 
             try
             {
-                job.Schedule.LastRunAt = DateTimeOffset.Now;
-                await configService.SaveAsync();
+                if (!dryRun)
+                {
+                    job.Schedule.LastRunAt = DateTimeOffset.Now;
+                    await configService.SaveAsync();
+                }
 
                 var resume = await checkpoints.LoadAsync(job.Name, cts.Token);
-                var result = await runner.RunAsync(job, jobIndex, config.Devices, config.Settings, resume, forcePush, cts.Token);
+                var result = await runner.RunAsync(job, jobIndex, config.Devices, config.Settings, resume, forcePush, cts.Token, dryRun);
 
                 if (result.Outcome is JobRunOutcome.Completed or JobRunOutcome.CompletedNoChanges)
                     job.Schedule.LastSuccessAt = DateTimeOffset.Now;

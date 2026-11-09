@@ -3,11 +3,14 @@ using AdbSync.App.ViewModels;
 using AdbSync.Core.Models.Config;
 using AdbSync.Core.Models.Orchestration;
 using AdbSync.Core.Models.Orchestration.RunHistory;
+using AdbSync.Core.Services.Companion;
 using AdbSync.Core.Services.Config;
 using AdbSync.Core.Services.Devices;
 using AdbSync.Core.Services.Logging;
+using AdbSync.Core.Services.Merge;
 using AdbSync.Core.Services.Orchestration.RunHistory;
 using AdbSync.Core.Services.Transfer;
+using Microsoft.Extensions.DependencyInjection;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
@@ -30,10 +33,12 @@ public partial class DashboardWindow : Window
     private readonly DashboardViewModel _viewModel;
     private readonly IRunHistoryStore _historyStore;
     private readonly ILiveRunLogSink _liveLogSink;
+    private readonly ILiveRunStepSink _liveStepSink;
     private readonly IAdbDeviceResolver _deviceResolver;
     private readonly IDeviceChangeWatcher _changeWatcher;
     private readonly IRemoteFileSystemFactory _remoteFileSystemFactory;
     private readonly IDevicePackageLister _packageLister;
+    private readonly AppGateService _appGate;
     private readonly DispatcherTimer _relativeTimeTimer;
 
     private const string NewJobKey = "\0new-job";
@@ -47,8 +52,9 @@ public partial class DashboardWindow : Window
 
     public DashboardWindow(
         AppConfigService configService, DashboardUiStateStore uiStateStore, JobRunService jobRunService, ChangeWatchHostedService changeWatchHostedService, DashboardViewModel viewModel,
-        IRunHistoryStore historyStore, ILiveRunLogSink liveLogSink, IAdbDeviceResolver deviceResolver, IDeviceChangeWatcher changeWatcher,
-        IRemoteFileSystemFactory remoteFileSystemFactory, IDevicePackageLister packageLister)
+        IRunHistoryStore historyStore, ILiveRunLogSink liveLogSink, ILiveRunStepSink liveStepSink, IAdbDeviceResolver deviceResolver, IDeviceChangeWatcher changeWatcher,
+        IRemoteFileSystemFactory remoteFileSystemFactory, IDevicePackageLister packageLister,
+        AppGateService appGate, JobStatusTracker statusTracker)
     {
         InitializeComponent();
         _configService = configService;
@@ -58,11 +64,14 @@ public partial class DashboardWindow : Window
         _viewModel = viewModel;
         _historyStore = historyStore;
         _liveLogSink = liveLogSink;
+        _liveStepSink = liveStepSink;
         _deviceResolver = deviceResolver;
         _changeWatcher = changeWatcher;
         _remoteFileSystemFactory = remoteFileSystemFactory;
         _packageLister = packageLister;
+        _appGate = appGate;
         DataContext = viewModel;
+        statusTracker.Changed += status => Dispatcher.InvokeAsync(() => RefreshOutOfSyncAsync(status.Name));
 
         _relativeTimeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _relativeTimeTimer.Tick += (_, _) =>
@@ -113,6 +122,13 @@ public partial class DashboardWindow : Window
         _viewModel.SyncFrom(config);
         await PopulateLastOutcomesAsync(config);
         await PopulateCheckpointsAsync(config);
+        await PopulatePendingConflictsAsync();
+        foreach (var job in config.Jobs)
+        {
+            if (_viewModel.Jobs.FirstOrDefault(j => j.Name == job.Name) is { } vm)
+                vm.HasLinkedApp = job.AppPackage is not null;
+            await RefreshOutOfSyncAsync(job.Name);
+        }
 
         ApplySort();
     }
@@ -172,6 +188,15 @@ public partial class DashboardWindow : Window
         }
     }
 
+    private async Task RefreshOutOfSyncAsync(string jobName)
+    {
+        if (_viewModel.Jobs.FirstOrDefault(j => j.Name == jobName) is not { } vm)
+            return;
+
+        var stale = await _appGate.AssessAsync(jobName);
+        vm.OutOfSyncSummary = stale.Count == 0 ? null : string.Join("\n", stale.Select(s => $"{s.Device} is out of sync: {s.Reason}"));
+    }
+
     private async Task PopulateLastOutcomesAsync(AppConfig config)
     {
         foreach (var job in config.Jobs)
@@ -194,6 +219,15 @@ public partial class DashboardWindow : Window
         }
     }
 
+    private async Task PopulatePendingConflictsAsync()
+    {
+        var counts = (await App.Services.GetRequiredService<IPendingConflictStore>().ListAsync())
+            .GroupBy(p => p.JobName)
+            .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
+        foreach (var vm in _viewModel.Jobs)
+            vm.PendingConflictCount = counts.GetValueOrDefault(vm.Name);
+    }
+
     private async Task PopulateCheckpointsAsync(AppConfig config)
     {
         var checkpoints = await _jobRunService.GetAllCheckpointsAsync();
@@ -211,14 +245,8 @@ public partial class DashboardWindow : Window
     private static void ApplyCheckpoint(JobStatusViewModel vm, SyncCheckpoint checkpoint, AppConfig config)
     {
         var job = config.Jobs.FirstOrDefault(j => j.Name == vm.Name);
-        var totalDevices = job?.Devices.Count ?? 0;
-
-        var where = totalDevices > 0
-            ? $"{checkpoint.Phase} ({checkpoint.CompletedDevices.Count}/{totalDevices} devices done)"
-            : checkpoint.Phase.ToString();
-
         vm.HasCheckpoint = true;
-        vm.CheckpointSummary = $"Interrupted during {where} - saved {JobStatusViewModel.FormatRelative(checkpoint.SavedAt)}";
+        vm.CheckpointSummary = CheckpointSummaryFormatter.Format(checkpoint, job?.Devices.Count ?? 0);
     }
 
     private static void ClearCheckpoint(JobStatusViewModel vm)
@@ -372,6 +400,32 @@ public partial class DashboardWindow : Window
             ClearCheckpoint(vm);
     }
 
+    private void ResolveConflicts_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: JobStatusViewModel vm })
+            return;
+
+        var services = App.Services;
+        var window = new ConflictsWindow(
+            services.GetRequiredService<IPendingConflictStore>(), services.GetRequiredService<IConflictResolver>(),
+            _configService, _jobRunService, vm.Name) { Owner = this };
+        window.Closed += async (_, _) => await PopulatePendingConflictsAsync();
+        window.Show();
+    }
+
+    private async void DryRun_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: JobStatusViewModel vm })
+            return;
+        if (vm.IsRunning)
+            return;
+
+        var config = await _configService.GetAsync();
+        var index = config.Jobs.FindIndex(j => j.Name == vm.Name);
+        if (index >= 0)
+            _ = _jobRunService.RunJobAsync(index, dryRun: true);
+    }
+
     private async void StopNow_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: JobStatusViewModel vm })
@@ -413,6 +467,68 @@ public partial class DashboardWindow : Window
 
         await _jobRunService.DiscardCheckpointAsync(vm.Name);
         ClearCheckpoint(vm);
+        await RefreshOutOfSyncAsync(vm.Name);
+    }
+
+    private async void OpenApp_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: JobStatusViewModel vm })
+            return;
+
+        var config = await _configService.GetAsync();
+        var job = config.Jobs.FirstOrDefault(j => j.Name == vm.Name);
+        if (job?.AppPackage is null || job.Devices.Count == 0)
+            return;
+
+        var deviceName = job.Devices[0].DeviceName;
+        if (job.Devices.Count > 1)
+        {
+            var picker = new SelectDeviceWindow(job.Devices.Select(b => b.DeviceName).ToList()) { Owner = this };
+            if (picker.ShowDialog() != true || picker.SelectedDeviceName is not { } picked)
+                return;
+            deviceName = picked;
+        }
+
+        var stale = (await _appGate.AssessAsync(vm.Name)).FirstOrDefault(s => s.Device == deviceName);
+        if (stale is not null && !ConfirmDialog.Show(this, "Open App",
+                $"{deviceName} is out of sync: {stale.Reason}.\n\n" +
+                "Opening the app there and saving now can overwrite changes from the other devices.",
+                confirmText: "Open Anyway"))
+            return;
+
+        try
+        {
+            if (!await _appGate.OpenAppAsync(vm.Name, deviceName))
+                MessageBox.Show(this, $"Couldn't open {job.AppPackage} on {deviceName}.", "AdbSync", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, $"Couldn't open {job.AppPackage} on {deviceName}: {ex.Message}", "AdbSync", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private async void CloseAndSync_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: JobStatusViewModel vm })
+            return;
+        if (vm.IsRunning && vm.OutOfSyncSummary is null)
+            return;
+
+        var confirmed = ConfirmDialog.Show(this, "Close App and Sync",
+            $"This force-closes the app linked to '{vm.Name}' on every device that has it open, then syncs.\n\n" +
+            "Anything the app hasn't saved yet is lost.",
+            confirmText: "Close and Sync");
+        if (!confirmed)
+            return;
+
+        try
+        {
+            await _appGate.CloseAppAndSyncAsync(vm.Name, null);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, $"Couldn't close the app and sync: {ex.Message}", "AdbSync", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
     }
 
     private async void ForcePush_Click(object sender, RoutedEventArgs e)
@@ -551,7 +667,7 @@ public partial class DashboardWindow : Window
             return;
         }
 
-        var window = new RunHistoryWindow(_historyStore, vm.Name, _viewModel, _liveLogSink) { Owner = this };
+        var window = new RunHistoryWindow(_historyStore, vm.Name, _viewModel, _liveLogSink, _liveStepSink) { Owner = this };
         _openRunHistoryWindows[vm.Name] = window;
         window.Closed += (_, _) => _openRunHistoryWindows.Remove(vm.Name);
         window.Show();

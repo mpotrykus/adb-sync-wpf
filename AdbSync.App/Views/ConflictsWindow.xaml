@@ -1,0 +1,46 @@
+<Window x:Class="AdbSync.App.Views.ConflictsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        xmlns:interop="clr-namespace:AdbSync.App.Interop"
+        xmlns:controls="clr-namespace:AdbSync.App.Controls"
+        interop:AcrylicEffect.Enabled="True"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        Title="Resolve Conflicts" Icon="/Assets/app.ico" Height="640" Width="720" MinHeight="420" MinWidth="560" WindowStartupLocation="CenterOwner">
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="36" ResizeBorderThickness="6" GlassFrameThickness="0" CornerRadius="8" UseAeroCaptionButtons="False"/>
+    </shell:WindowChrome.WindowChrome>
+    <Border Style="{StaticResource WindowRootBorder}">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <controls:TitleBar Grid.Row="0"/>
+
+            <Grid Grid.Row="1" Margin="20">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <TextBlock Grid.Row="0" x:Name="HeaderText" Style="{StaticResource SectionLabel}"/>
+                <TextBlock Grid.Row="1" Margin="0,4,0,12" TextWrapping="Wrap" Style="{StaticResource CaptionText}"
+                           Text="These files changed on a device and on the PC since they last synced, so they were left alone. Pick which version to keep; the other one is backed up."/>
+
+                <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <StackPanel x:Name="BulkPanel" Orientation="Horizontal" Margin="0,0,0,12">
+                            <Button Style="{StaticResource PrimaryButton}" Content="Keep newest for all" Click="KeepNewestAll_Click" Margin="0,0,8,0"/>
+                            <Button Style="{StaticResource RowButton}" Content="Keep PC's for all" Click="KeepPcAll_Click" Padding="12,0"/>
+                        </StackPanel>
+                        <StackPanel x:Name="ItemsPanel"/>
+                        <TextBlock x:Name="EmptyText" Text="Nothing to resolve." Style="{StaticResource CaptionText}" Visibility="Collapsed"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>

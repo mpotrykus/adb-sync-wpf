@@ -21,6 +21,10 @@ public interface IAdbDeviceResolver
     /// </summary>
     Task<string> PairAsync(DeviceConfig device, string pairingCode, CancellationToken ct = default);
 
+    /// <summary>Same handshake as <see cref="PairAsync"/>, against a pairing port already known (reported by the
+    /// companion app) instead of one discovered via mDNS.</summary>
+    Task<string> PairAtAsync(DeviceConfig device, int pairingPort, string pairingCode, CancellationToken ct = default);
+
     /// <summary>
     /// Drops the adb-server-level connection to <paramref name="device"/> if <see cref="DeviceConfig.CachedHostPort"/>
     /// is set, and clears it so the next <see cref="EnsureConnectedAsync"/> reconnects from scratch. No-op for USB

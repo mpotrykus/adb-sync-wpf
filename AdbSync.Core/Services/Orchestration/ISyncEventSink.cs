@@ -23,6 +23,9 @@ public interface ISyncEventSink
     /// <summary>Reported once per device after a merge that found conflicts - conflict losers are always backed up to disk, never silently discarded.</summary>
     void MergeConflictsDetected(string jobName, string deviceName, int conflictCount);
 
+    /// <summary>A merge held back <paramref name="newCount"/> conflicts that need a person to pick a version (<paramref name="totalPending"/> are waiting for the job in all).</summary>
+    void ConflictsPending(string jobName, string deviceName, int newCount, int totalPending) { }
+
     /// <summary>An OnChange watcher started for this device binding; <paramref name="liveWatch"/> is false if it's polling instead.</summary>
     void WatchStarted(string jobName, string deviceName, bool liveWatch);
 
@@ -34,4 +37,10 @@ public interface ISyncEventSink
 
     /// <summary>A change was observed on a device; the job run it triggers (after the debounce window) is reported separately via the usual PhaseChanged/JobCompleted calls.</summary>
     void ChangeDetected(string jobName, string deviceName);
+
+    /// <summary>A run is about to connect to devices. <paramref name="dryRun"/> runs never merge or push, so they must not count as having caught anything up.</summary>
+    void RunStarted(string jobName, bool dryRun) { }
+
+    /// <summary>The job's linked app is running on <paramref name="deviceName"/>, so its sync can't proceed (a scheduled run is skipped, a change-triggered one waits). That device may hold edits the others haven't received.</summary>
+    void JobBlockedByApp(string jobName, string deviceName) { }
 }

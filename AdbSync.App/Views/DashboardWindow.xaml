@@ -66,6 +66,10 @@
                                                        Foreground="#FFC107" Margin="6,0,0,0" VerticalAlignment="Center"
                                                        Visibility="{Binding NeedsAttention, Converter={StaticResource BoolToVisibility}}"
                                                        ToolTip="Needs attention - see LAST RESULT"/>
+                                            <TextBlock Text="&#xE895;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="13"
+                                                       Foreground="#FF8A65" Margin="6,0,0,0" VerticalAlignment="Center"
+                                                       Visibility="{Binding IsOutOfSync, Converter={StaticResource BoolToVisibility}}"
+                                                       ToolTip="{Binding OutOfSyncSummary}"/>
                                             <TextBlock Text="&#xE777;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="13"
                                                        Foreground="#4FC3F7" Margin="6,0,0,0" VerticalAlignment="Center"
                                                        Visibility="{Binding HasCheckpoint, Converter={StaticResource BoolToVisibility}}"
@@ -138,6 +142,41 @@
                                                 <TextBlock Text="&#xE712;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="12"/>
                                                 <Button.ContextMenu>
                                                     <ContextMenu Placement="Bottom">
+                                                        <MenuItem Click="DryRun_Click">
+                                                            <MenuItem.Header>
+                                                                <StackPanel Orientation="Horizontal">
+                                                                    <TextBlock Text="&#xE9D9;" Style="{StaticResource MenuItemIcon}"/>
+                                                                    <TextBlock Text="Dry Run" VerticalAlignment="Center"/>
+                                                                </StackPanel>
+                                                            </MenuItem.Header>
+                                                        </MenuItem>
+                                                        <MenuItem Click="ResolveConflicts_Click"
+                                                                  Visibility="{Binding HasPendingConflicts, Converter={StaticResource BoolToVisibility}}">
+                                                            <MenuItem.Header>
+                                                                <StackPanel Orientation="Horizontal">
+                                                                    <TextBlock Text="&#xE8FD;" Style="{StaticResource MenuItemIcon}"/>
+                                                                    <TextBlock Text="Resolve Conflicts…" VerticalAlignment="Center"/>
+                                                                </StackPanel>
+                                                            </MenuItem.Header>
+                                                        </MenuItem>
+                                                        <MenuItem Click="OpenApp_Click"
+                                                                  Visibility="{Binding HasLinkedApp, Converter={StaticResource BoolToVisibility}}">
+                                                            <MenuItem.Header>
+                                                                <StackPanel Orientation="Horizontal">
+                                                                    <TextBlock Text="&#xE8A7;" Style="{StaticResource MenuItemIcon}"/>
+                                                                    <TextBlock Text="Open App on Device" VerticalAlignment="Center"/>
+                                                                </StackPanel>
+                                                            </MenuItem.Header>
+                                                        </MenuItem>
+                                                        <MenuItem Click="CloseAndSync_Click"
+                                                                  Visibility="{Binding HasLinkedApp, Converter={StaticResource BoolToVisibility}}">
+                                                            <MenuItem.Header>
+                                                                <StackPanel Orientation="Horizontal">
+                                                                    <TextBlock Text="&#xE72C;" Style="{StaticResource MenuItemIcon}"/>
+                                                                    <TextBlock Text="Close App and Sync" VerticalAlignment="Center"/>
+                                                                </StackPanel>
+                                                            </MenuItem.Header>
+                                                        </MenuItem>
                                                         <MenuItem Click="Snapshot_Click">
                                                             <MenuItem.Header>
                                                                 <StackPanel Orientation="Horizontal">

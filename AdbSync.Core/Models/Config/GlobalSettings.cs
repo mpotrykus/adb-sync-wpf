@@ -51,12 +51,32 @@ public sealed class GlobalSettings
     /// <summary>Default number of run-history rows kept per job, unless a job overrides it.</summary>
     public int MaxRunHistoryEntries { get; set; } = 50;
 
+    /// <summary>Default number of most-recent runs per job whose per-file change list is kept; older runs keep their totals and
+    /// log but not their file lists. 0 keeps every run's file list, which lets the history database grow without bound.</summary>
+    public int FileDetailRunsKept { get; set; } = 10;
+
+    /// <summary>Default for how a file changed on two sides at once is resolved, unless a job overrides it.</summary>
+    public ConflictPolicy ConflictPolicy { get; set; } = ConflictPolicy.NewestWins;
+
     /// <summary>Default for whether a losing side of a merge conflict is backed up before being overwritten.</summary>
     public bool BackupConflictLosers { get; set; } = true;
 
     /// <summary>When enabled, a job whose Interval/DailyAt schedule came due while AdbSync wasn't running fires
     /// once at the next opportunity instead of silently rolling forward to the next scheduled occurrence.</summary>
     public bool RunMissedSchedules { get; set; } = true;
+
+    /// <summary>Sends job progress to the AdbSync Companion Android app (via <c>adb shell am broadcast</c>) on
+    /// devices that are already connected. Harmless on devices without the app installed.</summary>
+    public bool CompanionBroadcastsEnabled { get; set; } = true;
+
+    /// <summary>Serves job status and run/stop actions to the companion app over the LAN (HTTP + SSE). The
+    /// phone learns the address and <see cref="CompanionServerToken"/> automatically over adb. Restart to apply.</summary>
+    public bool CompanionServerEnabled { get; set; } = true;
+
+    public int CompanionServerPort { get; set; } = 47615;
+
+    /// <summary>Bearer token the companion app must send. Generated on first server start when empty.</summary>
+    public string? CompanionServerToken { get; set; }
 
     /// <summary>True if the given time falls within the configured quiet hours window.</summary>
     public bool IsQuietNow(TimeOnly? nowOverride = null)

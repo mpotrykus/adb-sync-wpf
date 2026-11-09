@@ -305,6 +305,7 @@ public sealed class ChangeWatchHostedService(
             return true;
 
         var deviceName = deviceNamesBySerial.GetValueOrDefault(runningSerial, runningSerial);
+        events.JobBlockedByApp(jobName, deviceName);
         events.PhaseChanged(jobName, SyncPhase.WaitingForAppClose, deviceName);
 
         try

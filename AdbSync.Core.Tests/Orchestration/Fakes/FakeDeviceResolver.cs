@@ -11,6 +11,9 @@ public sealed class FakeDeviceResolver : IAdbDeviceResolver
     public Task<string> PairAsync(DeviceConfig device, string pairingCode, CancellationToken ct = default) =>
         throw new NotImplementedException();
 
+    public Task<string> PairAtAsync(DeviceConfig device, int pairingPort, string pairingCode, CancellationToken ct = default) =>
+        throw new NotImplementedException();
+
     public Task DisconnectAsync(DeviceConfig device, CancellationToken ct = default)
     {
         device.CachedHostPort = null;

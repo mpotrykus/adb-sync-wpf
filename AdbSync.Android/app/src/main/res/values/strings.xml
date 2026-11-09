@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_gate_service_label">AdbSync app gate</string>
+    <string name="app_gate_description">Notices when an app synced by AdbSync is opened, so it can warn you if this device is behind the others. It only reads which app is in front; it never reads screen content.</string>
+</resources>

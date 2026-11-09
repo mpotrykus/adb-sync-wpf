@@ -80,6 +80,18 @@ public sealed partial class JobStatusViewModel(string name) : ObservableObject
     [ObservableProperty]
     private string? _checkpointSummary;
 
+    /// <summary>Which of this job's devices are behind the others and why, one per line; null when none are.
+    /// Opening the linked app on one of them and saving could overwrite changes from the rest.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsOutOfSync))]
+    private string? _outOfSyncSummary;
+
+    public bool IsOutOfSync => !string.IsNullOrEmpty(OutOfSyncSummary);
+
+    /// <summary>True when the job names an Android app, which enables the open-app and close-and-sync actions.</summary>
+    [ObservableProperty]
+    private bool _hasLinkedApp;
+
     /// <summary>The single line shown in the STATUS column - "Stopping..." once a stop has been requested,
     /// otherwise the active phase while a sync is running, otherwise the watch status (e.g. "Watching (live)")
     /// in place of "Idle" when the job's watcher is active, with a "resume available" note appended while a
@@ -111,6 +123,13 @@ public sealed partial class JobStatusViewModel(string name) : ObservableObject
 
     /// <summary>Accumulates across the current run's devices; reset to 0 at the start of each new run.</summary>
     public int ConflictCountThisRun { get; set; }
+
+    /// <summary>Files still waiting for someone to pick a version, across all of the job's devices.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasPendingConflicts))]
+    private int _pendingConflictCount;
+
+    public bool HasPendingConflicts => PendingConflictCount > 0;
 
     /// <summary>Raised only when a run just finished live, as opposed to <see cref="LastOutcome"/> also being set
     /// when the dashboard hydrates it from persisted history on load - lets the tray notify on the former only.</summary>

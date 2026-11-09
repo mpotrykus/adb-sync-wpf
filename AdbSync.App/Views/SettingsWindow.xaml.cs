@@ -34,12 +34,17 @@ public partial class SettingsWindow : Window
 
         RunMissedSchedulesBox.IsChecked = settings.RunMissedSchedules;
 
+        CompanionBroadcastsEnabledBox.IsChecked = settings.CompanionBroadcastsEnabled;
+        CompanionServerEnabledBox.IsChecked = settings.CompanionServerEnabled;
+        CompanionServerPortBox.Text = settings.CompanionServerPort.ToString();
+
         StaleLockHoursBox.Text = settings.StaleLockHours.ToString();
         LogRetentionDaysBox.Text = settings.LogRetentionDays.ToString();
         PerLogFileMaxMegabytesBox.Text = (settings.PerLogFileMaxBytes / (1024 * 1024)).ToString();
         ConflictRetentionDaysBox.Text = settings.ConflictRetentionDays.ToString();
         CheckpointRetentionDaysBox.Text = settings.CheckpointRetentionDays.ToString();
         MaxRunHistoryEntriesBox.Text = settings.MaxRunHistoryEntries.ToString();
+        FileDetailRunsKeptBox.Text = settings.FileDetailRunsKept.ToString();
         BandwidthThrottleKBpsBox.Text = settings.BandwidthThrottleKBps?.ToString() ?? "";
         RetryMaxAttemptsBox.Text = settings.RetryMaxAttempts.ToString();
         RetryBackoffSecondsBox.Text = settings.RetryBackoffSeconds.ToString();
@@ -47,6 +52,7 @@ public partial class SettingsWindow : Window
         MaxConcurrentJobsBox.Text = settings.MaxConcurrentJobs.ToString();
         MaxConcurrentPerDeviceBox.Text = settings.MaxConcurrentPerDevice.ToString();
         BackupConflictLosersBox.IsChecked = settings.BackupConflictLosers;
+        AskOnConflictBox.IsChecked = settings.ConflictPolicy == ConflictPolicy.Ask;
     }
 
     private void SetToDefault_Click(object sender, RoutedEventArgs e)
@@ -94,6 +100,11 @@ public partial class SettingsWindow : Window
 
         _config.Settings.RunMissedSchedules = RunMissedSchedulesBox.IsChecked == true;
 
+        _config.Settings.CompanionBroadcastsEnabled = CompanionBroadcastsEnabledBox.IsChecked == true;
+        _config.Settings.CompanionServerEnabled = CompanionServerEnabledBox.IsChecked == true;
+        if (int.TryParse(CompanionServerPortBox.Text, out var companionPort) && companionPort is >= 1024 and <= 65535)
+            _config.Settings.CompanionServerPort = companionPort;
+
         if (int.TryParse(StaleLockHoursBox.Text, out var staleHours) && staleHours > 0)
             _config.Settings.StaleLockHours = staleHours;
         if (int.TryParse(LogRetentionDaysBox.Text, out var retentionDays) && retentionDays > 0)
@@ -106,6 +117,8 @@ public partial class SettingsWindow : Window
             _config.Settings.CheckpointRetentionDays = checkpointRetentionDays;
         if (int.TryParse(MaxRunHistoryEntriesBox.Text, out var maxRunHistoryEntries) && maxRunHistoryEntries > 0)
             _config.Settings.MaxRunHistoryEntries = maxRunHistoryEntries;
+        if (int.TryParse(FileDetailRunsKeptBox.Text, out var fileDetailRunsKept) && fileDetailRunsKept >= 0)
+            _config.Settings.FileDetailRunsKept = fileDetailRunsKept;
         _config.Settings.BandwidthThrottleKBps = int.TryParse(BandwidthThrottleKBpsBox.Text, out var throttle) && throttle > 0
             ? throttle
             : null;
@@ -120,6 +133,7 @@ public partial class SettingsWindow : Window
         if (int.TryParse(MaxConcurrentPerDeviceBox.Text, out var maxConcurrentPerDevice) && maxConcurrentPerDevice > 0)
             _config.Settings.MaxConcurrentPerDevice = maxConcurrentPerDevice;
         _config.Settings.BackupConflictLosers = BackupConflictLosersBox.IsChecked == true;
+        _config.Settings.ConflictPolicy = AskOnConflictBox.IsChecked == true ? ConflictPolicy.Ask : ConflictPolicy.NewestWins;
 
         StartupRegistration.SetEnabled(_config.Settings.StartAtLogin);
 

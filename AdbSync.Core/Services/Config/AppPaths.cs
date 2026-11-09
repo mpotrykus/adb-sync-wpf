@@ -9,10 +9,12 @@ public sealed class AppPaths(string root)
     public string DevicesFile => Path.Combine(ConfigDir, "devices.json");
     public string ProjectsFile => Path.Combine(ConfigDir, "projects.json");
     public string ManifestsDir => Path.Combine(Root, "manifests");
+    public string PendingConflictsDir => Path.Combine(Root, "pending-conflicts");
     public string LogsDir => Path.Combine(Root, "logs");
     public string CheckpointsDir => Path.Combine(Root, "checkpoints");
     public string RunHistoryDbFile => Path.Combine(Root, "run-history.db");
     public string LocalStateFile => Path.Combine(Root, "local-state.json");
+    public string CompanionCertificateFile => Path.Combine(Root, "companion-cert.pfx");
 
     public static AppPaths Default { get; } = new(
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AdbSync"));

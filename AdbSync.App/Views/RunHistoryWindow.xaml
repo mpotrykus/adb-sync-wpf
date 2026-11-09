@@ -13,6 +13,7 @@
     </shell:WindowChrome.WindowChrome>
     <Window.Resources>
         <conv:RunOutcomeToBrushConverter x:Key="RunOutcomeToBrushConverter"/>
+        <conv:FolderSummaryConverter x:Key="FolderSummaryConverter"/>
         <Style x:Key="StatCard" TargetType="Border" BasedOn="{StaticResource CardBorder}">
             <Setter Property="Padding" Value="14,12"/>
             <Setter Property="Margin" Value="0,0,12,0"/>
@@ -32,6 +33,13 @@
         </Style>
         <Style x:Key="ChartCard" TargetType="Border" BasedOn="{StaticResource CardBorder}">
             <Setter Property="Margin" Value="0,0,0,16"/>
+        </Style>
+        <Style x:Key="SectionChevron" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe Fluent Icons, Segoe MDL2 Assets"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Foreground" Value="{StaticResource Brush.Text.Secondary}"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Width" Value="14"/>
         </Style>
         <Style x:Key="LegendDot" TargetType="Ellipse">
             <Setter Property="Width" Value="8"/>
@@ -57,10 +65,27 @@
             <Grid Grid.Row="1" Margin="20">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="188"/>
-                    <RowDefinition Height="*" MinHeight="120"/>
+                    <RowDefinition x:Name="RunsRow" Height="*" MinHeight="120"/>
                     <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="150" MinHeight="80"/>
+                    <RowDefinition x:Name="BottomRow" Height="200" MinHeight="120"/>
+                </Grid.RowDefinitions>
+
+                <Grid Grid.Row="0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Border Background="Transparent" Cursor="Hand" MouseLeftButtonUp="TopHeader_Click" Margin="0,0,0,8">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock x:Name="TopChevron" Style="{StaticResource SectionChevron}"/>
+                            <TextBlock x:Name="TopTitle" Text="OVERVIEW" Style="{StaticResource SubSectionLabel}" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
+                <Grid x:Name="TopContent" Grid.Row="1">
+                <Grid x:Name="OverviewPanel">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="188"/>
                 </Grid.RowDefinitions>
 
                 <!-- Summary stat tiles -->
@@ -128,7 +153,83 @@
                     </Border>
                 </Grid>
 
-                <DataGrid x:Name="RunsGrid" Grid.Row="2" Margin="0,0,0,0" AutoGenerateColumns="False" IsReadOnly="True"
+                </Grid>
+
+                <!-- Selected run: its stats plus the live execution graph. Replaces the all-runs overview while a run is selected. -->
+                <Grid x:Name="RunDetailPanel" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition x:Name="RunGraphRow" Height="188"/>
+                    </Grid.RowDefinitions>
+
+                    <Grid Grid.Row="0" Margin="0,0,0,16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition/>
+                            <ColumnDefinition/>
+                            <ColumnDefinition/>
+                            <ColumnDefinition/>
+                            <ColumnDefinition/>
+                        </Grid.ColumnDefinitions>
+                        <Border Grid.Column="0" Style="{StaticResource StatCard}">
+                            <StackPanel>
+                                <TextBlock Text="DURATION" Style="{StaticResource StatLabel}"/>
+                                <TextBlock x:Name="RunDurationValue" Style="{StaticResource StatValue}"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Grid.Column="1" Style="{StaticResource StatCard}">
+                            <StackPanel>
+                                <TextBlock Text="FILES" Style="{StaticResource StatLabel}"/>
+                                <TextBlock x:Name="RunFilesValue" Style="{StaticResource StatValue}"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Grid.Column="2" Style="{StaticResource StatCard}">
+                            <StackPanel>
+                                <TextBlock Text="DATA TRANSFERRED" Style="{StaticResource StatLabel}"/>
+                                <TextBlock x:Name="RunSizeValue" Style="{StaticResource StatValue}"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Grid.Column="3" Style="{StaticResource StatCard}">
+                            <StackPanel>
+                                <TextBlock Text="ERRORS" Style="{StaticResource StatLabel}"/>
+                                <TextBlock x:Name="RunErrorsValue" Style="{StaticResource StatValue}"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Grid.Column="4" Style="{StaticResource StatCard}" Margin="0">
+                            <StackPanel>
+                                <TextBlock Text="OUTCOME" Style="{StaticResource StatLabel}"/>
+                                <TextBlock x:Name="RunOutcomeValue" Style="{StaticResource StatValue}"/>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+
+                    <Border Grid.Row="1" Style="{StaticResource ChartCard}" Padding="14,10">
+                        <DockPanel>
+                            <DockPanel DockPanel.Dock="Top" LastChildFill="True" Margin="0,0,0,4">
+                                <Button DockPanel.Dock="Right" Content="All runs" Click="BackToOverview_Click" Padding="10,3"
+                                        ToolTip="Back to the overview of every run"/>
+                                <TextBlock Text="Execution graph" Style="{StaticResource SectionLabel}" Margin="0" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="GraphHint" Style="{StaticResource LegendLabel}" Margin="12,0,0,0" TextTrimming="CharacterEllipsis"
+                                           Text="Click a node or device to filter the log"/>
+                            </DockPanel>
+                            <controls:RunGraph x:Name="ExecutionGraph" SelectionChanged="ExecutionGraph_SelectionChanged"/>
+                        </DockPanel>
+                    </Border>
+                </Grid>
+                </Grid>
+                </Grid>
+
+                <Grid Grid.Row="1">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <Border Background="Transparent" Cursor="Hand" MouseLeftButtonUp="RunsHeader_Click" Margin="0,0,0,8">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock x:Name="RunsChevron" Style="{StaticResource SectionChevron}"/>
+                            <TextBlock x:Name="RunsTitle" Text="RUNS" Style="{StaticResource SubSectionLabel}" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
+                <DataGrid x:Name="RunsGrid" Grid.Row="1" Margin="0,0,0,0" AutoGenerateColumns="False" IsReadOnly="True"
                           CanUserAddRows="False" HeadersVisibility="Column" GridLinesVisibility="None" RowHeight="40"
                           SelectionChanged="RunsGrid_SelectionChanged">
                     <DataGrid.Columns>
@@ -181,8 +282,9 @@
                         </DataGridTextColumn>
                     </DataGrid.Columns>
                 </DataGrid>
+                </Grid>
 
-                <GridSplitter Grid.Row="3" Height="12" Margin="0,-3" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                <GridSplitter x:Name="SectionSplitter" Grid.Row="2" Height="12" Margin="0,-3" HorizontalAlignment="Stretch" VerticalAlignment="Center"
                               Background="Transparent" ResizeBehavior="PreviousAndNext" ResizeDirection="Rows" Cursor="SizeNS">
                     <GridSplitter.Template>
                         <ControlTemplate TargetType="GridSplitter">
@@ -193,9 +295,104 @@
                     </GridSplitter.Template>
                 </GridSplitter>
 
-                <TextBox x:Name="LogTextBox" Grid.Row="4" IsReadOnly="True" TextWrapping="NoWrap" FontFamily="Consolas"
-                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                         Text="Select a run above to view its log."/>
+                <Grid Grid.Row="3">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <DockPanel Grid.Row="0" Margin="0,8,0,8" LastChildFill="False">
+                        <Border Background="Transparent" Cursor="Hand" MouseLeftButtonUp="BottomHeader_Click" Margin="0,0,14,0">
+                            <TextBlock x:Name="BottomChevron" Style="{StaticResource SectionChevron}"/>
+                        </Border>
+                        <RadioButton x:Name="LogTabButton" GroupName="BottomPane" Content="Log" IsChecked="True" Margin="0,0,16,0"
+                                     VerticalAlignment="Center" Checked="BottomPane_Changed"/>
+                        <RadioButton x:Name="FilesTabButton" GroupName="BottomPane" Content="Files" VerticalAlignment="Center"
+                                     Checked="BottomPane_Changed"/>
+                        <StackPanel x:Name="FilesControls" DockPanel.Dock="Right" Orientation="Horizontal" Visibility="Collapsed">
+                            <CheckBox x:Name="GroupByFolderBox" Content="Group by folder" Margin="0,0,14,0" VerticalAlignment="Center"
+                                      Checked="GroupByFolder_Changed" Unchecked="GroupByFolder_Changed"/>
+                            <TextBlock x:Name="FilesSummary" Style="{StaticResource LegendLabel}" Margin="0,0,12,0"/>
+                            <ComboBox x:Name="FileActionFilter" Width="130" Margin="0,0,8,0" SelectedIndex="0" SelectionChanged="FileFilter_Changed"/>
+                            <TextBox x:Name="FileSearchBox" Width="220" controls:TextBoxHelper.Placeholder="Search paths" TextChanged="FileFilter_TextChanged"/>
+                        </StackPanel>
+                    </DockPanel>
+
+                    <Grid x:Name="BottomContent" Grid.Row="1">
+                    <TextBox x:Name="LogTextBox" Grid.Row="0" IsReadOnly="True" TextWrapping="NoWrap" FontFamily="Consolas"
+                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                             Text="Select a run above to view its log."/>
+
+                    <DataGrid x:Name="FilesGrid" Grid.Row="0" Visibility="Collapsed" AutoGenerateColumns="False" IsReadOnly="True"
+                              CanUserAddRows="False" HeadersVisibility="Column" GridLinesVisibility="None" RowHeight="28"
+                              EnableRowVirtualization="True" VirtualizingPanel.IsVirtualizing="True"
+                              VirtualizingPanel.IsVirtualizingWhenGrouping="True">
+                        <DataGrid.GroupStyle>
+                            <GroupStyle>
+                                <GroupStyle.ContainerStyle>
+                                    <Style TargetType="GroupItem">
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="GroupItem">
+                                                    <Expander IsExpanded="False">
+                                                        <Expander.Header>
+                                                            <StackPanel Orientation="Horizontal" Margin="4,3">
+                                                                <TextBlock Text="{Binding Name}" FontSize="12" FontWeight="SemiBold"
+                                                                           Foreground="{StaticResource Brush.Text.Primary}"/>
+                                                                <TextBlock Text="{Binding ItemCount, StringFormat=({0:N0})}" FontSize="12" FontWeight="Normal" Margin="8,0,0,0"
+                                                                           Foreground="{StaticResource Brush.Text.Secondary}"/>
+                                                                <TextBlock Text="{Binding Items, Converter={StaticResource FolderSummaryConverter}}" FontSize="12"
+                                                                           FontWeight="Normal" Margin="12,0,0,0" Foreground="{StaticResource Brush.Text.Secondary}"/>
+                                                            </StackPanel>
+                                                        </Expander.Header>
+                                                        <ItemsPresenter/>
+                                                    </Expander>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </GroupStyle.ContainerStyle>
+                            </GroupStyle>
+                        </DataGrid.GroupStyle>
+                        <DataGrid.CellStyle>
+                            <Style TargetType="DataGridCell" BasedOn="{StaticResource {x:Type DataGridCell}}">
+                                <Setter Property="Padding" Value="12,0"/>
+                            </Style>
+                        </DataGrid.CellStyle>
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="DEVICE" Binding="{Binding DeviceName}" Width="120"/>
+                            <DataGridTextColumn Header="STEP" Binding="{Binding StepText}" Width="80"/>
+                            <DataGridTemplateColumn Header="ACTION" Width="90">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding ActionText}" Foreground="{Binding ActionBrush}" VerticalAlignment="Center"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="PATH" Binding="{Binding Path}" Width="*">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+                                        <Setter Property="ToolTip" Value="{Binding Path}"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="SIZE" Binding="{Binding SizeText}" Width="80"/>
+                            <DataGridTextColumn Header="DETAIL" Binding="{Binding Detail}" Width="220">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+                                        <Setter Property="ToolTip" Value="{Binding Detail}"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+
+                    <TextBlock x:Name="FilesEmptyText" Grid.Row="0" Style="{StaticResource EmptyStateText}" TextWrapping="Wrap"
+                               TextAlignment="Center" VerticalAlignment="Center" Margin="16,0" Visibility="Collapsed"/>
+                    </Grid>
+                </Grid>
             </Grid>
         </Grid>
     </Border>

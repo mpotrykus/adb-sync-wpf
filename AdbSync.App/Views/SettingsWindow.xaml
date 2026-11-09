@@ -91,6 +91,32 @@
                     </Border>
 
                     <Border Style="{StaticResource CardBorder}">
+                        <StackPanel>
+                            <TextBlock Text="Companion App" Style="{StaticResource SectionLabel}"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                <CheckBox x:Name="CompanionBroadcastsEnabledBox" Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"/>
+                                <TextBlock Text="Show sync progress on connected phones" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                <CheckBox x:Name="CompanionServerEnabledBox" Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"/>
+                                <TextBlock VerticalAlignment="Center" Margin="10,0,0,0">
+                                    <Run Text="Let the app view and run jobs over Wi-Fi "/><Run Text="(restart to apply)" Style="{StaticResource DescriptorRun}"/>
+                                </TextBlock>
+                            </StackPanel>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="90"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" VerticalAlignment="Center">
+                                    <Run Text="Server port "/><Run Text="(restart to apply)" Style="{StaticResource DescriptorRun}"/>
+                                </TextBlock>
+                                <TextBox Grid.Column="1" x:Name="CompanionServerPortBox" controls:TextBoxHelper.Placeholder="47615"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource CardBorder}">
                         <Expander Header="Advanced" IsExpanded="False">
                             <StackPanel>
                                 <Border Style="{StaticResource NestedSection}">
@@ -134,6 +160,7 @@
                                                 <RowDefinition/>
                                                 <RowDefinition/>
                                                 <RowDefinition/>
+                                                <RowDefinition/>
                                             </Grid.RowDefinitions>
                                             <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center">
                                                 <Run Text="Log retention "/><Run Text="(days)" Style="{StaticResource DescriptorRun}"/>
@@ -153,6 +180,11 @@
                                             <TextBox Grid.Row="3" Grid.Column="1" x:Name="CheckpointRetentionDaysBox" Margin="0,12,0,0" controls:TextBoxHelper.Placeholder="30"/>
                                             <TextBlock Grid.Row="4" Grid.Column="0" Text="Run history entries kept per job" VerticalAlignment="Center" Margin="0,12,0,0"/>
                                             <TextBox Grid.Row="4" Grid.Column="1" x:Name="MaxRunHistoryEntriesBox" Margin="0,12,0,0" controls:TextBoxHelper.Placeholder="50"/>
+                                            <TextBlock Grid.Row="5" Grid.Column="0" VerticalAlignment="Center" Margin="0,12,0,0"
+                                                       ToolTip="Which files each run copied, deleted or conflicted on. Older runs keep their totals and logs but not their file lists. 0 keeps every run's file list, which lets the history database grow without limit.">
+                                                <Run Text="File details kept for last "/><Run Text="(runs, 0 = all)" Style="{StaticResource DescriptorRun}"/>
+                                            </TextBlock>
+                                            <TextBox Grid.Row="5" Grid.Column="1" x:Name="FileDetailRunsKeptBox" Margin="0,12,0,0" controls:TextBoxHelper.Placeholder="10"/>
                                         </Grid>
                                     </StackPanel>
                                 </Border>
@@ -200,6 +232,10 @@
                                         <StackPanel Orientation="Horizontal">
                                             <CheckBox x:Name="BackupConflictLosersBox" Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"/>
                                             <TextBlock Text="Back up conflict losers before overwriting" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal">
+                                            <CheckBox x:Name="AskOnConflictBox" Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"/>
+                                            <TextBlock Text="Let me pick a version when a file changed on two sides (resolve on the phone or PC)" VerticalAlignment="Center" Margin="10,0,0,0"/>
                                         </StackPanel>
                                     </StackPanel>
                                 </Border>
