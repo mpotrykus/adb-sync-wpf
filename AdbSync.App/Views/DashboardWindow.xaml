@@ -138,6 +138,14 @@
                                                 <TextBlock Text="&#xE712;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="12"/>
                                                 <Button.ContextMenu>
                                                     <ContextMenu Placement="Bottom">
+                                                        <MenuItem Click="DryRun_Click">
+                                                            <MenuItem.Header>
+                                                                <StackPanel Orientation="Horizontal">
+                                                                    <TextBlock Text="&#xE9D9;" Style="{StaticResource MenuItemIcon}"/>
+                                                                    <TextBlock Text="Dry Run" VerticalAlignment="Center"/>
+                                                                </StackPanel>
+                                                            </MenuItem.Header>
+                                                        </MenuItem>
                                                         <MenuItem Click="Snapshot_Click">
                                                             <MenuItem.Header>
                                                                 <StackPanel Orientation="Horizontal">

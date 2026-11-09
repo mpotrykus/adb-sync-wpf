@@ -41,7 +41,7 @@ public sealed class SyncJobRunner(
 
     public async Task<JobRunResult> RunAsync(
         SyncJobConfig job, int jobIndex, IReadOnlyList<DeviceConfig> devices, GlobalSettings settings,
-        SyncCheckpoint? resumeFrom, bool forcePush = false, CancellationToken ct = default)
+        SyncCheckpoint? resumeFrom, bool forcePush = false, CancellationToken ct = default, bool dryRun = false)
     {
         var runId = Guid.NewGuid();
         var startedAt = DateTimeOffset.UtcNow;
@@ -55,6 +55,8 @@ public sealed class SyncJobRunner(
         TimeSpan? pushDuration = null;
 
         var eff = job.Resolve(settings);
+        if (dryRun)
+            eff = eff with { DryRun = true };
         if (eff.DryRun)
             resumeFrom = null;
 

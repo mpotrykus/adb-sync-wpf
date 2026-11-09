@@ -372,6 +372,19 @@ public partial class DashboardWindow : Window
             ClearCheckpoint(vm);
     }
 
+    private async void DryRun_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: JobStatusViewModel vm })
+            return;
+        if (vm.IsRunning)
+            return;
+
+        var config = await _configService.GetAsync();
+        var index = config.Jobs.FindIndex(j => j.Name == vm.Name);
+        if (index >= 0)
+            _ = _jobRunService.RunJobAsync(index, dryRun: true);
+    }
+
     private async void StopNow_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: JobStatusViewModel vm })
