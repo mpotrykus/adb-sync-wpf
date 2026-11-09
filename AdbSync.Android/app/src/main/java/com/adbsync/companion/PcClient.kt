@@ -31,6 +31,8 @@ data class RemoteJob(
     val needsAttention: Boolean,
     val hasCheckpoint: Boolean,
     val checkpointSummary: String?,
+    val appPackage: String?,
+    val staleDevices: List<Pair<String, String>>,
 ) {
     val isPushing get() = phase == "Push" || devices.any { it.second == "Push" }
 
@@ -59,6 +61,13 @@ data class RemoteJob(
                 needsAttention = o.optBoolean("needsAttention"),
                 hasCheckpoint = o.optBoolean("hasCheckpoint"),
                 checkpointSummary = o.optStringOrNull("checkpointSummary"),
+                appPackage = o.optStringOrNull("appPackage"),
+                staleDevices = o.optJSONArray("staleDevices")?.let { stale ->
+                    (0 until stale.length()).map {
+                        val d = stale.getJSONObject(it)
+                        d.getString("device") to d.getString("reason")
+                    }
+                }.orEmpty(),
             )
         }
     }
@@ -104,6 +113,8 @@ data class RemoteRun(
     }
 }
 
+data class CloseAndSyncResult(val result: String, val failed: Boolean, val stillOutOfSync: Boolean, val reason: String?)
+
 private fun JSONObject.optStringOrNull(key: String): String? = if (isNull(key)) null else optString(key)
 
 class HttpStatusException(val code: Int) : Exception("HTTP $code")
@@ -121,6 +132,21 @@ class PcClient(private val config: PcConfig) {
 
     fun setEnabled(job: String, enabled: Boolean): Int =
         postJson("/api/jobs/${encode(job)}/enabled", JSONObject().put("enabled", enabled)).first
+
+    fun status(): List<RemoteJob> {
+        val jobs = JSONObject(getText("/api/status", connectTimeoutMs = 2_500, readTimeoutMs = 4_000)).getJSONArray("jobs")
+        return (0 until jobs.length()).map { RemoteJob.parse(jobs.getJSONObject(it)) }
+    }
+
+    /** Closes the linked app on [device], syncs, and waits for the run to end. Throws [HttpStatusException] if the PC refuses. */
+    fun closeAndSync(job: String, device: String): CloseAndSyncResult {
+        val (code, text) = postJson(
+            "/api/jobs/${encode(job)}/close-and-sync", JSONObject().put("device", device), readTimeoutMs = 25 * 60_000,
+        )
+        if (code !in 200..299) throw HttpStatusException(code)
+        val o = JSONObject(text)
+        return CloseAndSyncResult(o.getString("result"), o.optBoolean("failed"), o.optBoolean("stillOutOfSync"), o.optStringOrNull("reason"))
+    }
 
     fun reportEndpoint(device: String, port: Int): Int =
         postJson("/api/devices/${encode(device)}/endpoint", JSONObject().put("port", port)).first
@@ -156,8 +182,8 @@ class PcClient(private val config: PcConfig) {
         return (0 until array.length()).map { RemoteRun.parse(array.getJSONObject(it)) }
     }
 
-    private fun getText(path: String): String {
-        val conn = open(path, readTimeoutMs = 10_000)
+    private fun getText(path: String, connectTimeoutMs: Int = 5_000, readTimeoutMs: Int = 10_000): String {
+        val conn = open(path, readTimeoutMs, connectTimeoutMs)
         try {
             check(conn)
             return conn.inputStream.bufferedReader().use { it.readText() }
@@ -228,13 +254,13 @@ class PcClient(private val config: PcConfig) {
         }
     }
 
-    private fun open(path: String, readTimeoutMs: Int): HttpURLConnection =
+    private fun open(path: String, readTimeoutMs: Int, connectTimeoutMs: Int = 5_000): HttpURLConnection =
         (URL(config.url.trimEnd('/') + path).openConnection() as HttpsURLConnection).apply {
             sslSocketFactory = pinnedSocketFactory(config.certSha256)
             // The PC is reached by a DHCP-assigned IP that its self-signed cert can't name; trust comes from
             // the exact-certificate pin in PinnedTrustManager instead of hostname matching.
             hostnameVerifier = HostnameVerifier { _, _ -> true }
-            connectTimeout = 5_000
+            connectTimeout = connectTimeoutMs
             readTimeout = readTimeoutMs
             setRequestProperty("Authorization", "Bearer ${config.token}")
         }

@@ -285,6 +285,9 @@ class MainActivity : Activity() {
             addView(body(result, Ui.resultColor(result, job.lastFailed), 13f).apply { setPadding(dp(15), dp(4), 0, 0) })
         }
         addView(caption(scheduleText(job)).apply { setPadding(dp(15), dp(4), 0, 0) })
+        job.staleDevices.forEach { (device, reason) ->
+            addView(body("$device is out of sync: $reason", Ui.WARNING, 12f).apply { setPadding(dp(15), dp(4), 0, 0) })
+        }
         if (job.hasCheckpoint && !job.running) {
             job.checkpointSummary?.let { summary ->
                 addView(body(summary, CHECKPOINT_BLUE, 12f).apply { setPadding(dp(15), dp(4), 0, 0) })
@@ -530,6 +533,13 @@ class MainActivity : Activity() {
             "Exempt from battery optimization",
         ) { requestBatteryExemption() }
 
+        item(
+            AppGate.isEnabled(this),
+            "App gate on: you're warned before opening an out-of-sync app here",
+            "App gate off: nothing warns you before opening an out-of-sync app here",
+            "Turn on app gate",
+        ) { enableAppGate() }
+
         val timeoutDisabled = readAdbAuthTimeoutDisabled()
         item(
             timeoutDisabled,
@@ -558,6 +568,15 @@ class MainActivity : Activity() {
         autoEnableSwitch.isEnabled = canWrite
 
         serviceStatus.text = if (SyncService.isRunning) "Sync service running, holding wake and Wi-Fi locks" else "Sync service idle"
+    }
+
+    private fun enableAppGate() {
+        if (AppGate.canEnableDirectly(this) && AppGate.enable(this)) {
+            refreshSetup()
+            return
+        }
+        Toast.makeText(this, "Turn on \"AdbSync app gate\" in the accessibility settings.", Toast.LENGTH_LONG).show()
+        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
     }
 
     private fun startPairing() {

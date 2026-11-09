@@ -139,3 +139,12 @@ Known flaky test (pre-existing, unrelated): `SyncJobRunnerTests.RunAsync_FileFro
 - Whether percent progress is wanted (needs the transfer-engine hook) or phase-level status is enough initially.
 - Where the Android project lives (new `AdbSync.Android/` folder in this repo vs. separate repo). Default: in this repo, outside `AdbSync.slnx`, with its own Gradle build.
 - Shared secret provisioning: pass via the USB `pm grant` setup step, or enter manually.
+
+## App gate: warning before opening an out-of-sync app
+
+A job's `AppPackage` already blocks syncs while the app is open. The gate adds the other direction: warn before the app is opened on a device that is behind.
+
+- **Staleness** (`SyncStaleness`): a device is behind when another device has changes the PC hasn't synced yet (`ChangeDetected`, cleared by a real run completing), when the app is open on another device and blocking the sync (`JobBlockedByApp`), or when an interrupted run's checkpoint hasn't reached it. Nothing is reported while a sync is actively transferring. It is derived from `JobStatusTracker` plus the checkpoint, so it is lost on restart except for the checkpoint part.
+- **PC**: the dashboard shows an out-of-sync icon on the job (tooltip says why). The overflow menu has "Open App on Device" (warns first if that device is behind) and "Close App and Sync" (force-stops the app everywhere it's running, then syncs; unsaved work is lost).
+- **API**: `/api/status` and the SSE feed carry `appPackage` and `staleDevices`. `POST /api/jobs/{name}/close-and-sync` `{ "device": ... }` force-stops the app on that device, runs the job, and returns when it finishes.
+- **Phone**: `AppGateService` is an accessibility service that only reads which package is in front. When a linked app comes to the foreground it asks the PC; if this device is behind it draws an overlay offering Sync first / Open anyway / Not now. Android can't stop another app opening, so this is a warning over the app, not a block. The service is enabled from the Setup card through `WRITE_SECURE_SETTINGS` (falls back to the accessibility settings screen). Fails open if the PC is unreachable.
