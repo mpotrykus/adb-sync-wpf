@@ -11,6 +11,11 @@ public sealed class DashboardUiStateStore(AppPaths paths)
         await JsonFileIo.ReadAsync(paths.LocalStateFile, AppConfigJsonContext.Default.DashboardUiState, ct)
             ?? new DashboardUiState();
 
-    public Task SaveAsync(DashboardUiState state, CancellationToken ct = default) =>
-        JsonFileIo.WriteAtomicAsync(paths.LocalStateFile, state, AppConfigJsonContext.Default.DashboardUiState, ct);
+    public event Action? Saved;
+
+    public async Task SaveAsync(DashboardUiState state, CancellationToken ct = default)
+    {
+        await JsonFileIo.WriteAtomicAsync(paths.LocalStateFile, state, AppConfigJsonContext.Default.DashboardUiState, ct);
+        Saved?.Invoke();
+    }
 }

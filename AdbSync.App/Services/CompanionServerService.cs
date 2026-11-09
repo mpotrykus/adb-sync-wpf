@@ -1,7 +1,9 @@
+using AdbSync.App.ViewModels;
 using AdbSync.Core.Models.Config;
 using AdbSync.Core.Models.Merge;
 using AdbSync.Core.Models.Orchestration;
 using AdbSync.Core.Services.Companion;
+using AdbSync.Core.Services.Config;
 using AdbSync.Core.Services.Scheduling;
 using AdbSync.Core.Services.Devices;
 using AdbSync.Core.Services.Logging;
@@ -91,6 +93,7 @@ public sealed class CompanionServerService(
     IAdbDeviceResolver deviceResolver,
     IPendingConflictStore pendingConflicts,
     IConflictResolver conflictResolver,
+    DashboardUiStateStore uiStateStore,
     ILogger<CompanionServerService> logger) : IHostedService
 {
     private static readonly TimeSpan PingInterval = TimeSpan.FromSeconds(20);
@@ -202,8 +205,25 @@ public sealed class CompanionServerService(
         var config = await configService.GetAsync();
         var checkpoints = await GetCheckpointsAsync();
         var counts = await GetPendingCountsAsync();
-        var jobs = config.Jobs.Select(j => ToDto(tracker.Get(j.Name), config, checkpoints, counts)).ToList();
+        var jobs = SortLikeDashboard(
+            config.Jobs.Select(j => ToDto(tracker.Get(j.Name), config, checkpoints, counts)), await uiStateStore.LoadAsync());
         return new CompanionStatusDto(Environment.MachineName, jobs);
+    }
+
+    private static List<CompanionJobDto> SortLikeDashboard(IEnumerable<CompanionJobDto> jobs, DashboardUiState state)
+    {
+        var descending = state.SortDescending;
+        IOrderedEnumerable<CompanionJobDto> Order<TKey>(Func<CompanionJobDto, TKey> key, IComparer<TKey>? comparer = null) =>
+            descending ? jobs.OrderByDescending(key, comparer) : jobs.OrderBy(key, comparer);
+
+        return (state.SortColumn switch
+        {
+            nameof(JobStatusViewModel.Enabled) => Order(j => j.Enabled),
+            nameof(JobStatusViewModel.DisplayStatusText) => Order(j => j.Running ? j.Phase ?? "" : "Idle", StringComparer.CurrentCultureIgnoreCase),
+            nameof(JobStatusViewModel.LastRunAt) => Order(j => j.LastResultAt),
+            nameof(JobStatusViewModel.NextRunAt) => Order(j => j.NextRunAt),
+            _ => Order(j => j.Name, StringComparer.CurrentCultureIgnoreCase),
+        }).ToList();
     }
 
     private async Task<Dictionary<string, SyncCheckpoint>> GetCheckpointsAsync()
@@ -241,9 +261,11 @@ public sealed class CompanionServerService(
         ctx.Response.ContentType = "text/event-stream";
         ctx.Response.Headers.CacheControl = "no-cache";
 
-        var changes = Channel.CreateBounded<JobStatus>(new BoundedChannelOptions(256) { FullMode = BoundedChannelFullMode.DropOldest });
+        var changes = Channel.CreateBounded<JobStatus?>(new BoundedChannelOptions(256) { FullMode = BoundedChannelFullMode.DropOldest });
         void OnChanged(JobStatus s) => changes.Writer.TryWrite(s);
+        void OnSortChanged() => changes.Writer.TryWrite(null);
         tracker.Changed += OnChanged;
+        uiStateStore.Saved += OnSortChanged;
         try
         {
             await WriteEventAsync(ctx, "snapshot", await BuildStatusAsync(), ct);
@@ -263,8 +285,19 @@ public sealed class CompanionServerService(
                 var config = await configService.GetAsync();
                 var checkpoints = await GetCheckpointsAsync();
                 var counts = await GetPendingCountsAsync();
+                var resort = false;
                 while (changes.Reader.TryRead(out var s))
+                {
+                    if (s is null)
+                    {
+                        resort = true;
+                        continue;
+                    }
                     await WriteEventAsync(ctx, "job", ToDto(s, config, checkpoints, counts), ct);
+                }
+
+                if (resort || (await uiStateStore.LoadAsync()).SortColumn is not (null or nameof(JobStatusViewModel.Name)))
+                    await WriteEventAsync(ctx, "snapshot", await BuildStatusAsync(), ct);
             }
         }
         catch (OperationCanceledException)
@@ -273,6 +306,7 @@ public sealed class CompanionServerService(
         finally
         {
             tracker.Changed -= OnChanged;
+            uiStateStore.Saved -= OnSortChanged;
         }
     }
 
