@@ -14,18 +14,29 @@ import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
+import android.view.Gravity
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
-import android.content.res.Configuration
-import android.view.ViewGroup.LayoutParams.MATCH_PARENT
-import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
-import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
+import com.adbsync.companion.Ui.ButtonKind
+import com.adbsync.companion.Ui.body
+import com.adbsync.companion.Ui.button
+import com.adbsync.companion.Ui.caption
+import com.adbsync.companion.Ui.card
+import com.adbsync.companion.Ui.divider
+import com.adbsync.companion.Ui.dp
+import com.adbsync.companion.Ui.indeterminateBar
+import com.adbsync.companion.Ui.sectionLabel
+import com.adbsync.companion.Ui.statusLine
+import com.adbsync.companion.Ui.styled
+import com.adbsync.companion.Ui.subSectionLabel
+import com.adbsync.companion.Ui.title
+import com.adbsync.companion.Ui.toggle
 import java.net.HttpURLConnection
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -34,14 +45,12 @@ class MainActivity : Activity() {
     private val handler = Handler(Looper.getMainLooper())
     private val io = Executors.newSingleThreadExecutor()
 
-    private lateinit var pcStatus: TextView
+    private lateinit var pcStatus: LinearLayout
     private lateinit var jobsContainer: LinearLayout
-    private lateinit var notificationStatus: TextView
-    private lateinit var batteryStatus: TextView
-    private lateinit var adbTimeoutStatus: TextView
-    private lateinit var serviceStatus: TextView
-    private lateinit var wifiDebugStatus: TextView
+    private lateinit var setupCard: LinearLayout
+    private lateinit var wifiDebugStatus: LinearLayout
     private lateinit var autoEnableSwitch: Switch
+    private lateinit var serviceStatus: TextView
 
     private val jobs = linkedMapOf<String, RemoteJob>()
     private var feedActive: AtomicBoolean? = null
@@ -55,58 +64,59 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         actionBar?.hide()
-        val night = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
-        val lightBars = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
-        window.insetsController?.setSystemBarsAppearance(if (night) 0 else lightBars, lightBars)
-        val pad = dp(16)
+        window.setBackgroundDrawable(Ui.windowBackground())
+        window.isNavigationBarContrastEnforced = false
+        window.insetsController?.setSystemBarsAppearance(
+            0, WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS,
+        )
+
         val column = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(pad, pad, pad, pad)
+            setPadding(dp(16), dp(20), dp(16), dp(24))
         }
 
-        column.addView(heading("AdbSync Companion"))
-        pcStatus = body()
+        column.addView(title("AdbSync"))
+        pcStatus = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(6), 0, 0)
+        }
         column.addView(pcStatus)
+
+        column.addView(subSectionLabel("Jobs"))
         jobsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         column.addView(jobsContainer)
 
-        column.addView(heading("Setup").apply { setPadding(0, dp(24), 0, dp(4)) })
-
-        notificationStatus = body()
-        column.addView(notificationStatus)
-        column.addView(button("Allow notifications") {
-            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQUEST_NOTIFICATIONS)
-        })
-
-        batteryStatus = body()
-        column.addView(batteryStatus)
-        column.addView(button("Exempt from battery optimization") { requestBatteryExemption() })
-
-        adbTimeoutStatus = body()
-        column.addView(adbTimeoutStatus)
-        column.addView(button("Open developer options") {
-            startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
-        })
-
-        wifiDebugStatus = body()
-        column.addView(wifiDebugStatus)
-        autoEnableSwitch = Switch(this).apply {
-            text = "Turn wireless debugging back on when Wi-Fi connects"
-            textSize = 15f
-            setOnCheckedChangeListener { _, checked ->
-                WirelessDebugging.setAutoEnable(this@MainActivity, checked)
-                if (checked) CompanionJobService.scheduleEnable(this@MainActivity)
+        column.addView(subSectionLabel("Wireless debugging"))
+        column.addView(card().apply {
+            wifiDebugStatus = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.VERTICAL }
+            addView(wifiDebugStatus)
+            autoEnableSwitch = toggle("Turn back on when Wi-Fi connects").apply {
+                setOnCheckedChangeListener { _, checked ->
+                    WirelessDebugging.setAutoEnable(this@MainActivity, checked)
+                    if (checked) CompanionJobService.scheduleEnable(this@MainActivity)
+                }
             }
-        }
-        column.addView(autoEnableSwitch)
-        column.addView(button("Pair with PC over Wi-Fi") { startPairing() })
+            addView(divider())
+            addView(autoEnableSwitch)
+            addView(divider())
+            addView(button("Pair with PC over Wi-Fi", fill = true) { startPairing() })
+        })
 
-        serviceStatus = body()
-        column.addView(serviceStatus)
-        column.addView(button("Simulate a 10s sync") { simulateSync() })
+        column.addView(subSectionLabel("Setup"))
+        setupCard = card()
+        column.addView(setupCard)
+
+        column.addView(subSectionLabel("Diagnostics"))
+        column.addView(card().apply {
+            serviceStatus = caption()
+            addView(serviceStatus)
+            addView(View(this@MainActivity).apply { minimumHeight = dp(10) })
+            addView(button("Simulate a 10s sync", fill = true) { simulateSync() })
+        })
 
         setContentView(ScrollView(this).apply {
             addView(column)
+            isVerticalScrollBarEnabled = false
             setOnApplyWindowInsetsListener { view, insets ->
                 val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
                 view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
@@ -141,24 +151,31 @@ class MainActivity : Activity() {
         refreshSetup()
     }
 
+    private fun setPcStatus(text: String, color: Int) {
+        pcStatus.removeAllViews()
+        pcStatus.addView(statusLine(text, color, if (color == Ui.SUCCESS) Ui.TEXT_SECONDARY else color))
+    }
+
     private fun startFeed() {
         stopFeed()
         val config = PcConfig.load(this) ?: run {
-            pcStatus.text = "Not set up yet. Connect this phone to AdbSync over adb (USB or wireless debugging) " +
-                "and it will send its address here within a few minutes."
+            setPcStatus("Not set up yet. Connect this phone to AdbSync over adb (USB or wireless debugging); " +
+                "it sends its address here within a few minutes.", Ui.WARNING)
+            renderJobs()
             return
         }
 
         val active = AtomicBoolean(true)
         feedActive = active
+        setPcStatus("Connecting to ${config.pcName}…", Ui.TEXT_SECONDARY)
         val client = PcClient(config)
         val listener = object : PcClient.FeedListener {
-            override fun onConnected() = ui { if (active.get()) pcStatus.text = "Connected to ${config.pcName}" }
+            override fun onConnected() = ui { if (active.get()) setPcStatus("Connected to ${config.pcName}", Ui.SUCCESS) }
             override fun onSnapshot(pc: String, jobs: List<RemoteJob>) = ui {
                 if (!active.get()) return@ui
                 this@MainActivity.jobs.clear()
                 jobs.forEach { this@MainActivity.jobs[it.name] = it }
-                pcStatus.text = "Connected to $pc"
+                setPcStatus("Connected to $pc", Ui.SUCCESS)
                 renderJobs()
             }
             override fun onJob(job: RemoteJob) = ui {
@@ -177,20 +194,20 @@ class MainActivity : Activity() {
                 } catch (e: HttpStatusException) {
                     ui {
                         if (!active.get()) return@ui
-                        pcStatus.text = if (e.code == 401) {
-                            "${config.pcName} rejected this phone's token. Connect over adb so AdbSync can resend it."
+                        if (e.code == 401) {
+                            setPcStatus("${config.pcName} rejected this phone's token. Connect over adb so AdbSync can resend it.", Ui.DANGER)
                         } else {
-                            "${config.pcName} returned HTTP ${e.code}"
+                            setPcStatus("${config.pcName} returned HTTP ${e.code}", Ui.DANGER)
                         }
                     }
                 } catch (e: javax.net.ssl.SSLException) {
                     ui {
-                        if (active.get()) pcStatus.text = "${config.pcName}'s certificate doesn't match the one this phone trusts. " +
-                            "Connect over adb so AdbSync can resend it."
+                        if (active.get()) setPcStatus("${config.pcName}'s certificate doesn't match the one this phone trusts. " +
+                            "Connect over adb so AdbSync can resend it.", Ui.DANGER)
                     }
                 } catch (e: Exception) {
                     ui {
-                        if (active.get()) pcStatus.text = "Can't reach ${config.pcName} at ${config.url} (${e.javaClass.simpleName}). Retrying…"
+                        if (active.get()) setPcStatus("Can't reach ${config.pcName}. Retrying…", Ui.WARNING)
                     }
                 }
                 if (!active.get()) break
@@ -219,37 +236,48 @@ class MainActivity : Activity() {
     private fun renderJobs() {
         jobsContainer.removeAllViews()
         if (jobs.isEmpty()) {
-            jobsContainer.addView(body().apply { text = "No jobs configured on the PC." })
+            jobsContainer.addView(card().apply {
+                addView(caption(if (PcConfig.load(this@MainActivity) == null) "Jobs appear here once the PC is connected." else "No jobs configured on the PC."))
+            })
             return
         }
-        for (job in jobs.values) jobsContainer.addView(jobRow(job))
+        for (job in jobs.values) jobsContainer.addView(jobCard(job))
     }
 
-    private fun jobRow(job: RemoteJob): View {
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(12), 0, dp(4))
+    private fun jobCard(job: RemoteJob): View = card().apply {
+        val header = LinearLayout(this@MainActivity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
         }
-        row.addView(TextView(this).apply {
-            text = if (job.enabled) job.name else "${job.name} (disabled)"
-            textSize = 17f
-            setTypeface(typeface, Typeface.BOLD)
+        header.addView(sectionLabel(job.name).apply {
+            if (!job.enabled) setTextColor(Ui.TEXT_SECONDARY)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
-        row.addView(TextView(this).apply {
-            text = job.statusText()
-            textSize = 14f
-            if (!job.running && job.lastFailed) setTextColor(0xFFE5484D.toInt())
-        })
+        if (!job.enabled) header.addView(caption("Disabled"))
+        addView(header)
+        addView(View(this@MainActivity).apply { minimumHeight = dp(6) })
 
-        val buttons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         if (job.running) {
-            buttons.addView(smallButton("Stop") { confirmStop(job) })
+            addView(statusLine(job.statusText(), Ui.ACCENT, Ui.ACCENT))
+            addView(indeterminateBar())
         } else {
-            buttons.addView(smallButton("Run now") { act(job.name, "Run") { it.run(job.name) } })
+            addView(statusLine("Idle", Ui.TEXT_SECONDARY, Ui.TEXT_SECONDARY))
         }
-        buttons.addView(smallButton("Log") { showLog(job.name) })
-        row.addView(buttons)
-        return row
+        job.lastResult?.let { result ->
+            addView(body(result, Ui.resultColor(result, job.lastFailed), 13f).apply { setPadding(dp(15), dp(4), 0, 0) })
+        }
+
+        val buttons = LinearLayout(this@MainActivity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(12), 0, 0)
+        }
+        if (job.running) {
+            buttons.addView(button("Stop", ButtonKind.Danger) { confirmStop(job) })
+        } else {
+            buttons.addView(button("Run now", ButtonKind.Success) { act(job.name, "Run") { it.run(job.name) } })
+        }
+        buttons.addView(button("Log") { showLog(job.name) })
+        addView(buttons)
     }
 
     private fun confirmStop(job: RemoteJob) {
@@ -262,6 +290,14 @@ class MainActivity : Activity() {
             .setMessage("It is currently pushing to a device. Stopping now may leave some devices updated and others not until the job runs again.")
             .setPositiveButton("Stop job") { _, _ -> act(job.name, "Stop") { it.stop(job.name) } }
             .setNegativeButton("Cancel", null)
+            .create()
+            .apply {
+                setOnShowListener {
+                    window?.setBackgroundDrawable(Ui.rounded(Ui.SURFACE_ALT, dp(12)))
+                    getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(Ui.DANGER)
+                    getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(Ui.TEXT_SECONDARY)
+                }
+            }
             .show()
     }
 
@@ -298,14 +334,17 @@ class MainActivity : Activity() {
                     this.text = text
                     textSize = 11f
                     typeface = Typeface.MONOSPACE
+                    setTextColor(Ui.TEXT_PRIMARY)
                     setTextIsSelectable(true)
-                    setPadding(dp(16), dp(8), dp(16), dp(8))
+                    setPadding(dp(20), dp(4), dp(20), dp(8))
                 }
                 val scroll = ScrollView(this).apply { addView(view) }
                 AlertDialog.Builder(this)
                     .setTitle(jobName)
                     .setView(scroll)
                     .setPositiveButton("Close", null)
+                    .create()
+                    .styled()
                     .show()
                 scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
             }
@@ -313,35 +352,65 @@ class MainActivity : Activity() {
     }
 
     private fun refreshSetup() {
-        val notificationsOk = checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
-        notificationStatus.text = if (notificationsOk) "✓ Notifications allowed" else "✗ Notifications blocked: progress won't be visible"
-
-        val batteryOk = getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName)
-        batteryStatus.text = if (batteryOk) {
-            "✓ Exempt from battery optimization"
-        } else {
-            "✗ Battery optimized: Android may refuse to start the sync service from the background"
+        setupCard.removeAllViews()
+        var first = true
+        fun item(ok: Boolean?, okText: String, problemText: String, actionText: String?, action: (() -> Unit)?) {
+            if (!first) setupCard.addView(divider())
+            first = false
+            val color = when (ok) {
+                true -> Ui.SUCCESS
+                false -> Ui.DANGER
+                null -> Ui.WARNING
+            }
+            setupCard.addView(statusLine(if (ok == true) okText else problemText, color, if (ok == true) Ui.TEXT_PRIMARY else color))
+            if (ok != true && actionText != null && action != null) {
+                setupCard.addView(View(this).apply { minimumHeight = dp(10) })
+                setupCard.addView(button(actionText, ButtonKind.Primary, fill = true, onClick = action))
+            }
         }
 
-        adbTimeoutStatus.text = when (readAdbAuthTimeoutDisabled()) {
-            true -> "✓ adb authorization timeout disabled"
-            false -> "! adb authorization timeout is on: the PC's key is revoked after 7 days unused. " +
-                "Turn on \"Disable adb authorization timeout\" in developer options."
-            null -> "? Couldn't read the adb authorization timeout setting. Check \"Disable adb authorization timeout\" " +
-                "in developer options."
-        }
+        item(
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED,
+            "Notifications allowed",
+            "Notifications are blocked, so sync progress won't show",
+            "Allow notifications",
+        ) { requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQUEST_NOTIFICATIONS) }
 
-        wifiDebugStatus.text = buildString {
-            append(if (WirelessDebugging.canWrite(this@MainActivity)) {
-                "✓ Can control wireless debugging"
+        item(
+            getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName),
+            "Exempt from battery optimization",
+            "Battery optimized: Android may refuse to keep Wi-Fi awake during syncs",
+            "Exempt from battery optimization",
+        ) { requestBatteryExemption() }
+
+        val timeoutDisabled = readAdbAuthTimeoutDisabled()
+        item(
+            timeoutDisabled,
+            "adb authorization timeout disabled",
+            if (timeoutDisabled == false) {
+                "adb authorization timeout is on: the PC's key is revoked after 7 days unused"
             } else {
-                "✗ Can't control wireless debugging yet. AdbSync grants this automatically the next time it reaches this phone over adb."
-            })
-            append(if (WirelessDebugging.isEnabled(this@MainActivity)) " (currently on)" else " (currently off)")
+                "Couldn't read the adb authorization timeout setting"
+            },
+            "Open developer options",
+        ) { startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)) }
+
+        wifiDebugStatus.removeAllViews()
+        val canWrite = WirelessDebugging.canWrite(this)
+        val enabled = WirelessDebugging.isEnabled(this)
+        wifiDebugStatus.addView(statusLine(
+            if (enabled) "On" else "Off",
+            if (enabled) Ui.SUCCESS else Ui.TEXT_SECONDARY,
+            Ui.TEXT_PRIMARY,
+        ))
+        if (!canWrite) {
+            wifiDebugStatus.addView(caption("AdbSync grants this app control of wireless debugging the next time it reaches the phone over adb.")
+                .apply { setPadding(dp(15), dp(4), 0, 0) })
         }
         autoEnableSwitch.isChecked = WirelessDebugging.autoEnable(this)
+        autoEnableSwitch.isEnabled = canWrite
 
-        serviceStatus.text = if (SyncService.isRunning) "Sync service running (locks held)" else "Sync service idle"
+        serviceStatus.text = if (SyncService.isRunning) "Sync service running, holding wake and Wi-Fi locks" else "Sync service idle"
     }
 
     private fun startPairing() {
@@ -390,31 +459,6 @@ class MainActivity : Activity() {
     private fun ui(block: () -> Unit) {
         handler.post { if (!isDestroyed) block() }
     }
-
-    private fun heading(text: String) = TextView(this).apply {
-        this.text = text
-        textSize = 22f
-        setPadding(0, 0, 0, dp(4))
-    }
-
-    private fun body() = TextView(this).apply {
-        textSize = 15f
-        setPadding(0, dp(12), 0, dp(6))
-    }
-
-    private fun button(text: String, onClick: () -> Unit) = Button(this).apply {
-        this.text = text
-        layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
-        setOnClickListener { onClick() }
-    }
-
-    private fun smallButton(text: String, onClick: () -> Unit) = Button(this).apply {
-        this.text = text
-        layoutParams = LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { marginEnd = dp(8) }
-        setOnClickListener { onClick() }
-    }
-
-    private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 
     private companion object {
         const val REQUEST_NOTIFICATIONS = 1

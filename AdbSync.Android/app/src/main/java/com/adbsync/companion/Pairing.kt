@@ -29,6 +29,7 @@ object Pairing {
 
         val notification = Notification.Builder(context, CHANNEL)
             .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
+            .setColor(Ui.ACCENT)
             .setContentTitle("Pair with AdbSync")
             .setContentText("Tap \"Pair device with pairing code\", then enter the code here.")
             .setStyle(Notification.BigTextStyle().bigText(
@@ -56,6 +57,7 @@ object Pairing {
         ensureChannel(context)
         val notification = Notification.Builder(context, CHANNEL)
             .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
+            .setColor(Ui.ACCENT)
             .setContentTitle(title)
             .setContentText(text)
             .setStyle(Notification.BigTextStyle().bigText(text))

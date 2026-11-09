@@ -18,9 +18,9 @@
 
     <application
         android:allowBackup="false"
-        android:icon="@android:drawable/ic_popup_sync"
+        android:icon="@mipmap/ic_launcher"
         android:label="AdbSync Companion"
-        android:theme="@android:style/Theme.DeviceDefault.DayNight">
+        android:theme="@android:style/Theme.DeviceDefault">
 
         <activity
             android:name=".MainActivity"

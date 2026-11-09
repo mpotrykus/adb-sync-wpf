@@ -38,6 +38,7 @@ object Notifications {
 
         val builder = Notification.Builder(context, CHANNEL_SYNC)
             .setSmallIcon(android.R.drawable.stat_notify_sync)
+            .setColor(Ui.ACCENT)
             .setContentTitle(title)
             .setContentText(text)
             .setStyle(Notification.BigTextStyle().bigText(lines.joinToString("\n")))
@@ -62,6 +63,7 @@ object Notifications {
         }
         val notification = Notification.Builder(context, CHANNEL_RESULT)
             .setSmallIcon(icon)
+            .setColor(Ui.ACCENT)
             .setContentTitle(title)
             .setContentText(text)
             .setStyle(Notification.BigTextStyle().bigText(text))
