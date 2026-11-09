@@ -21,6 +21,14 @@ public class EffectiveJobSettingsTests
     };
 
     [Fact]
+    public void Resolve_FileDetailRunsKept_DefaultsToTenAndJobCanOverrideIncludingZero()
+    {
+        Assert.Equal(10, new SyncJobConfig { Name = "Job" }.Resolve(Global).FileDetailRunsKept);
+        Assert.Equal(3, new SyncJobConfig { Name = "Job", FileDetailRunsKept = 3 }.Resolve(Global).FileDetailRunsKept);
+        Assert.Equal(0, new SyncJobConfig { Name = "Job", FileDetailRunsKept = 0 }.Resolve(Global).FileDetailRunsKept);
+    }
+
+    [Fact]
     public void Resolve_JobLeavesEverythingUnset_InheritsAllGlobalDefaults()
     {
         var job = new SyncJobConfig { Name = "Job" };

@@ -155,6 +155,7 @@ public partial class App : Application
         services.AddSingleton<IDeviceSnapshotService, DeviceSnapshotService>();
         services.AddSingleton<IRunHistoryStore, RunHistoryStore>();
         services.AddSingleton<ILiveRunLogSink, LiveRunLogSink>();
+        services.AddSingleton<ILiveRunStepSink, LiveRunStepSink>();
 
         services.AddSingleton<DashboardViewModel>();
         services.AddSingleton<CompanionCertificateStore>();

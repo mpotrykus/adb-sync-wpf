@@ -33,7 +33,8 @@ public sealed class SyncJobRunner(
     ILogger<SyncJobRunner>? logger = null,
     ILiveRunLogSink? liveLog = null,
     IDeviceAccessGate? deviceAccessGate = null,
-    IPendingConflictStore? pendingConflicts = null)
+    IPendingConflictStore? pendingConflicts = null,
+    ILiveRunStepSink? liveSteps = null)
 {
     public const string AlreadyRunningReason = "already running";
 
@@ -47,6 +48,7 @@ public sealed class SyncJobRunner(
         var runId = Guid.NewGuid();
         var startedAt = DateTimeOffset.UtcNow;
         using var runLog = RunLogCapture.Begin(job.Name, liveLog);
+        var steps = new RunStepRecorder(job.Name, liveSteps);
 
         var totalFilesCopied = 0;
         var totalFilesDeleted = 0;
@@ -83,6 +85,7 @@ public sealed class SyncJobRunner(
                 return await FinishAsync(JobRunOutcome.Skipped);
             }
 
+            steps.Plan(job.Devices.Select(b => b.DeviceName));
             events.RunStarted(job.Name, eff.DryRun);
             events.PhaseChanged(job.Name, SyncPhase.PreConnect);
             var exclude = new ExcludeMatcher(job.Exclude);
@@ -92,7 +95,9 @@ public sealed class SyncJobRunner(
             {
                 var device = devices.FirstOrDefault(d => d.Name == binding.DeviceName)
                     ?? throw new InvalidOperationException($"Device '{binding.DeviceName}' referenced by job '{job.Name}' was not found.");
+                steps.Start(binding.DeviceName, SyncPhase.PreConnect);
                 serials[binding.DeviceName] = await deviceResolver.EnsureConnectedAsync(device, ct);
+                steps.Finish(binding.DeviceName, SyncPhase.PreConnect);
             }
 
             if (job.AppPackage is not null)
@@ -128,7 +133,7 @@ public sealed class SyncJobRunner(
                 }
 
                 var pullStopwatch = Stopwatch.StartNew();
-                var pullStats = await RunPullPhaseAsync(job, jobIndex, masterPath, serials, exclude, resumeFrom, eff, settings.MaxConcurrentPerDevice, ct);
+                var pullStats = await RunPullPhaseAsync(job, jobIndex, masterPath, serials, exclude, resumeFrom, eff, settings.MaxConcurrentPerDevice, steps, ct);
                 pullDuration = pullStopwatch.Elapsed;
                 anyChange = pullStats.AnyChange;
                 totalErrors += pullStats.Errors;
@@ -161,7 +166,7 @@ public sealed class SyncJobRunner(
             }
 
             var pushStopwatch = Stopwatch.StartNew();
-            var pushStats = await RunPushPhaseAsync(job, jobIndex, masterPath, serials, exclude, resumeFrom, eff, settings.MaxConcurrentPerDevice, ct);
+            var pushStats = await RunPushPhaseAsync(job, jobIndex, masterPath, serials, exclude, resumeFrom, eff, settings.MaxConcurrentPerDevice, steps, ct);
             pushDuration = pushStopwatch.Elapsed;
             totalFilesCopied = pushStats.CopiedPaths.Count;
             totalFilesDeleted = pushStats.DeletedPaths.Count;
@@ -194,13 +199,18 @@ public sealed class SyncJobRunner(
             var record = new JobRunRecord(
                 runId, job.Name, startedAt, DateTimeOffset.UtcNow, outcome, errorMessage,
                 totalFilesCopied, totalFilesDeleted, totalErrors, totalBytesCopied, pullDuration, pushDuration);
+            var finalSteps = steps.Complete(outcome);
             try
             {
-                await runHistory.SaveRunAsync(record, runLog.BuildText(), eff.MaxRunHistoryEntries, CancellationToken.None);
+                await runHistory.SaveRunAsync(record, runLog.BuildText(), eff.MaxRunHistoryEntries, finalSteps, steps.Files, eff.FileDetailRunsKept, CancellationToken.None);
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Failed to save run history for '{Job}'", job.Name);
+            }
+            finally
+            {
+                steps.End();
             }
             return new JobRunResult(outcome, errorMessage);
         }
@@ -209,7 +219,7 @@ public sealed class SyncJobRunner(
     private async Task<PhaseStats> RunPullPhaseAsync(
         SyncJobConfig job, int jobIndex, string masterPath, Dictionary<string, string> serials,
         ExcludeMatcher exclude, SyncCheckpoint? resumeFrom, EffectiveJobSettings eff, int maxConcurrentPerDevice,
-        CancellationToken ct)
+        RunStepRecorder steps, CancellationToken ct)
     {
         var projectRoot = Path.GetDirectoryName(masterPath)!;
         var completed = resumeFrom is { Phase: SyncPhase.Pull } r ? new List<string>(r.CompletedDevices) : [];
@@ -229,10 +239,14 @@ public sealed class SyncJobRunner(
             var stagingPath = GetStagingPath(projectRoot, binding.DeviceName);
 
             if (_deviceAccessGate.IsBusy(binding.DeviceName))
+            {
+                steps.Waiting(binding.DeviceName, SyncPhase.Pull);
                 events.PhaseChanged(job.Name, SyncPhase.WaitingForDevice, binding.DeviceName);
+            }
             TransferResult pullResult;
             await using (await _deviceAccessGate.AcquireAsync(binding.DeviceName, maxConcurrentPerDevice, ct))
             {
+                steps.Start(binding.DeviceName, SyncPhase.Pull);
                 events.PhaseChanged(job.Name, SyncPhase.Pull, binding.DeviceName);
                 _logger.LogInformation("Job '{Job}' pulling from '{Device}'", job.Name, binding.DeviceName);
                 pullResult = await transfer.PullMirrorAsync(serial, binding.RemotePath, stagingPath, exclude, eff.ToTransferPolicy(), ct);
@@ -240,6 +254,9 @@ public sealed class SyncJobRunner(
             _logger.LogInformation(
                 "Job '{Job}' pulled from '{Device}': {Copied} copied, {Deleted} deleted, {Errors} error(s)",
                 job.Name, binding.DeviceName, pullResult.FilesCopied, pullResult.FilesDeleted, pullResult.Errors.Count);
+
+            steps.Finish(binding.DeviceName, SyncPhase.Pull, pullResult.FilesCopied, pullResult.FilesDeleted, pullResult.BytesCopied, pullResult.Errors.Count);
+            steps.AddFiles(TransferFiles(binding.DeviceName, SyncPhase.Pull, pullResult));
 
             var fileCount = Directory.Exists(stagingPath)
                 ? Directory.EnumerateFiles(stagingPath, "*", SearchOption.AllDirectories).Count()
@@ -262,6 +279,7 @@ public sealed class SyncJobRunner(
 
                 await pushSafety.RecordDeviceSnapshotAsync(job.Name, binding.DeviceName, fileCount, ct);
 
+                steps.Start(binding.DeviceName, SyncPhase.Merge);
                 events.PhaseChanged(job.Name, SyncPhase.Merge, binding.DeviceName);
                 _logger.LogInformation("Job '{Job}' merge with '{Device}' started", job.Name, binding.DeviceName);
                 var mergeResult = await merge.MergeAsync(stagingPath, masterPath, manifest, mergeOptions, ct);
@@ -294,6 +312,11 @@ public sealed class SyncJobRunner(
                     events.ConflictsPending(job.Name, binding.DeviceName, newlyPending, (await pendingConflicts.ListAsync(job.Name, ct)).Count);
                 }
 
+                steps.Finish(
+                    binding.DeviceName, SyncPhase.Merge, mergeResult.Created + mergeResult.Updated, mergeResult.Deleted,
+                    conflicts: mergeResult.Conflicts.Count + mergeResult.Held.Count);
+                steps.AddFiles(MergeFiles(binding.DeviceName, mergeResult));
+
                 PruneConflictBackups(mergeOptions.ConflictBackupDir!, eff.ConflictRetentionDays);
 
                 if (Directory.Exists(stagingPath))
@@ -317,7 +340,7 @@ public sealed class SyncJobRunner(
     private async Task<PhaseStats> RunPushPhaseAsync(
         SyncJobConfig job, int jobIndex, string masterPath, Dictionary<string, string> serials,
         ExcludeMatcher exclude, SyncCheckpoint? resumeFrom, EffectiveJobSettings eff, int maxConcurrentPerDevice,
-        CancellationToken ct)
+        RunStepRecorder steps, CancellationToken ct)
     {
         var completed = resumeFrom is { Phase: SyncPhase.Push } r ? new List<string>(r.CompletedDevices) : [];
         var alreadyDone = new HashSet<string>(completed, StringComparer.OrdinalIgnoreCase);
@@ -346,10 +369,14 @@ public sealed class SyncJobRunner(
             }
 
             if (_deviceAccessGate.IsBusy(binding.DeviceName))
+            {
+                steps.Waiting(binding.DeviceName, SyncPhase.Push);
                 events.PhaseChanged(job.Name, SyncPhase.WaitingForDevice, binding.DeviceName);
+            }
             TransferResult pushResult;
             await using (await _deviceAccessGate.AcquireAsync(binding.DeviceName, maxConcurrentPerDevice, ct))
             {
+                steps.Start(binding.DeviceName, SyncPhase.Push);
                 events.PhaseChanged(job.Name, SyncPhase.Push, binding.DeviceName);
                 _logger.LogInformation("Job '{Job}' pushing to '{Device}'", job.Name, binding.DeviceName);
                 pushResult = await transfer.PushMirrorAsync(serial, masterPath, binding.RemotePath, pushExclude, eff.ToTransferPolicy(), ct);
@@ -357,6 +384,9 @@ public sealed class SyncJobRunner(
             _logger.LogInformation(
                 "Job '{Job}' pushed to '{Device}': {Copied} copied, {Deleted} deleted, {Errors} error(s)",
                 job.Name, binding.DeviceName, pushResult.FilesCopied, pushResult.FilesDeleted, pushResult.Errors.Count);
+
+            steps.Finish(binding.DeviceName, SyncPhase.Push, pushResult.FilesCopied, pushResult.FilesDeleted, pushResult.BytesCopied, pushResult.Errors.Count);
+            steps.AddFiles(TransferFiles(binding.DeviceName, SyncPhase.Push, pushResult));
 
             await bookkeepingGate.WaitAsync(ct);
             try
@@ -381,6 +411,25 @@ public sealed class SyncJobRunner(
 
         return new PhaseStats(AnyChange: false, filesCopied, filesDeleted, errors, bytesCopied, copiedPaths.ToList(), deletedPaths.ToList());
     }
+
+    private static IEnumerable<RunFileChange> TransferFiles(string device, SyncPhase phase, TransferResult result) =>
+        result.CopiedPaths.Select(p => new RunFileChange(device, phase, p, RunFileAction.Copied))
+            .Concat(result.DeletedPaths.Select(p => new RunFileChange(device, phase, p, RunFileAction.Deleted)))
+            .Concat(result.Errors.Select(e => new RunFileChange(device, phase, "", RunFileAction.Error, Detail: e)));
+
+    private static IEnumerable<RunFileChange> MergeFiles(string device, MergeResult result) =>
+        result.Changes.Select(c => new RunFileChange(
+                device, SyncPhase.Merge, c.RelativePath,
+                c.Kind switch { MergeChangeKind.Created => RunFileAction.Created, MergeChangeKind.Updated => RunFileAction.Updated, _ => RunFileAction.Deleted },
+                c.Size,
+                c.Kind == MergeChangeKind.Deleted
+                    ? (c.ToDevice ? "removed from device" : "removed from master")
+                    : (c.ToDevice ? "master → device" : "device → master")))
+            .Concat(result.Conflicts.Select(c => new RunFileChange(
+                device, SyncPhase.Merge, c.RelativePath, RunFileAction.Conflict,
+                Detail: (c.WinningSide == "staging" ? "device version kept" : "master version kept") + (c.BackupPath is null ? "" : ", other side backed up"))))
+            .Concat(result.Held.Select(h => new RunFileChange(
+                device, SyncPhase.Merge, h.RelativePath, RunFileAction.Held, h.StagingSize ?? h.MasterSize, "waiting for your decision")));
 
     private readonly record struct PhaseStats(
         bool AnyChange, int FilesCopied, int FilesDeleted, int Errors, long BytesCopied,

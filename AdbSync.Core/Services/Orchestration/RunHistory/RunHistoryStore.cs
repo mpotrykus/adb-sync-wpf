@@ -18,7 +18,15 @@ public sealed class RunHistoryStore : IRunHistoryStore
         _connectionString = $"Data Source={paths.RunHistoryDbFile};Pooling=False";
     }
 
-    public async Task SaveRunAsync(JobRunRecord record, string logText, int maxRuns, CancellationToken ct = default)
+    public Task SaveRunAsync(JobRunRecord record, string logText, int maxRuns, CancellationToken ct = default) =>
+        SaveRunAsync(record, logText, maxRuns, null, ct);
+
+    public Task SaveRunAsync(JobRunRecord record, string logText, int maxRuns, IReadOnlyList<RunStepRecord>? steps, CancellationToken ct = default) =>
+        SaveRunAsync(record, logText, maxRuns, steps, null, 0, ct);
+
+    public async Task SaveRunAsync(
+        JobRunRecord record, string logText, int maxRuns, IReadOnlyList<RunStepRecord>? steps,
+        IReadOnlyList<RunFileChange>? files, int keepFileDetailRuns, CancellationToken ct = default)
     {
         await using var connection = await OpenAsync(ct);
         await using var transaction = connection.BeginTransaction();
@@ -52,6 +60,74 @@ public sealed class RunHistoryStore : IRunHistoryStore
             insertLog.Parameters.AddWithValue("@runId", record.RunId.ToString("N"));
             insertLog.Parameters.AddWithValue("@logText", logText);
             await insertLog.ExecuteNonQueryAsync(ct);
+        }
+
+        for (var i = 0; i < (steps?.Count ?? 0); i++)
+        {
+            var step = steps![i];
+            await using var insertStep = connection.CreateCommand();
+            insertStep.Transaction = transaction;
+            insertStep.CommandText = """
+                INSERT INTO RunSteps (RunId, Seq, DeviceName, Phase, Status, StartedAt, EndedAt, FilesCopied, FilesDeleted, BytesCopied, Errors, Conflicts)
+                VALUES (@runId, @seq, @deviceName, @phase, @status, @startedAt, @endedAt, @filesCopied, @filesDeleted, @bytesCopied, @errors, @conflicts);
+                """;
+            insertStep.Parameters.AddWithValue("@runId", record.RunId.ToString("N"));
+            insertStep.Parameters.AddWithValue("@seq", i);
+            insertStep.Parameters.AddWithValue("@deviceName", step.DeviceName);
+            insertStep.Parameters.AddWithValue("@phase", step.Phase.ToString());
+            insertStep.Parameters.AddWithValue("@status", step.Status.ToString());
+            insertStep.Parameters.AddWithValue("@startedAt", (object?)step.StartedAt?.ToString("O") ?? DBNull.Value);
+            insertStep.Parameters.AddWithValue("@endedAt", (object?)step.EndedAt?.ToString("O") ?? DBNull.Value);
+            insertStep.Parameters.AddWithValue("@filesCopied", step.FilesCopied);
+            insertStep.Parameters.AddWithValue("@filesDeleted", step.FilesDeleted);
+            insertStep.Parameters.AddWithValue("@bytesCopied", step.BytesCopied);
+            insertStep.Parameters.AddWithValue("@errors", step.Errors);
+            insertStep.Parameters.AddWithValue("@conflicts", step.Conflicts);
+            await insertStep.ExecuteNonQueryAsync(ct);
+        }
+
+        if (files is { Count: > 0 })
+        {
+            await using var insertFile = connection.CreateCommand();
+            insertFile.Transaction = transaction;
+            insertFile.CommandText = """
+                INSERT INTO RunFiles (RunId, Seq, DeviceName, Phase, Path, Action, Size, Detail)
+                VALUES (@runId, @seq, @deviceName, @phase, @path, @action, @size, @detail);
+                """;
+            insertFile.Parameters.AddWithValue("@runId", record.RunId.ToString("N"));
+            var seqParam = insertFile.Parameters.Add("@seq", SqliteType.Integer);
+            var deviceParam = insertFile.Parameters.Add("@deviceName", SqliteType.Text);
+            var phaseParam = insertFile.Parameters.Add("@phase", SqliteType.Text);
+            var pathParam = insertFile.Parameters.Add("@path", SqliteType.Text);
+            var actionParam = insertFile.Parameters.Add("@action", SqliteType.Text);
+            var sizeParam = insertFile.Parameters.Add("@size", SqliteType.Integer);
+            var detailParam = insertFile.Parameters.Add("@detail", SqliteType.Text);
+
+            for (var i = 0; i < files.Count; i++)
+            {
+                var file = files[i];
+                seqParam.Value = i;
+                deviceParam.Value = file.DeviceName;
+                phaseParam.Value = file.Phase.ToString();
+                pathParam.Value = file.Path;
+                actionParam.Value = file.Action.ToString();
+                sizeParam.Value = (object?)file.Size ?? DBNull.Value;
+                detailParam.Value = (object?)file.Detail ?? DBNull.Value;
+                await insertFile.ExecuteNonQueryAsync(ct);
+            }
+        }
+
+        if (keepFileDetailRuns > 0)
+        {
+            await using var pruneFiles = connection.CreateCommand();
+            pruneFiles.Transaction = transaction;
+            pruneFiles.CommandText = """
+                DELETE FROM RunFiles WHERE RunId IN (
+                    SELECT RunId FROM Runs WHERE JobName = @jobName ORDER BY StartedAt DESC LIMIT -1 OFFSET @keep);
+                """;
+            pruneFiles.Parameters.AddWithValue("@jobName", record.JobName);
+            pruneFiles.Parameters.AddWithValue("@keep", keepFileDetailRuns);
+            await pruneFiles.ExecuteNonQueryAsync(ct);
         }
 
         await using (var trim = connection.CreateCommand())
@@ -96,6 +172,60 @@ public sealed class RunHistoryStore : IRunHistoryStore
                 reader.GetInt64(9),
                 reader.IsDBNull(10) ? null : TimeSpan.FromTicks(reader.GetInt64(10)),
                 reader.IsDBNull(11) ? null : TimeSpan.FromTicks(reader.GetInt64(11))));
+        }
+        return results;
+    }
+
+    public async Task<IReadOnlyList<RunFileChange>> GetRunFilesAsync(Guid runId, CancellationToken ct = default)
+    {
+        await using var connection = await OpenAsync(ct);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT DeviceName, Phase, Path, Action, Size, Detail
+            FROM RunFiles WHERE RunId = @runId ORDER BY Seq;
+            """;
+        command.Parameters.AddWithValue("@runId", runId.ToString("N"));
+
+        var results = new List<RunFileChange>();
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            results.Add(new RunFileChange(
+                reader.GetString(0),
+                Enum.Parse<SyncPhase>(reader.GetString(1)),
+                reader.GetString(2),
+                Enum.Parse<RunFileAction>(reader.GetString(3)),
+                reader.IsDBNull(4) ? null : reader.GetInt64(4),
+                reader.IsDBNull(5) ? null : reader.GetString(5)));
+        }
+        return results;
+    }
+
+    public async Task<IReadOnlyList<RunStepRecord>> GetRunStepsAsync(Guid runId, CancellationToken ct = default)
+    {
+        await using var connection = await OpenAsync(ct);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT DeviceName, Phase, Status, StartedAt, EndedAt, FilesCopied, FilesDeleted, BytesCopied, Errors, Conflicts
+            FROM RunSteps WHERE RunId = @runId ORDER BY Seq;
+            """;
+        command.Parameters.AddWithValue("@runId", runId.ToString("N"));
+
+        var results = new List<RunStepRecord>();
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            results.Add(new RunStepRecord(
+                reader.GetString(0),
+                Enum.Parse<SyncPhase>(reader.GetString(1)),
+                Enum.Parse<RunStepStatus>(reader.GetString(2)),
+                reader.IsDBNull(3) ? null : DateTimeOffset.Parse(reader.GetString(3), CultureInfo.InvariantCulture),
+                reader.IsDBNull(4) ? null : DateTimeOffset.Parse(reader.GetString(4), CultureInfo.InvariantCulture),
+                reader.GetInt32(5),
+                reader.GetInt32(6),
+                reader.GetInt64(7),
+                reader.GetInt32(8),
+                reader.GetInt32(9)));
         }
         return results;
     }
@@ -160,6 +290,30 @@ public sealed class RunHistoryStore : IRunHistoryStore
                     CREATE TABLE IF NOT EXISTS RunLogs (
                         RunId TEXT PRIMARY KEY REFERENCES Runs(RunId) ON DELETE CASCADE,
                         LogText TEXT NOT NULL);
+                    CREATE TABLE IF NOT EXISTS RunSteps (
+                        RunId TEXT NOT NULL REFERENCES Runs(RunId) ON DELETE CASCADE,
+                        Seq INTEGER NOT NULL,
+                        DeviceName TEXT NOT NULL,
+                        Phase TEXT NOT NULL,
+                        Status TEXT NOT NULL,
+                        StartedAt TEXT NULL,
+                        EndedAt TEXT NULL,
+                        FilesCopied INTEGER NOT NULL DEFAULT 0,
+                        FilesDeleted INTEGER NOT NULL DEFAULT 0,
+                        BytesCopied INTEGER NOT NULL DEFAULT 0,
+                        Errors INTEGER NOT NULL DEFAULT 0,
+                        Conflicts INTEGER NOT NULL DEFAULT 0,
+                        PRIMARY KEY (RunId, Seq));
+                    CREATE TABLE IF NOT EXISTS RunFiles (
+                        RunId TEXT NOT NULL REFERENCES Runs(RunId) ON DELETE CASCADE,
+                        Seq INTEGER NOT NULL,
+                        DeviceName TEXT NOT NULL,
+                        Phase TEXT NOT NULL,
+                        Path TEXT NOT NULL,
+                        Action TEXT NOT NULL,
+                        Size INTEGER NULL,
+                        Detail TEXT NULL,
+                        PRIMARY KEY (RunId, Seq));
                     """;
                 await command.ExecuteNonQueryAsync(ct);
             }

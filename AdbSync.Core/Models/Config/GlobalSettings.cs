@@ -51,6 +51,10 @@ public sealed class GlobalSettings
     /// <summary>Default number of run-history rows kept per job, unless a job overrides it.</summary>
     public int MaxRunHistoryEntries { get; set; } = 50;
 
+    /// <summary>Default number of most-recent runs per job whose per-file change list is kept; older runs keep their totals and
+    /// log but not their file lists. 0 keeps every run's file list, which lets the history database grow without bound.</summary>
+    public int FileDetailRunsKept { get; set; } = 10;
+
     /// <summary>Default for how a file changed on two sides at once is resolved, unless a job overrides it.</summary>
     public ConflictPolicy ConflictPolicy { get; set; } = ConflictPolicy.NewestWins;
 

@@ -33,6 +33,7 @@ public partial class DashboardWindow : Window
     private readonly DashboardViewModel _viewModel;
     private readonly IRunHistoryStore _historyStore;
     private readonly ILiveRunLogSink _liveLogSink;
+    private readonly ILiveRunStepSink _liveStepSink;
     private readonly IAdbDeviceResolver _deviceResolver;
     private readonly IDeviceChangeWatcher _changeWatcher;
     private readonly IRemoteFileSystemFactory _remoteFileSystemFactory;
@@ -51,7 +52,7 @@ public partial class DashboardWindow : Window
 
     public DashboardWindow(
         AppConfigService configService, DashboardUiStateStore uiStateStore, JobRunService jobRunService, ChangeWatchHostedService changeWatchHostedService, DashboardViewModel viewModel,
-        IRunHistoryStore historyStore, ILiveRunLogSink liveLogSink, IAdbDeviceResolver deviceResolver, IDeviceChangeWatcher changeWatcher,
+        IRunHistoryStore historyStore, ILiveRunLogSink liveLogSink, ILiveRunStepSink liveStepSink, IAdbDeviceResolver deviceResolver, IDeviceChangeWatcher changeWatcher,
         IRemoteFileSystemFactory remoteFileSystemFactory, IDevicePackageLister packageLister,
         AppGateService appGate, JobStatusTracker statusTracker)
     {
@@ -63,6 +64,7 @@ public partial class DashboardWindow : Window
         _viewModel = viewModel;
         _historyStore = historyStore;
         _liveLogSink = liveLogSink;
+        _liveStepSink = liveStepSink;
         _deviceResolver = deviceResolver;
         _changeWatcher = changeWatcher;
         _remoteFileSystemFactory = remoteFileSystemFactory;
@@ -665,7 +667,7 @@ public partial class DashboardWindow : Window
             return;
         }
 
-        var window = new RunHistoryWindow(_historyStore, vm.Name, _viewModel, _liveLogSink) { Owner = this };
+        var window = new RunHistoryWindow(_historyStore, vm.Name, _viewModel, _liveLogSink, _liveStepSink) { Owner = this };
         _openRunHistoryWindows[vm.Name] = window;
         window.Closed += (_, _) => _openRunHistoryWindows.Remove(vm.Name);
         window.Show();

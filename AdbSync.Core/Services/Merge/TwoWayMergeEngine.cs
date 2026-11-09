@@ -36,6 +36,7 @@ public sealed class TwoWayMergeEngine : ITwoWayMergeEngine
         var newEntries = new Dictionary<string, ManifestEntry>(StringComparer.Ordinal);
         var conflicts = new List<MergeConflict>();
         var held = new List<HeldConflict>();
+        var changes = new List<MergeFileChange>();
         int created = 0, updated = 0, deleted = 0;
 
         foreach (var path in allPaths)
@@ -64,6 +65,7 @@ public sealed class TwoWayMergeEngine : ITwoWayMergeEngine
                     if (!options.DryRun)
                         CopyFile(stagingPath, masterPath, path, s!);
                     newEntries[path] = new ManifestEntry(s!.Size, s.ModifiedUtc);
+                    changes.Add(new MergeFileChange(path, m is null ? MergeChangeKind.Created : MergeChangeKind.Updated, s.Size, ToDevice: false));
                     if (m is null) created++; else updated++;
                     break;
 
@@ -71,18 +73,21 @@ public sealed class TwoWayMergeEngine : ITwoWayMergeEngine
                     if (!options.DryRun)
                         CopyFile(masterPath, stagingPath, path, m!);
                     newEntries[path] = new ManifestEntry(m!.Size, m.ModifiedUtc);
+                    changes.Add(new MergeFileChange(path, s is null ? MergeChangeKind.Created : MergeChangeKind.Updated, m.Size, ToDevice: true));
                     if (s is null) created++; else updated++;
                     break;
 
                 case DecisionKind.DeleteFromStaging:
                     if (!options.DryRun)
                         DeleteFile(stagingPath, path);
+                    changes.Add(new MergeFileChange(path, MergeChangeKind.Deleted, s!.Size, ToDevice: true));
                     deleted++;
                     break;
 
                 case DecisionKind.DeleteFromMaster:
                     if (!options.DryRun)
                         DeleteFile(masterPath, path);
+                    changes.Add(new MergeFileChange(path, MergeChangeKind.Deleted, m!.Size, ToDevice: false));
                     deleted++;
                     break;
 
@@ -115,7 +120,7 @@ public sealed class TwoWayMergeEngine : ITwoWayMergeEngine
             Entries = newEntries,
         };
 
-        return Task.FromResult(new MergeResult(created, updated, deleted, conflicts, updatedManifest, held));
+        return Task.FromResult(new MergeResult(created, updated, deleted, conflicts, updatedManifest, held, changes));
     }
 
     private enum DecisionKind

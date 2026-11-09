@@ -33,6 +33,9 @@ public sealed class SyncJobConfig
     /// <summary>Optional override of <see cref="GlobalSettings.MaxRunHistoryEntries"/> for this job only.</summary>
     public int? MaxRunHistoryEntries { get; set; }
 
+    /// <summary>Optional override of <see cref="GlobalSettings.FileDetailRunsKept"/> for this job only.</summary>
+    public int? FileDetailRunsKept { get; set; }
+
     /// <summary>Optional override of <see cref="GlobalSettings.BackupConflictLosers"/> for this job only.</summary>
     public bool? BackupConflictLosers { get; set; }
 
