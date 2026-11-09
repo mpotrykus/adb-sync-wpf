@@ -38,6 +38,10 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".ConflictsActivity"
+            android:exported="false" />
+
         <!-- DUMP is held by the adb shell uid but not grantable to third-party apps,
              so only `adb shell am broadcast` (and the system) can drive this receiver. -->
         <receiver

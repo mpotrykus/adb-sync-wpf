@@ -51,6 +51,9 @@ public sealed class GlobalSettings
     /// <summary>Default number of run-history rows kept per job, unless a job overrides it.</summary>
     public int MaxRunHistoryEntries { get; set; } = 50;
 
+    /// <summary>Default for how a file changed on two sides at once is resolved, unless a job overrides it.</summary>
+    public ConflictPolicy ConflictPolicy { get; set; } = ConflictPolicy.NewestWins;
+
     /// <summary>Default for whether a losing side of a merge conflict is backed up before being overwritten.</summary>
     public bool BackupConflictLosers { get; set; } = true;
 

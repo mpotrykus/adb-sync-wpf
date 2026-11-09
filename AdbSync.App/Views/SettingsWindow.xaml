@@ -227,6 +227,10 @@
                                             <CheckBox x:Name="BackupConflictLosersBox" Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"/>
                                             <TextBlock Text="Back up conflict losers before overwriting" VerticalAlignment="Center" Margin="10,0,0,0"/>
                                         </StackPanel>
+                                        <StackPanel Orientation="Horizontal">
+                                            <CheckBox x:Name="AskOnConflictBox" Style="{StaticResource ToggleSwitch}" VerticalAlignment="Center"/>
+                                            <TextBlock Text="Let me pick a version when a file changed on two sides (resolve on the phone or PC)" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                                        </StackPanel>
                                     </StackPanel>
                                 </Border>
                             </StackPanel>

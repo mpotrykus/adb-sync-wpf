@@ -150,6 +150,15 @@
                                                                 </StackPanel>
                                                             </MenuItem.Header>
                                                         </MenuItem>
+                                                        <MenuItem Click="ResolveConflicts_Click"
+                                                                  Visibility="{Binding HasPendingConflicts, Converter={StaticResource BoolToVisibility}}">
+                                                            <MenuItem.Header>
+                                                                <StackPanel Orientation="Horizontal">
+                                                                    <TextBlock Text="&#xE8FD;" Style="{StaticResource MenuItemIcon}"/>
+                                                                    <TextBlock Text="Resolve Conflicts…" VerticalAlignment="Center"/>
+                                                                </StackPanel>
+                                                            </MenuItem.Header>
+                                                        </MenuItem>
                                                         <MenuItem Click="OpenApp_Click"
                                                                   Visibility="{Binding HasLinkedApp, Converter={StaticResource BoolToVisibility}}">
                                                             <MenuItem.Header>

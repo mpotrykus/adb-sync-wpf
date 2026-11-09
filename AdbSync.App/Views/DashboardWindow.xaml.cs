@@ -7,8 +7,10 @@ using AdbSync.Core.Services.Companion;
 using AdbSync.Core.Services.Config;
 using AdbSync.Core.Services.Devices;
 using AdbSync.Core.Services.Logging;
+using AdbSync.Core.Services.Merge;
 using AdbSync.Core.Services.Orchestration.RunHistory;
 using AdbSync.Core.Services.Transfer;
+using Microsoft.Extensions.DependencyInjection;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
@@ -118,6 +120,7 @@ public partial class DashboardWindow : Window
         _viewModel.SyncFrom(config);
         await PopulateLastOutcomesAsync(config);
         await PopulateCheckpointsAsync(config);
+        await PopulatePendingConflictsAsync();
         foreach (var job in config.Jobs)
         {
             if (_viewModel.Jobs.FirstOrDefault(j => j.Name == job.Name) is { } vm)
@@ -212,6 +215,15 @@ public partial class DashboardWindow : Window
                 vm.CanForcePush = lastRun.ErrorMessage?.Contains("Safety check blocked push", StringComparison.Ordinal) == true;
             }
         }
+    }
+
+    private async Task PopulatePendingConflictsAsync()
+    {
+        var counts = (await App.Services.GetRequiredService<IPendingConflictStore>().ListAsync())
+            .GroupBy(p => p.JobName)
+            .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
+        foreach (var vm in _viewModel.Jobs)
+            vm.PendingConflictCount = counts.GetValueOrDefault(vm.Name);
     }
 
     private async Task PopulateCheckpointsAsync(AppConfig config)
@@ -384,6 +396,19 @@ public partial class DashboardWindow : Window
             ApplyCheckpoint(vm, checkpoint, await _configService.GetAsync());
         else
             ClearCheckpoint(vm);
+    }
+
+    private void ResolveConflicts_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: JobStatusViewModel vm })
+            return;
+
+        var services = App.Services;
+        var window = new ConflictsWindow(
+            services.GetRequiredService<IPendingConflictStore>(), services.GetRequiredService<IConflictResolver>(),
+            _configService, _jobRunService, vm.Name) { Owner = this };
+        window.Closed += async (_, _) => await PopulatePendingConflictsAsync();
+        window.Show();
     }
 
     private async void DryRun_Click(object sender, RoutedEventArgs e)

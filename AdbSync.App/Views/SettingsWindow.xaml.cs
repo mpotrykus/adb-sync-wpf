@@ -51,6 +51,7 @@ public partial class SettingsWindow : Window
         MaxConcurrentJobsBox.Text = settings.MaxConcurrentJobs.ToString();
         MaxConcurrentPerDeviceBox.Text = settings.MaxConcurrentPerDevice.ToString();
         BackupConflictLosersBox.IsChecked = settings.BackupConflictLosers;
+        AskOnConflictBox.IsChecked = settings.ConflictPolicy == ConflictPolicy.Ask;
     }
 
     private void SetToDefault_Click(object sender, RoutedEventArgs e)
@@ -129,6 +130,7 @@ public partial class SettingsWindow : Window
         if (int.TryParse(MaxConcurrentPerDeviceBox.Text, out var maxConcurrentPerDevice) && maxConcurrentPerDevice > 0)
             _config.Settings.MaxConcurrentPerDevice = maxConcurrentPerDevice;
         _config.Settings.BackupConflictLosers = BackupConflictLosersBox.IsChecked == true;
+        _config.Settings.ConflictPolicy = AskOnConflictBox.IsChecked == true ? ConflictPolicy.Ask : ConflictPolicy.NewestWins;
 
         StartupRegistration.SetEnabled(_config.Settings.StartAtLogin);
 

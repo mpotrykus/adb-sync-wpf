@@ -32,7 +32,8 @@ public sealed class SyncJobRunner(
     IRunHistoryStore runHistory,
     ILogger<SyncJobRunner>? logger = null,
     ILiveRunLogSink? liveLog = null,
-    IDeviceAccessGate? deviceAccessGate = null)
+    IDeviceAccessGate? deviceAccessGate = null,
+    IPendingConflictStore? pendingConflicts = null)
 {
     public const string AlreadyRunningReason = "already running";
 
@@ -248,7 +249,8 @@ public sealed class SyncJobRunner(
             var mergeOptions = new MergeOptions(
                 BackupConflictLosers: eff.BackupConflictLosers,
                 ConflictBackupDir: GetConflictBackupDir(projectRoot, binding.DeviceName),
-                DryRun: eff.DryRun);
+                DryRun: eff.DryRun,
+                HoldConflicts: eff.ConflictPolicy == ConflictPolicy.Ask && pendingConflicts is not null);
 
             await bookkeepingGate.WaitAsync(ct);
             try
@@ -277,6 +279,19 @@ public sealed class SyncJobRunner(
                         job.Name, binding.DeviceName, mergeResult.Conflicts.Count,
                         string.Join(", ", mergeResult.Conflicts.Select(c => c.RelativePath)));
                     events.MergeConflictsDetected(job.Name, binding.DeviceName, mergeResult.Conflicts.Count);
+                }
+
+                if (mergeOptions.HoldConflicts && !eff.DryRun && pendingConflicts is not null)
+                {
+                    var newlyPending = await pendingConflicts.ReplaceDeviceAsync(job.Name, binding.DeviceName, mergeResult.Held, stagingPath, ct);
+                    if (mergeResult.Held.Count > 0)
+                    {
+                        _logger.LogWarning(
+                            "Job '{Job}' merge with '{Device}' is holding {Count} conflict(s) for a decision: {Paths}",
+                            job.Name, binding.DeviceName, mergeResult.Held.Count,
+                            string.Join(", ", mergeResult.Held.Select(c => c.RelativePath)));
+                    }
+                    events.ConflictsPending(job.Name, binding.DeviceName, newlyPending, (await pendingConflicts.ListAsync(job.Name, ct)).Count);
                 }
 
                 PruneConflictBackups(mergeOptions.ConflictBackupDir!, eff.ConflictRetentionDays);
@@ -319,6 +334,16 @@ public sealed class SyncJobRunner(
         async Task ProcessDeviceAsync(JobDeviceBinding binding)
         {
             var serial = serials[binding.DeviceName];
+            IExcludeMatcher pushExclude = exclude;
+            if (pendingConflicts is not null)
+            {
+                var held = (await pendingConflicts.ListAsync(job.Name, ct))
+                    .Where(c => string.Equals(c.DeviceName, binding.DeviceName, StringComparison.OrdinalIgnoreCase))
+                    .Select(c => c.RelativePath)
+                    .ToList();
+                if (held.Count > 0)
+                    pushExclude = new PathSetExcludeMatcher(exclude, held);
+            }
 
             if (_deviceAccessGate.IsBusy(binding.DeviceName))
                 events.PhaseChanged(job.Name, SyncPhase.WaitingForDevice, binding.DeviceName);
@@ -327,7 +352,7 @@ public sealed class SyncJobRunner(
             {
                 events.PhaseChanged(job.Name, SyncPhase.Push, binding.DeviceName);
                 _logger.LogInformation("Job '{Job}' pushing to '{Device}'", job.Name, binding.DeviceName);
-                pushResult = await transfer.PushMirrorAsync(serial, masterPath, binding.RemotePath, exclude, eff.ToTransferPolicy(), ct);
+                pushResult = await transfer.PushMirrorAsync(serial, masterPath, binding.RemotePath, pushExclude, eff.ToTransferPolicy(), ct);
             }
             _logger.LogInformation(
                 "Job '{Job}' pushed to '{Device}': {Copied} copied, {Deleted} deleted, {Errors} error(s)",

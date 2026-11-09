@@ -148,3 +148,11 @@ A job's `AppPackage` already blocks syncs while the app is open. The gate adds t
 - **PC**: the dashboard shows an out-of-sync icon on the job (tooltip says why). The overflow menu has "Open App on Device" (warns first if that device is behind) and "Close App and Sync" (force-stops the app everywhere it's running, then syncs; unsaved work is lost).
 - **API**: `/api/status` and the SSE feed carry `appPackage` and `staleDevices`. `POST /api/jobs/{name}/close-and-sync` `{ "device": ... }` force-stops the app on that device, runs the job, and returns when it finishes.
 - **Phone**: `AppGateService` is an accessibility service that only reads which package is in front. When a linked app comes to the foreground it asks the PC; if this device is behind it draws an overlay offering Sync first / Open anyway / Not now. Android can't stop another app opening, so this is a warning over the app, not a block. The service is enabled from the Setup card through `WRITE_SECURE_SETTINGS` (falls back to the accessibility settings screen). Fails open if the PC is unreachable.
+
+## Conflict picker
+
+With `ConflictPolicy.Ask` a file changed on a device and in master is held rather than resolved newest-wins (see README). The companion app settles them without going back to the PC.
+
+- **API**: `GET /api/conflicts` lists pending conflicts (`id, job, device, path, deviceDeleted/deviceSize/deviceModifiedAt, pcDeleted/pcSize/pcModifiedAt`). `POST /api/conflicts/{id}/resolve {choice}` and `POST /api/conflicts/resolve-all {choice, job?}` take `pc | device | both | newest`. `/api/status` and the SSE feed carry `pendingConflicts` per job.
+- **Running**: a single resolve schedules the job 6s later (each further resolve pushes it back), so tapping through a list produces one sync. Resolving waits up to 20s for a running sync to release the project lock.
+- **Phone**: a banner on the main screen when any job has pending conflicts opens `ConflictsActivity`: per-file Keep PC's / Keep phone's (or the other device's) / Both, plus Keep newest and Keep PC's for all.

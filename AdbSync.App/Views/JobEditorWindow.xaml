@@ -347,6 +347,7 @@
                                                 <RowDefinition/>
                                                 <RowDefinition/>
                                                 <RowDefinition/>
+                                                <RowDefinition/>
                                             </Grid.RowDefinitions>
                                             
                                             <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center">
@@ -369,6 +370,10 @@
                                             <CheckBox Grid.Row="3" Grid.Column="0" x:Name="BackupConflictLosersOverrideBox" IsThreeState="True" Content="Back up the losing side of a merge conflict" Margin="0,12,0,0"/>
                                             <TextBlock Grid.Row="3" Grid.Column="1" Style="{StaticResource CaptionText}" Margin="12,12,0,0" HorizontalAlignment="Left" VerticalAlignment="Center"
                                                        Text="{Binding IsChecked, ElementName=BackupConflictLosersOverrideBox, Converter={StaticResource NullableBoolToOverrideStateConverter}}"/>
+
+                                            <CheckBox Grid.Row="4" Grid.Column="0" x:Name="AskOnConflictOverrideBox" IsThreeState="True" Content="Let me pick a version when a file changed on two sides" Margin="0,12,0,0"/>
+                                            <TextBlock Grid.Row="4" Grid.Column="1" Style="{StaticResource CaptionText}" Margin="12,12,0,0" HorizontalAlignment="Left" VerticalAlignment="Center"
+                                                       Text="{Binding IsChecked, ElementName=AskOnConflictOverrideBox, Converter={StaticResource NullableBoolToOverrideStateConverter}}"/>
                                         </Grid>
                                     </StackPanel>
                                 </Border>

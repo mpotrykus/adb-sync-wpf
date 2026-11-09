@@ -34,6 +34,11 @@ public sealed class CompositeSyncEventSink(IReadOnlyList<ISyncEventSink> sinks) 
         foreach (var sink in sinks) sink.JobCancelled(jobName);
     }
 
+    public void ConflictsPending(string jobName, string deviceName, int newCount, int totalPending)
+    {
+        foreach (var sink in sinks) sink.ConflictsPending(jobName, deviceName, newCount, totalPending);
+    }
+
     public void MergeConflictsDetected(string jobName, string deviceName, int conflictCount)
     {
         foreach (var sink in sinks) sink.MergeConflictsDetected(jobName, deviceName, conflictCount);

@@ -23,6 +23,9 @@ public interface ISyncEventSink
     /// <summary>Reported once per device after a merge that found conflicts - conflict losers are always backed up to disk, never silently discarded.</summary>
     void MergeConflictsDetected(string jobName, string deviceName, int conflictCount);
 
+    /// <summary>A merge held back <paramref name="newCount"/> conflicts that need a person to pick a version (<paramref name="totalPending"/> are waiting for the job in all).</summary>
+    void ConflictsPending(string jobName, string deviceName, int newCount, int totalPending) { }
+
     /// <summary>An OnChange watcher started for this device binding; <paramref name="liveWatch"/> is false if it's polling instead.</summary>
     void WatchStarted(string jobName, string deviceName, bool liveWatch);
 

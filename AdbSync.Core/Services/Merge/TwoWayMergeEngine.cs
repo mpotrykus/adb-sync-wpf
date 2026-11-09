@@ -35,6 +35,7 @@ public sealed class TwoWayMergeEngine : ITwoWayMergeEngine
 
         var newEntries = new Dictionary<string, ManifestEntry>(StringComparer.Ordinal);
         var conflicts = new List<MergeConflict>();
+        var held = new List<HeldConflict>();
         int created = 0, updated = 0, deleted = 0;
 
         foreach (var path in allPaths)
@@ -85,6 +86,12 @@ public sealed class TwoWayMergeEngine : ITwoWayMergeEngine
                     deleted++;
                     break;
 
+                case DecisionKind.ConflictStagingWins or DecisionKind.ConflictMasterWins when options.HoldConflicts:
+                    held.Add(new HeldConflict(path, s?.Size, s?.ModifiedUtc, m?.Size, m?.ModifiedUtc));
+                    if (k is not null)
+                        newEntries[path] = k;
+                    break;
+
                 case DecisionKind.ConflictStagingWins:
                     RecordConflict(path, "staging", s, m, options, masterPath, conflicts);
                     if (!options.DryRun)
@@ -108,7 +115,7 @@ public sealed class TwoWayMergeEngine : ITwoWayMergeEngine
             Entries = newEntries,
         };
 
-        return Task.FromResult(new MergeResult(created, updated, deleted, conflicts, updatedManifest));
+        return Task.FromResult(new MergeResult(created, updated, deleted, conflicts, updatedManifest, held));
     }
 
     private enum DecisionKind

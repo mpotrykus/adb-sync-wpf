@@ -126,6 +126,8 @@ public sealed class JobStatusTracker : ISyncEventSink
             return false;
         });
 
+    public void ConflictsPending(string jobName, string deviceName, int newCount, int totalPending) => Update(jobName, _ => true);
+
     public void RunStarted(string jobName, bool dryRun) =>
         Update(jobName, s =>
         {

@@ -55,6 +55,7 @@ class MainActivity : Activity() {
     private val io = Executors.newSingleThreadExecutor()
 
     private lateinit var pcStatus: LinearLayout
+    private lateinit var conflictsBanner: LinearLayout
     private lateinit var jobsContainer: LinearLayout
     private lateinit var setupCard: LinearLayout
     private lateinit var wifiDebugStatus: LinearLayout
@@ -90,6 +91,12 @@ class MainActivity : Activity() {
             setPadding(0, dp(6), 0, 0)
         }
         column.addView(pcStatus)
+
+        conflictsBanner = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(12), 0, 0)
+        }
+        column.addView(conflictsBanner)
 
         column.addView(subSectionLabel("Jobs"))
         jobsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -242,7 +249,23 @@ class MainActivity : Activity() {
         if (conn != null) io.execute { conn.disconnect() }
     }
 
+    private fun renderConflictsBanner() {
+        conflictsBanner.removeAllViews()
+        val total = jobs.values.sumOf { it.pendingConflicts }
+        if (total == 0) return
+        conflictsBanner.addView(card().apply {
+            addView(sectionLabel(if (total == 1) "1 file needs a decision" else "$total files need a decision"))
+            addView(caption("Changed in two places, so AdbSync left it alone. Pick which version to keep.").apply {
+                setPadding(0, dp(4), 0, dp(10))
+            })
+            addView(button("Resolve", ButtonKind.Primary, fill = true) {
+                startActivity(Intent(this@MainActivity, ConflictsActivity::class.java))
+            })
+        })
+    }
+
     private fun renderJobs() {
+        renderConflictsBanner()
         jobsContainer.removeAllViews()
         if (jobs.isEmpty()) {
             jobsContainer.addView(card().apply {

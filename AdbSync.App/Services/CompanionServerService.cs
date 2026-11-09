@@ -1,9 +1,11 @@
 using AdbSync.Core.Models.Config;
+using AdbSync.Core.Models.Merge;
 using AdbSync.Core.Models.Orchestration;
 using AdbSync.Core.Services.Companion;
 using AdbSync.Core.Services.Scheduling;
 using AdbSync.Core.Services.Devices;
 using AdbSync.Core.Services.Logging;
+using AdbSync.Core.Services.Merge;
 using AdbSync.Core.Services.Orchestration.RunHistory;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -32,7 +34,27 @@ public sealed record CompanionJobDto(
     bool HasCheckpoint,
     string? CheckpointSummary,
     string? AppPackage,
-    IReadOnlyList<StaleDevice> StaleDevices);
+    IReadOnlyList<StaleDevice> StaleDevices,
+    int PendingConflicts);
+
+public sealed record CompanionConflictDto(
+    string Id,
+    string Job,
+    string Device,
+    string Path,
+    DateTimeOffset DetectedAt,
+    bool DeviceDeleted,
+    long? DeviceSize,
+    DateTimeOffset? DeviceModifiedAt,
+    bool PcDeleted,
+    long? PcSize,
+    DateTimeOffset? PcModifiedAt);
+
+public sealed record CompanionResolveRequest(string Choice);
+
+public sealed record CompanionResolveAllRequest(string Choice, string? Job);
+
+public sealed record CompanionResolveAllResult(int Resolved, IReadOnlyList<string> Failed);
 
 public sealed record CompanionCloseAndSyncRequest(string Device);
 
@@ -67,6 +89,8 @@ public sealed class CompanionServerService(
     ILiveRunLogSink liveLog,
     CompanionCertificateStore certificates,
     IAdbDeviceResolver deviceResolver,
+    IPendingConflictStore pendingConflicts,
+    IConflictResolver conflictResolver,
     ILogger<CompanionServerService> logger) : IHostedService
 {
     private static readonly TimeSpan PingInterval = TimeSpan.FromSeconds(20);
@@ -76,6 +100,8 @@ public sealed class CompanionServerService(
 
     private WebApplication? _app;
     private readonly CancellationTokenSource _stopping = new();
+    private readonly Dictionary<string, CancellationTokenSource> _pendingRuns = new(StringComparer.Ordinal);
+    private static readonly TimeSpan RunAfterResolveDelay = TimeSpan.FromSeconds(6);
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
@@ -120,6 +146,10 @@ public sealed class CompanionServerService(
         app.MapPost("/api/jobs/{name}/enabled", SetEnabledAsync);
         app.MapPost("/api/jobs/{name}/checkpoint/discard", DiscardCheckpointAsync);
         app.MapPost("/api/jobs/{name}/close-and-sync", CloseAndSyncAsync);
+        app.MapGet("/api/conflicts", GetConflictsAsync);
+        app.MapGet("/api/conflicts/{id}/thumb/{side}", GetConflictThumbnailAsync);
+        app.MapPost("/api/conflicts/{id}/resolve", ResolveConflictAsync);
+        app.MapPost("/api/conflicts/resolve-all", ResolveAllConflictsAsync);
         app.MapPost("/api/devices/{name}/endpoint", ReportEndpointAsync);
         app.MapPost("/api/devices/{name}/pair", PairDeviceAsync);
 
@@ -171,7 +201,8 @@ public sealed class CompanionServerService(
     {
         var config = await configService.GetAsync();
         var checkpoints = await GetCheckpointsAsync();
-        var jobs = config.Jobs.Select(j => ToDto(tracker.Get(j.Name), config, checkpoints)).ToList();
+        var counts = await GetPendingCountsAsync();
+        var jobs = config.Jobs.Select(j => ToDto(tracker.Get(j.Name), config, checkpoints, counts)).ToList();
         return new CompanionStatusDto(Environment.MachineName, jobs);
     }
 
@@ -181,7 +212,11 @@ public sealed class CompanionServerService(
         return all.Where(c => c.ProjectName is not null).GroupBy(c => c.ProjectName!).ToDictionary(g => g.Key, g => g.First());
     }
 
-    private static CompanionJobDto ToDto(JobStatus s, AppConfig config, IReadOnlyDictionary<string, SyncCheckpoint> checkpoints)
+    private async Task<Dictionary<string, int>> GetPendingCountsAsync() =>
+        (await pendingConflicts.ListAsync()).GroupBy(c => c.JobName).ToDictionary(g => g.Key, g => g.Count());
+
+    private static CompanionJobDto ToDto(
+        JobStatus s, AppConfig config, IReadOnlyDictionary<string, SyncCheckpoint> checkpoints, IReadOnlyDictionary<string, int> pendingCounts)
     {
         var job = config.Jobs.FirstOrDefault(j => j.Name == s.Name);
         var enabled = job?.Enabled ?? false;
@@ -194,7 +229,8 @@ public sealed class CompanionServerService(
             nextRun, s.LastFailed && !s.Running, checkpoint is not null,
             checkpoint is null ? null : CheckpointSummaryFormatter.Format(checkpoint, job?.Devices.Count ?? 0),
             job?.AppPackage,
-            job is null ? [] : SyncStaleness.Assess(job.Devices.Select(b => b.DeviceName).ToList(), s, checkpoint));
+            job is null ? [] : SyncStaleness.Assess(job.Devices.Select(b => b.DeviceName).ToList(), s, checkpoint),
+            pendingCounts.GetValueOrDefault(s.Name));
     }
 
     private async Task StreamEventsAsync(HttpContext ctx)
@@ -226,8 +262,9 @@ public sealed class CompanionServerService(
 
                 var config = await configService.GetAsync();
                 var checkpoints = await GetCheckpointsAsync();
+                var counts = await GetPendingCountsAsync();
                 while (changes.Reader.TryRead(out var s))
-                    await WriteEventAsync(ctx, "job", ToDto(s, config, checkpoints), ct);
+                    await WriteEventAsync(ctx, "job", ToDto(s, config, checkpoints, counts), ct);
             }
         }
         catch (OperationCanceledException)
@@ -429,6 +466,118 @@ public sealed class CompanionServerService(
         await configService.SaveAsync();
         logger.LogInformation("Paired with '{Device}'", name);
         return Results.Ok();
+    }
+
+    private async Task<IResult> GetConflictsAsync() =>
+        Results.Json((await pendingConflicts.ListAsync()).Select(ToConflictDto).ToList(), Json);
+
+    private static CompanionConflictDto ToConflictDto(PendingConflict c) => new(
+        c.Id, c.JobName, c.DeviceName, c.RelativePath, c.DetectedAtUtc,
+        c.DeviceModifiedUtc is null, c.DeviceSize, c.DeviceModifiedUtc,
+        c.MasterModifiedUtc is null, c.MasterSize, c.MasterModifiedUtc);
+
+    private async Task<IResult> GetConflictThumbnailAsync(string id, string side)
+    {
+        var files = await conflictResolver.GetFilesAsync(id);
+        var path = side switch { "pc" => files?.MasterPath, "device" => files?.DeviceCopyPath, _ => null };
+        if (path is null)
+            return Results.NotFound();
+
+        var original = (await pendingConflicts.GetAsync(id))?.RelativePath ?? path;
+        var bytes = await Task.Run(() => ThumbnailRenderer.RenderJpeg(path, 320, original));
+        return bytes is null ? Results.NotFound() : Results.Bytes(bytes, "image/jpeg");
+    }
+
+    private static bool TryParseChoice(string? text, out ConflictChoice choice)
+    {
+        choice = text switch
+        {
+            "pc" => ConflictChoice.Master,
+            "device" => ConflictChoice.Device,
+            "both" => ConflictChoice.Both,
+            "newest" => ConflictChoice.Newest,
+            _ => (ConflictChoice)(-1),
+        };
+        return Enum.IsDefined(choice);
+    }
+
+    private async Task<IResult> ResolveConflictAsync(string id, CompanionResolveRequest request)
+    {
+        if (!TryParseChoice(request.Choice, out var choice))
+            return Results.BadRequest("choice must be pc, device, both or newest");
+
+        try
+        {
+            var job = await conflictResolver.ResolveAsync(id, choice, _stopping.Token);
+            logger.LogInformation("Companion app resolved a conflict in '{Job}' ({Choice})", job, request.Choice);
+            tracker.Republish(job);
+            RunSoon(job);
+            return Results.NoContent();
+        }
+        catch (ConflictResolutionException ex)
+        {
+            return Results.Conflict(ex.Message);
+        }
+    }
+
+    /// <summary>Runs the job shortly after a resolve; another resolve in the window pushes the run back so a burst of taps becomes one sync.</summary>
+    private void RunSoon(string job)
+    {
+        CancellationTokenSource cts;
+        lock (_pendingRuns)
+        {
+            if (_pendingRuns.Remove(job, out var previous))
+                previous.Cancel();
+            cts = _pendingRuns[job] = new CancellationTokenSource();
+        }
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(RunAfterResolveDelay, cts.Token);
+                lock (_pendingRuns)
+                {
+                    if (_pendingRuns.TryGetValue(job, out var current) && ReferenceEquals(current, cts))
+                        _pendingRuns.Remove(job);
+                }
+                await StartRunAsync(job, dryRun: false);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        });
+    }
+
+    /// <summary>Resolves every pending conflict (optionally just one job's) the same way, then runs each affected job once.</summary>
+    private async Task<IResult> ResolveAllConflictsAsync(CompanionResolveAllRequest request)
+    {
+        if (!TryParseChoice(request.Choice, out var choice))
+            return Results.BadRequest("choice must be pc, device, both or newest");
+
+        var resolvedJobs = new HashSet<string>(StringComparer.Ordinal);
+        var failed = new List<string>();
+        var resolved = 0;
+        foreach (var c in await pendingConflicts.ListAsync(request.Job))
+        {
+            try
+            {
+                resolvedJobs.Add(await conflictResolver.ResolveAsync(c.Id, choice, _stopping.Token));
+                resolved++;
+            }
+            catch (ConflictResolutionException ex)
+            {
+                failed.Add($"{c.JobName}/{c.RelativePath}: {ex.Message}");
+            }
+        }
+
+        logger.LogInformation("Companion app resolved {Count} conflict(s) ({Choice}), {Failed} failed", resolved, request.Choice, failed.Count);
+        foreach (var job in resolvedJobs)
+        {
+            tracker.Republish(job);
+            await StartRunAsync(job, dryRun: false);
+        }
+        return Results.Json(new CompanionResolveAllResult(resolved, failed), Json);
     }
 
     private async Task<IResult> StopJobAsync(string name)

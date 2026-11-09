@@ -84,6 +84,7 @@ public partial class JobEditorWindow : Window
             ShowInfoNotificationsOverrideBox.IsChecked = job.ShowInfoNotifications;
             ShowErrorNotificationsOverrideBox.IsChecked = job.ShowErrorNotifications;
             BackupConflictLosersOverrideBox.IsChecked = job.BackupConflictLosers;
+            AskOnConflictOverrideBox.IsChecked = job.ConflictPolicy is { } policy ? policy == ConflictPolicy.Ask : null;
             DryRunBox.IsChecked = job.DryRun;
         }
         else
@@ -98,6 +99,7 @@ public partial class JobEditorWindow : Window
             ShowInfoNotificationsOverrideBox.IsChecked = null;
             ShowErrorNotificationsOverrideBox.IsChecked = null;
             BackupConflictLosersOverrideBox.IsChecked = null;
+            AskOnConflictOverrideBox.IsChecked = null;
         }
 
         UpdateDeviceDependentUi();
@@ -265,6 +267,7 @@ public partial class JobEditorWindow : Window
             ShowInfoNotifications = ShowInfoNotificationsOverrideBox.IsChecked,
             ShowErrorNotifications = ShowErrorNotificationsOverrideBox.IsChecked,
             BackupConflictLosers = BackupConflictLosersOverrideBox.IsChecked,
+            ConflictPolicy = AskOnConflictOverrideBox.IsChecked is { } ask ? (ask ? ConflictPolicy.Ask : ConflictPolicy.NewestWins) : null,
             DryRun = DryRunBox.IsChecked == true,
         };
         Close();

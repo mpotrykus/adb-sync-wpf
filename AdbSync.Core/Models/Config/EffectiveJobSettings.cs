@@ -16,7 +16,8 @@ public sealed record EffectiveJobSettings(
     int? BandwidthThrottleKBps,
     int RetryMaxAttempts,
     TimeSpan RetryBackoff,
-    int PushSafetyMinimumPercent)
+    int PushSafetyMinimumPercent,
+    ConflictPolicy ConflictPolicy = ConflictPolicy.NewestWins)
 {
     public TransferPolicy ToTransferPolicy() => new(RetryMaxAttempts, RetryBackoff, BandwidthThrottleKBps);
 }
@@ -37,5 +38,6 @@ public static class SyncJobConfigExtensions
         BandwidthThrottleKBps: job.BandwidthThrottleKBps ?? global.BandwidthThrottleKBps,
         RetryMaxAttempts: job.RetryMaxAttempts ?? global.RetryMaxAttempts,
         RetryBackoff: TimeSpan.FromSeconds(job.RetryBackoffSeconds ?? global.RetryBackoffSeconds),
-        PushSafetyMinimumPercent: job.PushSafetyMinimumPercent ?? global.PushSafetyMinimumPercent);
+        PushSafetyMinimumPercent: job.PushSafetyMinimumPercent ?? global.PushSafetyMinimumPercent,
+        ConflictPolicy: job.ConflictPolicy ?? global.ConflictPolicy);
 }

@@ -148,6 +148,8 @@ public partial class App : Application
         services.AddSingleton<IAdbTransferEngine, NativeAdbTransferEngine>();
         services.AddSingleton<ITwoWayMergeEngine, TwoWayMergeEngine>();
         services.AddSingleton<IManifestStore, ManifestStore>();
+        services.AddSingleton<IPendingConflictStore, PendingConflictStore>();
+        services.AddSingleton<IConflictResolver, ConflictResolver>();
         services.AddSingleton<IPushSafetyGuard, PushSafetyGuard>();
         services.AddSingleton<ICheckpointManager, CheckpointManager>();
         services.AddSingleton<IDeviceSnapshotService, DeviceSnapshotService>();

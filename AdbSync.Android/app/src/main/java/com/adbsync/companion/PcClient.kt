@@ -33,6 +33,7 @@ data class RemoteJob(
     val checkpointSummary: String?,
     val appPackage: String?,
     val staleDevices: List<Pair<String, String>>,
+    val pendingConflicts: Int = 0,
 ) {
     val isPushing get() = phase == "Push" || devices.any { it.second == "Push" }
 
@@ -68,6 +69,7 @@ data class RemoteJob(
                         d.getString("device") to d.getString("reason")
                     }
                 }.orEmpty(),
+                pendingConflicts = o.optInt("pendingConflicts"),
             )
         }
     }
@@ -113,6 +115,37 @@ data class RemoteRun(
     }
 }
 
+data class RemoteConflict(
+    val id: String,
+    val job: String,
+    val device: String,
+    val path: String,
+    val deviceDeleted: Boolean,
+    val deviceSize: Long?,
+    val deviceModifiedAt: OffsetDateTime?,
+    val pcDeleted: Boolean,
+    val pcSize: Long?,
+    val pcModifiedAt: OffsetDateTime?,
+) {
+    companion object {
+        fun parse(o: JSONObject) = RemoteConflict(
+            id = o.getString("id"),
+            job = o.getString("job"),
+            device = o.getString("device"),
+            path = o.getString("path"),
+            deviceDeleted = o.optBoolean("deviceDeleted"),
+            deviceSize = if (o.isNull("deviceSize")) null else o.optLong("deviceSize"),
+            deviceModifiedAt = o.optStringOrNull("deviceModifiedAt")?.let { OffsetDateTime.parse(it) },
+            pcDeleted = o.optBoolean("pcDeleted"),
+            pcSize = if (o.isNull("pcSize")) null else o.optLong("pcSize"),
+            pcModifiedAt = o.optStringOrNull("pcModifiedAt")?.let { OffsetDateTime.parse(it) },
+        )
+    }
+}
+
+/** [PC] keeps what the PC has, [DEVICE] keeps the version from the device the conflict was found on. */
+enum class ConflictChoice(val wire: String) { PC("pc"), DEVICE("device"), BOTH("both"), NEWEST("newest") }
+
 data class CloseAndSyncResult(val result: String, val failed: Boolean, val stillOutOfSync: Boolean, val reason: String?)
 
 private fun JSONObject.optStringOrNull(key: String): String? = if (isNull(key)) null else optString(key)
@@ -147,6 +180,31 @@ class PcClient(private val config: PcConfig) {
         val o = JSONObject(text)
         return CloseAndSyncResult(o.getString("result"), o.optBoolean("failed"), o.optBoolean("stillOutOfSync"), o.optStringOrNull("reason"))
     }
+
+    fun conflicts(): List<RemoteConflict> {
+        val array = JSONArray(getText("/api/conflicts"))
+        return (0 until array.length()).map { RemoteConflict.parse(array.getJSONObject(it)) }
+    }
+
+    /** A small JPEG of one side of a conflict, or null when it isn't an image (or that side was deleted). */
+    fun conflictThumbnail(id: String, side: String): ByteArray? {
+        val conn = open("/api/conflicts/$id/thumb/$side", readTimeoutMs = 15_000)
+        try {
+            if (conn.responseCode == 404) return null
+            check(conn)
+            return conn.inputStream.use { it.readBytes() }
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    /** Returns the HTTP status and the PC's message, if any. A successful resolve also starts the job on the PC. */
+    fun resolveConflict(id: String, choice: ConflictChoice): Pair<Int, String> =
+        postJson("/api/conflicts/$id/resolve", JSONObject().put("choice", choice.wire), readTimeoutMs = 30_000)
+
+    /** Returns the HTTP status and the PC's JSON reply (`resolved`, `failed`). */
+    fun resolveAllConflicts(choice: ConflictChoice): Pair<Int, String> =
+        postJson("/api/conflicts/resolve-all", JSONObject().put("choice", choice.wire), readTimeoutMs = 120_000)
 
     fun reportEndpoint(device: String, port: Int): Int =
         postJson("/api/devices/${encode(device)}/endpoint", JSONObject().put("port", port)).first

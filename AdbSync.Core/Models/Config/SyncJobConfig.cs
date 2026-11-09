@@ -36,6 +36,9 @@ public sealed class SyncJobConfig
     /// <summary>Optional override of <see cref="GlobalSettings.BackupConflictLosers"/> for this job only.</summary>
     public bool? BackupConflictLosers { get; set; }
 
+    /// <summary>Optional override of <see cref="GlobalSettings.ConflictPolicy"/> for this job only.</summary>
+    public ConflictPolicy? ConflictPolicy { get; set; }
+
     /// <summary>Optional override of <see cref="GlobalSettings.CheckpointRetentionDays"/> for this job only.</summary>
     public int? CheckpointRetentionDays { get; set; }
 

@@ -107,7 +107,11 @@ public sealed class DashboardViewModel : ISyncEventSink
             vm.PhaseText = "Idle";
             vm.IsStopping = false;
             var outcome = pushed ? "Success" : "No changes";
-            vm.ReportOutcome(vm.ConflictCountThisRun > 0 ? $"{outcome} ({vm.ConflictCountThisRun} conflict(s) resolved)" : outcome);
+            if (vm.ConflictCountThisRun > 0)
+                outcome = $"{outcome} ({vm.ConflictCountThisRun} conflict(s) resolved)";
+            if (vm.PendingConflictCount > 0)
+                outcome = $"{outcome} - {vm.PendingConflictCount} conflict(s) need a decision";
+            vm.ReportOutcome(outcome);
             vm.LastRunAt = DateTimeOffset.Now;
             vm.NeedsAttention = false;
             vm.CanForcePush = false;
@@ -137,6 +141,9 @@ public sealed class DashboardViewModel : ISyncEventSink
 
     public void MergeConflictsDetected(string jobName, string deviceName, int conflictCount) =>
         UpdateJob(jobName, vm => vm.ConflictCountThisRun += conflictCount);
+
+    public void ConflictsPending(string jobName, string deviceName, int newCount, int totalPending) =>
+        UpdateJob(jobName, vm => vm.PendingConflictCount = totalPending);
 
     public void WatchStarted(string jobName, string deviceName, bool liveWatch) =>
         UpdateJob(jobName, vm => vm.WatchStatusText = liveWatch ? "Watching (live)" : "Watching (polling)");

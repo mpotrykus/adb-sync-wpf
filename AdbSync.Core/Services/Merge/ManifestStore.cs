@@ -32,6 +32,9 @@ public sealed class ManifestStore(AppPaths paths) : IManifestStore
         return new SyncManifest { Version = 1, LastMergedAtUtc = DateTimeOffset.UtcNow, Entries = entries };
     }
 
+    public Task<SyncManifest?> TryGetAsync(string jobName, string deviceName, CancellationToken ct = default) =>
+        JsonFileIo.ReadAsync(GetManifestPath(jobName, deviceName), AppConfigJsonContext.Default.SyncManifest, ct);
+
     public Task SaveAsync(string jobName, string deviceName, SyncManifest manifest, CancellationToken ct = default) =>
         JsonFileIo.WriteAtomicAsync(GetManifestPath(jobName, deviceName), manifest, AppConfigJsonContext.Default.SyncManifest, ct);
 
