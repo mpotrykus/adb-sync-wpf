@@ -30,7 +30,11 @@ public sealed record CompanionJobDto(
     DateTimeOffset? NextRunAt,
     bool NeedsAttention,
     bool HasCheckpoint,
-    string? CheckpointSummary);
+    string? CheckpointSummary,
+    string? AppPackage,
+    IReadOnlyList<StaleDevice> StaleDevices);
+
+public sealed record CompanionCloseAndSyncRequest(string Device);
 
 public sealed record CompanionEnabledRequest(bool Enabled);
 
@@ -57,6 +61,7 @@ public sealed class CompanionServerService(
     AppConfigService configService,
     JobStatusTracker tracker,
     JobRunService jobRunService,
+    AppGateService appGate,
     ChangeWatchHostedService changeWatch,
     IRunHistoryStore runHistory,
     ILiveRunLogSink liveLog,
@@ -114,6 +119,7 @@ public sealed class CompanionServerService(
         app.MapPost("/api/jobs/{name}/dryrun", DryRunJobAsync);
         app.MapPost("/api/jobs/{name}/enabled", SetEnabledAsync);
         app.MapPost("/api/jobs/{name}/checkpoint/discard", DiscardCheckpointAsync);
+        app.MapPost("/api/jobs/{name}/close-and-sync", CloseAndSyncAsync);
         app.MapPost("/api/devices/{name}/endpoint", ReportEndpointAsync);
         app.MapPost("/api/devices/{name}/pair", PairDeviceAsync);
 
@@ -186,7 +192,9 @@ public sealed class CompanionServerService(
         return new CompanionJobDto(
             s.Name, enabled, s.Running, s.Phase, s.Devices, s.LastResult, s.LastFailed, s.LastResultAt,
             nextRun, s.LastFailed && !s.Running, checkpoint is not null,
-            checkpoint is null ? null : CheckpointSummaryFormatter.Format(checkpoint, job?.Devices.Count ?? 0));
+            checkpoint is null ? null : CheckpointSummaryFormatter.Format(checkpoint, job?.Devices.Count ?? 0),
+            job?.AppPackage,
+            job is null ? [] : SyncStaleness.Assess(job.Devices.Select(b => b.DeviceName).ToList(), s, checkpoint));
     }
 
     private async Task StreamEventsAsync(HttpContext ctx)
@@ -327,6 +335,26 @@ public sealed class CompanionServerService(
         }
         tracker.Republish(name);
         return Results.NoContent();
+    }
+
+    /// <summary>The phone's linked app was just opened while this device was behind: close it there, sync, and
+    /// report whether the device is now up to date. Holds the request open until the sync finishes.</summary>
+    private async Task<IResult> CloseAndSyncAsync(string name, CompanionCloseAndSyncRequest request)
+    {
+        var config = await configService.GetAsync();
+        var job = config.Jobs.FirstOrDefault(j => j.Name == name);
+        if (job is null)
+            return Results.NotFound();
+        if (job.AppPackage is null || job.Devices.All(b => b.DeviceName != request.Device))
+            return Results.BadRequest("job has no linked app on that device");
+
+        var status = tracker.Get(name);
+        if (status.Running && status.BlockedDevice is null)
+            return Results.Conflict("a sync is already in progress");
+
+        logger.LogInformation("Companion app on '{Device}' asked to close the app and sync '{Job}'", request.Device, name);
+        var result = await appGate.CloseAppAndSyncAsync(name, request.Device, _stopping.Token);
+        return result is null ? Results.NotFound() : Results.Json(result, Json);
     }
 
     private async Task<IResult> DiscardCheckpointAsync(string name)

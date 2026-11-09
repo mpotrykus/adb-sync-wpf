@@ -58,4 +58,14 @@ public sealed class CompositeSyncEventSink(IReadOnlyList<ISyncEventSink> sinks) 
     {
         foreach (var sink in sinks) sink.ChangeDetected(jobName, deviceName);
     }
+
+    public void RunStarted(string jobName, bool dryRun)
+    {
+        foreach (var sink in sinks) sink.RunStarted(jobName, dryRun);
+    }
+
+    public void JobBlockedByApp(string jobName, string deviceName)
+    {
+        foreach (var sink in sinks) sink.JobBlockedByApp(jobName, deviceName);
+    }
 }

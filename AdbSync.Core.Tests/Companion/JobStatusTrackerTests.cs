@@ -100,4 +100,38 @@ public class JobStatusTrackerTests
         Assert.False(status.Running);
         Assert.Null(status.LastResult);
     }
+
+    [Fact]
+    public void ChangeDetected_StaysPendingUntilARealRunCompletes()
+    {
+        _tracker.ChangeDetected("Job", "S23");
+        Assert.Equal(["S23"], _tracker.Get("Job").PendingChangeDevices);
+
+        _tracker.RunStarted("Job", dryRun: true);
+        _tracker.JobCompleted("Job", pushed: false);
+        Assert.Equal(["S23"], _tracker.Get("Job").PendingChangeDevices);
+
+        _tracker.RunStarted("Job", dryRun: false);
+        _tracker.JobFailed("Job", new IOException("gone"));
+        Assert.Equal(["S23"], _tracker.Get("Job").PendingChangeDevices);
+
+        _tracker.RunStarted("Job", dryRun: false);
+        _tracker.JobCompleted("Job", pushed: true);
+        Assert.Empty(_tracker.Get("Job").PendingChangeDevices!);
+    }
+
+    [Fact]
+    public void BlockedByApp_SurvivesTheSkip_ButNotTheNextRun()
+    {
+        _tracker.RunStarted("Job", dryRun: false);
+        _tracker.JobBlockedByApp("Job", "S9");
+        _tracker.JobSkipped("Job", "app is running");
+
+        var status = _tracker.Get("Job");
+        Assert.False(status.Running);
+        Assert.Equal("S9", status.BlockedDevice);
+
+        _tracker.RunStarted("Job", dryRun: false);
+        Assert.Null(_tracker.Get("Job").BlockedDevice);
+    }
 }

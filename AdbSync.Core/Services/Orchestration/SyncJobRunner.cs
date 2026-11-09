@@ -82,6 +82,7 @@ public sealed class SyncJobRunner(
                 return await FinishAsync(JobRunOutcome.Skipped);
             }
 
+            events.RunStarted(job.Name, eff.DryRun);
             events.PhaseChanged(job.Name, SyncPhase.PreConnect);
             var exclude = new ExcludeMatcher(job.Exclude);
 
@@ -100,6 +101,7 @@ public sealed class SyncJobRunner(
                 {
                     var deviceName = serials.FirstOrDefault(kv => kv.Value == runningSerial).Key ?? runningSerial;
                     _logger.LogInformation("Job '{Job}' skipped - {Package} is currently running on {Device}", job.Name, job.AppPackage, deviceName);
+                    events.JobBlockedByApp(job.Name, deviceName);
                     events.JobSkipped(job.Name, $"{job.AppPackage} is currently running on {deviceName}");
                     return await FinishAsync(JobRunOutcome.SkippedAppRunning);
                 }

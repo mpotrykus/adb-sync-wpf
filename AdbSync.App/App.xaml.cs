@@ -138,6 +138,7 @@ public partial class App : Application
         services.AddSingleton<IAdbDeviceResolver, AdbDeviceResolver>();
         services.AddSingleton<IDeviceChangeWatcher, DeviceChangeWatcher>();
         services.AddSingleton<IAppRunningGuard, AppRunningGuard>();
+        services.AddSingleton<IDeviceAppControl, DeviceAppControl>();
         services.AddSingleton<IDevicePackageLister, AdbDevicePackageLister>();
         services.AddSingleton<ISyncLockManager, SyncLockManager>();
         services.AddSingleton<IDeviceAccessGate, DeviceAccessGate>();
@@ -166,6 +167,7 @@ public partial class App : Application
         ]));
         services.AddSingleton<SyncJobRunner>();
         services.AddSingleton<JobRunService>();
+        services.AddSingleton<AppGateService>();
 
         services.AddSingleton<SchedulerHostedService>();
         services.AddHostedService(sp => sp.GetRequiredService<SchedulerHostedService>());

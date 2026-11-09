@@ -13,7 +13,9 @@ public sealed record JobStatus(
     IReadOnlyList<DevicePhase> Devices,
     string? LastResult,
     bool LastFailed,
-    DateTimeOffset? LastResultAt);
+    DateTimeOffset? LastResultAt,
+    IReadOnlyList<string>? PendingChangeDevices = null,
+    string? BlockedDevice = null);
 
 /// <summary>Thread-safe per-job snapshot of what's happening right now, fed by run events, for remote viewers
 /// (the companion app's HTTP feed). Mirrors what the dashboard shows without being tied to the UI thread.</summary>
@@ -92,6 +94,11 @@ public sealed class JobStatusTracker : ISyncEventSink
         Update(jobName, s =>
         {
             var outcome = pushed ? "Success" : "No changes";
+            if (!s.DryRun)
+            {
+                s.PendingChanges.Clear();
+                s.BlockedDevice = null;
+            }
             Finish(s, s.Conflicts > 0 ? $"{outcome} ({s.Conflicts} conflict(s) resolved)" : outcome, failed: false);
             return true;
         });
@@ -119,10 +126,31 @@ public sealed class JobStatusTracker : ISyncEventSink
             return false;
         });
 
+    public void RunStarted(string jobName, bool dryRun) =>
+        Update(jobName, s =>
+        {
+            s.DryRun = dryRun;
+            if (dryRun || s.BlockedDevice is null)
+                return false;
+            s.BlockedDevice = null;
+            return true;
+        });
+
+    public void JobBlockedByApp(string jobName, string deviceName) =>
+        Update(jobName, s =>
+        {
+            if (s.BlockedDevice == deviceName)
+                return false;
+            s.BlockedDevice = deviceName;
+            return true;
+        });
+
+    public void ChangeDetected(string jobName, string deviceName) =>
+        Update(jobName, s => s.PendingChanges.Add(deviceName));
+
     public void WatchStarted(string jobName, string deviceName, bool liveWatch) { }
     public void WatchDegraded(string jobName, string deviceName, string reason) { }
     public void WatchStopped(string jobName, string deviceName) { }
-    public void ChangeDetected(string jobName, string deviceName) { }
 
     private static void Finish(State s, string result, bool failed)
     {
@@ -169,10 +197,13 @@ public sealed class JobStatusTracker : ISyncEventSink
         public bool LastFailed;
         public DateTimeOffset? LastResultAt;
         public int Conflicts;
+        public bool DryRun;
+        public string? BlockedDevice;
+        public readonly HashSet<string> PendingChanges = new(StringComparer.Ordinal);
 
         public JobStatus ToStatus() => new(
             name, Running, Phase,
             Devices.Select(kv => new DevicePhase(kv.Key, kv.Value)).ToList(),
-            LastResult, LastFailed, LastResultAt);
+            LastResult, LastFailed, LastResultAt, PendingChanges.Order(StringComparer.Ordinal).ToList(), BlockedDevice);
     }
 }

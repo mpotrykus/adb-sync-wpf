@@ -34,4 +34,10 @@ public interface ISyncEventSink
 
     /// <summary>A change was observed on a device; the job run it triggers (after the debounce window) is reported separately via the usual PhaseChanged/JobCompleted calls.</summary>
     void ChangeDetected(string jobName, string deviceName);
+
+    /// <summary>A run is about to connect to devices. <paramref name="dryRun"/> runs never merge or push, so they must not count as having caught anything up.</summary>
+    void RunStarted(string jobName, bool dryRun) { }
+
+    /// <summary>The job's linked app is running on <paramref name="deviceName"/>, so its sync can't proceed (a scheduled run is skipped, a change-triggered one waits). That device may hold edits the others haven't received.</summary>
+    void JobBlockedByApp(string jobName, string deviceName) { }
 }

@@ -80,6 +80,18 @@ public sealed partial class JobStatusViewModel(string name) : ObservableObject
     [ObservableProperty]
     private string? _checkpointSummary;
 
+    /// <summary>Which of this job's devices are behind the others and why, one per line; null when none are.
+    /// Opening the linked app on one of them and saving could overwrite changes from the rest.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsOutOfSync))]
+    private string? _outOfSyncSummary;
+
+    public bool IsOutOfSync => !string.IsNullOrEmpty(OutOfSyncSummary);
+
+    /// <summary>True when the job names an Android app, which enables the open-app and close-and-sync actions.</summary>
+    [ObservableProperty]
+    private bool _hasLinkedApp;
+
     /// <summary>The single line shown in the STATUS column - "Stopping..." once a stop has been requested,
     /// otherwise the active phase while a sync is running, otherwise the watch status (e.g. "Watching (live)")
     /// in place of "Idle" when the job's watcher is active, with a "resume available" note appended while a
