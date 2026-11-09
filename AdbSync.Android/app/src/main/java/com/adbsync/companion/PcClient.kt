@@ -1,5 +1,6 @@
 package com.adbsync.companion
 
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -9,6 +10,7 @@ import java.net.URLEncoder
 import java.security.MessageDigest
 import java.security.cert.CertificateException
 import java.security.cert.X509Certificate
+import java.time.OffsetDateTime
 import javax.net.ssl.HostnameVerifier
 import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.SSLContext
@@ -52,6 +54,46 @@ data class RemoteJob(
     }
 }
 
+data class RemoteRun(
+    val runId: String,
+    val startedAt: OffsetDateTime,
+    val completedAt: OffsetDateTime,
+    val outcome: String,
+    val errorMessage: String?,
+    val filesCopied: Int,
+    val filesDeleted: Int,
+    val errorCount: Int,
+    val bytesCopied: Long,
+) {
+    val failed get() = outcome == "Failed"
+    val skipped get() = outcome == "Skipped" || outcome == "SkippedAppRunning" || outcome == "Cancelled"
+
+    fun outcomeText(): String = when (outcome) {
+        "Completed" -> "Success"
+        "CompletedNoChanges" -> "No changes"
+        "Skipped" -> "Skipped"
+        "SkippedAppRunning" -> "Skipped (app running)"
+        "Failed" -> "Error"
+        "DryRunCompleted" -> "Dry run"
+        "Cancelled" -> "Stopped"
+        else -> outcome
+    }
+
+    companion object {
+        fun parse(o: JSONObject) = RemoteRun(
+            runId = o.getString("runId"),
+            startedAt = OffsetDateTime.parse(o.getString("startedAt")),
+            completedAt = OffsetDateTime.parse(o.getString("completedAt")),
+            outcome = o.getString("outcome"),
+            errorMessage = o.optStringOrNull("errorMessage"),
+            filesCopied = o.optInt("filesCopied"),
+            filesDeleted = o.optInt("filesDeleted"),
+            errorCount = o.optInt("errorCount"),
+            bytesCopied = o.optLong("bytesCopied"),
+        )
+    }
+}
+
 private fun JSONObject.optStringOrNull(key: String): String? = if (isNull(key)) null else optString(key)
 
 class HttpStatusException(val code: Int) : Exception("HTTP $code")
@@ -88,8 +130,17 @@ class PcClient(private val config: PcConfig) {
         }
     }
 
-    fun log(job: String): String {
-        val conn = open("/api/jobs/${encode(job)}/log", readTimeoutMs = 10_000)
+    fun log(job: String): String = getText("/api/jobs/${encode(job)}/log")
+
+    fun runLog(job: String, runId: String): String = getText("/api/jobs/${encode(job)}/history/$runId/log")
+
+    fun history(job: String): List<RemoteRun> {
+        val array = JSONArray(getText("/api/jobs/${encode(job)}/history"))
+        return (0 until array.length()).map { RemoteRun.parse(array.getJSONObject(it)) }
+    }
+
+    private fun getText(path: String): String {
+        val conn = open(path, readTimeoutMs = 10_000)
         try {
             check(conn)
             return conn.inputStream.bufferedReader().use { it.readText() }

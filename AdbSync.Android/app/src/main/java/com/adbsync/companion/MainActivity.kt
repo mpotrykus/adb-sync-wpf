@@ -37,7 +37,12 @@ import com.adbsync.companion.Ui.styled
 import com.adbsync.companion.Ui.subSectionLabel
 import com.adbsync.companion.Ui.title
 import com.adbsync.companion.Ui.toggle
+import android.text.format.Formatter
 import java.net.HttpURLConnection
+import java.time.Duration
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -277,6 +282,7 @@ class MainActivity : Activity() {
             buttons.addView(button("Run now", ButtonKind.Success) { act(job.name, "Run") { it.run(job.name) } })
         }
         buttons.addView(button("Log") { showLog(job.name) })
+        buttons.addView(button("History") { showHistory(job.name) })
         addView(buttons)
     }
 
@@ -319,11 +325,13 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun showLog(jobName: String) {
+    private fun showLog(jobName: String) = showLogDialog(jobName) { it.log(jobName) }
+
+    private fun showLogDialog(title: String, fetch: (PcClient) -> String) {
         val config = PcConfig.load(this) ?: return
         io.execute {
             val text = try {
-                PcClient(config).log(jobName)
+                fetch(PcClient(config))
             } catch (e: HttpStatusException) {
                 if (e.code == 404) "No log yet." else "Couldn't load log (HTTP ${e.code})"
             } catch (e: Exception) {
@@ -340,7 +348,7 @@ class MainActivity : Activity() {
                 }
                 val scroll = ScrollView(this).apply { addView(view) }
                 AlertDialog.Builder(this)
-                    .setTitle(jobName)
+                    .setTitle(title)
                     .setView(scroll)
                     .setPositiveButton("Close", null)
                     .create()
@@ -349,6 +357,66 @@ class MainActivity : Activity() {
                 scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
             }
         }
+    }
+
+    private fun showHistory(jobName: String) {
+        val config = PcConfig.load(this) ?: return
+        io.execute {
+            val runs = try {
+                PcClient(config).history(jobName)
+            } catch (e: HttpStatusException) {
+                ui { Toast.makeText(this, "Couldn't load history (HTTP ${e.code})", Toast.LENGTH_SHORT).show() }
+                return@execute
+            } catch (e: Exception) {
+                ui { Toast.makeText(this, "Couldn't load history: ${e.javaClass.simpleName}", Toast.LENGTH_SHORT).show() }
+                return@execute
+            }
+            ui { renderHistoryDialog(jobName, runs) }
+        }
+    }
+
+    private fun renderHistoryDialog(jobName: String, runs: List<RemoteRun>) {
+        val list = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(4), dp(20), dp(8))
+        }
+        val scroll = ScrollView(this).apply { addView(list) }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("$jobName history")
+            .setView(scroll)
+            .setPositiveButton("Close", null)
+            .create()
+            .styled()
+
+        if (runs.isEmpty()) list.addView(caption("No runs recorded yet."))
+        val format = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM, FormatStyle.SHORT)
+        runs.forEachIndexed { i, run ->
+            if (i > 0) list.addView(divider())
+            val color = when {
+                run.failed -> Ui.DANGER
+                run.skipped -> Ui.WARNING
+                else -> Ui.SUCCESS
+            }
+            val started = run.startedAt.atZoneSameInstant(ZoneId.systemDefault()).format(format)
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                isClickable = true
+                setOnClickListener { showLogDialog("$jobName · $started") { it.runLog(jobName, run.runId) } }
+            }
+            row.addView(statusLine("${run.outcomeText()} · $started", color, Ui.TEXT_PRIMARY))
+            val seconds = Duration.between(run.startedAt, run.completedAt).seconds
+            val details = buildList {
+                if (run.filesCopied > 0) add("${run.filesCopied} copied")
+                if (run.filesDeleted > 0) add("${run.filesDeleted} deleted")
+                if (run.bytesCopied > 0) add(Formatter.formatShortFileSize(this@MainActivity, run.bytesCopied))
+                if (run.errorCount > 0) add("${run.errorCount} errors")
+                add("${seconds}s")
+            }
+            row.addView(caption(details.joinToString(" · ")).apply { setPadding(dp(15), dp(2), 0, 0) })
+            run.errorMessage?.let { row.addView(body(it, Ui.DANGER, 12f).apply { setPadding(dp(15), dp(2), 0, 0) }) }
+            list.addView(row)
+        }
+        dialog.show()
     }
 
     private fun refreshSetup() {

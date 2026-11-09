@@ -27,6 +27,17 @@ public sealed record CompanionJobDto(
 
 public sealed record CompanionStatusDto(string Pc, IReadOnlyList<CompanionJobDto> Jobs);
 
+public sealed record CompanionRunDto(
+    Guid RunId,
+    DateTimeOffset StartedAt,
+    DateTimeOffset CompletedAt,
+    string Outcome,
+    string? ErrorMessage,
+    int FilesCopied,
+    int FilesDeleted,
+    int ErrorCount,
+    long BytesCopied);
+
 public sealed record CompanionEndpointReport(int Port);
 
 public sealed record CompanionPairRequest(int Port, string Code);
@@ -47,6 +58,7 @@ public sealed class CompanionServerService(
     private static readonly TimeSpan PingInterval = TimeSpan.FromSeconds(20);
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private const int LogTailLines = 200;
+    private const int HistoryLimit = 50;
 
     private WebApplication? _app;
     private readonly CancellationTokenSource _stopping = new();
@@ -86,6 +98,8 @@ public sealed class CompanionServerService(
         app.MapGet("/api/status", async () => Results.Json(await BuildStatusAsync(), Json));
         app.MapGet("/api/events", StreamEventsAsync);
         app.MapGet("/api/jobs/{name}/log", GetLogAsync);
+        app.MapGet("/api/jobs/{name}/history", GetHistoryAsync);
+        app.MapGet("/api/jobs/{name}/history/{runId:guid}/log", GetRunLogAsync);
         app.MapPost("/api/jobs/{name}/run", RunJobAsync);
         app.MapPost("/api/jobs/{name}/stop", StopJobAsync);
         app.MapPost("/api/devices/{name}/endpoint", ReportEndpointAsync);
@@ -209,6 +223,32 @@ public sealed class CompanionServerService(
                 text = await runHistory.GetRunLogAsync(name, latest.RunId);
         }
 
+        if (text is null)
+            return Results.NotFound();
+
+        var lines = text.ReplaceLineEndings("\n").TrimEnd('\n').Split('\n');
+        return Results.Text(string.Join('\n', lines.TakeLast(LogTailLines)), "text/plain", Encoding.UTF8);
+    }
+
+    private async Task<IResult> GetHistoryAsync(string name)
+    {
+        var config = await configService.GetAsync();
+        if (!config.Jobs.Any(j => j.Name == name))
+            return Results.NotFound();
+
+        var runs = (await runHistory.ListRunsAsync(name))
+            .OrderByDescending(r => r.StartedAt)
+            .Take(HistoryLimit)
+            .Select(r => new CompanionRunDto(
+                r.RunId, r.StartedAt, r.CompletedAt, r.Outcome.ToString(), r.ErrorMessage,
+                r.FilesCopied, r.FilesDeleted, r.ErrorCount, r.BytesCopied))
+            .ToList();
+        return Results.Json(runs, Json);
+    }
+
+    private async Task<IResult> GetRunLogAsync(string name, Guid runId)
+    {
+        var text = await runHistory.GetRunLogAsync(name, runId);
         if (text is null)
             return Results.NotFound();
 
