@@ -36,6 +36,9 @@ public sealed class JobStatusTracker : ISyncEventSink
             return _jobs.TryGetValue(jobName, out var s) ? s.ToStatus() : new State(jobName).ToStatus();
     }
 
+    /// <summary>Re-announces a job's current status after something outside the run events changed (enabled flag, checkpoint).</summary>
+    public void Republish(string jobName) => Update(jobName, _ => true);
+
     /// <summary>Fills in the last result from run history for a job this session hasn't seen finish yet.</summary>
     public void SeedFromHistory(JobRunRecord record)
     {

@@ -37,7 +37,11 @@ import com.adbsync.companion.Ui.styled
 import com.adbsync.companion.Ui.subSectionLabel
 import com.adbsync.companion.Ui.title
 import com.adbsync.companion.Ui.toggle
+import android.text.TextUtils
+import android.text.format.DateUtils
 import android.text.format.Formatter
+import android.widget.PopupMenu
+import java.time.OffsetDateTime
 import java.net.HttpURLConnection
 import java.time.Duration
 import java.time.ZoneId
@@ -256,9 +260,18 @@ class MainActivity : Activity() {
         }
         header.addView(sectionLabel(job.name).apply {
             if (!job.enabled) setTextColor(Ui.TEXT_SECONDARY)
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            maxLines = 2
+            ellipsize = TextUtils.TruncateAt.END
         })
-        if (!job.enabled) header.addView(caption("Disabled"))
+        if (job.needsAttention) header.addView(badge("⚠", Ui.WARNING))
+        if (job.hasCheckpoint) header.addView(badge("↻", CHECKPOINT_BLUE))
+        header.addView(View(this@MainActivity).apply { layoutParams = LinearLayout.LayoutParams(0, 0, 1f) })
+        header.addView(toggle("").apply {
+            isChecked = job.enabled
+            setOnCheckedChangeListener { _, checked ->
+                act(job.name, "Update") { it.setEnabled(job.name, checked) }
+            }
+        })
         addView(header)
         addView(View(this@MainActivity).apply { minimumHeight = dp(6) })
 
@@ -270,6 +283,12 @@ class MainActivity : Activity() {
         }
         job.lastResult?.let { result ->
             addView(body(result, Ui.resultColor(result, job.lastFailed), 13f).apply { setPadding(dp(15), dp(4), 0, 0) })
+        }
+        addView(caption(scheduleText(job)).apply { setPadding(dp(15), dp(4), 0, 0) })
+        if (job.hasCheckpoint && !job.running) {
+            job.checkpointSummary?.let { summary ->
+                addView(body(summary, CHECKPOINT_BLUE, 12f).apply { setPadding(dp(15), dp(4), 0, 0) })
+            }
         }
 
         val buttons = LinearLayout(this@MainActivity).apply {
@@ -283,7 +302,67 @@ class MainActivity : Activity() {
         }
         buttons.addView(button("Log") { showLog(job.name) })
         buttons.addView(button("History") { showHistory(job.name) })
+        if (!job.running || job.hasCheckpoint) {
+            lateinit var more: View
+            more = button("⋯") { showMoreMenu(more, job) }
+            buttons.addView(more)
+        }
         addView(buttons)
+    }
+
+    private fun badge(glyph: String, color: Int) = TextView(this).apply {
+        text = glyph
+        textSize = 14f
+        setTextColor(color)
+        setPadding(dp(8), 0, 0, 0)
+    }
+
+    private fun scheduleText(job: RemoteJob): String {
+        val last = job.lastResultAt?.let {
+            DateUtils.getRelativeTimeSpanString(it.toInstant().toEpochMilli(), System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS).toString()
+        } ?: "never"
+        val next = when {
+            !job.enabled -> "-"
+            job.nextRunAt == null -> "-"
+            !job.nextRunAt.isAfter(OffsetDateTime.now()) -> "due now"
+            else -> job.nextRunAt.atZoneSameInstant(ZoneId.systemDefault()).format(NEXT_RUN_FORMAT)
+        }
+        return "Last run $last  ·  Next run $next"
+    }
+
+    private fun showMoreMenu(anchor: View, job: RemoteJob) {
+        val menu = PopupMenu(this, anchor)
+        if (!job.running) menu.menu.add(0, MENU_DRY_RUN, 0, "Dry run")
+        if (job.hasCheckpoint && !job.running) menu.menu.add(0, MENU_DISCARD, 1, "Discard checkpoint")
+        menu.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                MENU_DRY_RUN -> act(job.name, "Dry run") { it.dryRun(job.name) }
+                MENU_DISCARD -> confirmDiscardCheckpoint(job)
+            }
+            true
+        }
+        menu.show()
+    }
+
+    private fun confirmDiscardCheckpoint(job: RemoteJob) {
+        AlertDialog.Builder(this)
+            .setTitle("Discard checkpoint?")
+            .setMessage(
+                "${job.name} was interrupted (${job.checkpointSummary}).\n\n" +
+                    "Discarding its checkpoint means the next run starts over from the very beginning instead of continuing where it left off.\n\n" +
+                    "Files already synced are not affected.",
+            )
+            .setPositiveButton("Discard") { _, _ -> act(job.name, "Discard") { it.discardCheckpoint(job.name) } }
+            .setNegativeButton("Cancel", null)
+            .create()
+            .apply {
+                setOnShowListener {
+                    window?.setBackgroundDrawable(Ui.rounded(Ui.SURFACE_ALT, dp(12)))
+                    getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(Ui.DANGER)
+                    getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(Ui.TEXT_SECONDARY)
+                }
+            }
+            .show()
     }
 
     private fun confirmStop(job: RemoteJob) {
@@ -530,5 +609,9 @@ class MainActivity : Activity() {
 
     private companion object {
         const val REQUEST_NOTIFICATIONS = 1
+        const val MENU_DRY_RUN = 1
+        const val MENU_DISCARD = 2
+        const val CHECKPOINT_BLUE = 0xFF4FC3F7.toInt()
+        val NEXT_RUN_FORMAT: DateTimeFormatter = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM, FormatStyle.SHORT)
     }
 }

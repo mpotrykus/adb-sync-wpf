@@ -1,4 +1,7 @@
+using AdbSync.Core.Models.Config;
+using AdbSync.Core.Models.Orchestration;
 using AdbSync.Core.Services.Companion;
+using AdbSync.Core.Services.Scheduling;
 using AdbSync.Core.Services.Devices;
 using AdbSync.Core.Services.Logging;
 using AdbSync.Core.Services.Orchestration.RunHistory;
@@ -23,7 +26,13 @@ public sealed record CompanionJobDto(
     IReadOnlyList<DevicePhase> Devices,
     string? LastResult,
     bool LastFailed,
-    DateTimeOffset? LastResultAt);
+    DateTimeOffset? LastResultAt,
+    DateTimeOffset? NextRunAt,
+    bool NeedsAttention,
+    bool HasCheckpoint,
+    string? CheckpointSummary);
+
+public sealed record CompanionEnabledRequest(bool Enabled);
 
 public sealed record CompanionStatusDto(string Pc, IReadOnlyList<CompanionJobDto> Jobs);
 
@@ -102,6 +111,9 @@ public sealed class CompanionServerService(
         app.MapGet("/api/jobs/{name}/history/{runId:guid}/log", GetRunLogAsync);
         app.MapPost("/api/jobs/{name}/run", RunJobAsync);
         app.MapPost("/api/jobs/{name}/stop", StopJobAsync);
+        app.MapPost("/api/jobs/{name}/dryrun", DryRunJobAsync);
+        app.MapPost("/api/jobs/{name}/enabled", SetEnabledAsync);
+        app.MapPost("/api/jobs/{name}/checkpoint/discard", DiscardCheckpointAsync);
         app.MapPost("/api/devices/{name}/endpoint", ReportEndpointAsync);
         app.MapPost("/api/devices/{name}/pair", PairDeviceAsync);
 
@@ -152,12 +164,30 @@ public sealed class CompanionServerService(
     private async Task<CompanionStatusDto> BuildStatusAsync()
     {
         var config = await configService.GetAsync();
-        var jobs = config.Jobs.Select(j => ToDto(tracker.Get(j.Name), j.Enabled)).ToList();
+        var checkpoints = await GetCheckpointsAsync();
+        var jobs = config.Jobs.Select(j => ToDto(tracker.Get(j.Name), config, checkpoints)).ToList();
         return new CompanionStatusDto(Environment.MachineName, jobs);
     }
 
-    private static CompanionJobDto ToDto(JobStatus s, bool enabled) =>
-        new(s.Name, enabled, s.Running, s.Phase, s.Devices, s.LastResult, s.LastFailed, s.LastResultAt);
+    private async Task<Dictionary<string, SyncCheckpoint>> GetCheckpointsAsync()
+    {
+        var all = await jobRunService.GetAllCheckpointsAsync();
+        return all.Where(c => c.ProjectName is not null).GroupBy(c => c.ProjectName!).ToDictionary(g => g.Key, g => g.First());
+    }
+
+    private static CompanionJobDto ToDto(JobStatus s, AppConfig config, IReadOnlyDictionary<string, SyncCheckpoint> checkpoints)
+    {
+        var job = config.Jobs.FirstOrDefault(j => j.Name == s.Name);
+        var enabled = job?.Enabled ?? false;
+        var nextRun = job is not null && enabled
+            ? ScheduleCalculator.NextDueUtc(job.Schedule, DateTimeOffset.Now, config.Settings.RunMissedSchedules)
+            : null;
+        checkpoints.TryGetValue(s.Name, out var checkpoint);
+        return new CompanionJobDto(
+            s.Name, enabled, s.Running, s.Phase, s.Devices, s.LastResult, s.LastFailed, s.LastResultAt,
+            nextRun, s.LastFailed && !s.Running, checkpoint is not null,
+            checkpoint is null ? null : CheckpointSummaryFormatter.Format(checkpoint, job?.Devices.Count ?? 0));
+    }
 
     private async Task StreamEventsAsync(HttpContext ctx)
     {
@@ -187,11 +217,9 @@ public sealed class CompanionServerService(
                     break;
 
                 var config = await configService.GetAsync();
+                var checkpoints = await GetCheckpointsAsync();
                 while (changes.Reader.TryRead(out var s))
-                {
-                    var enabled = config.Jobs.FirstOrDefault(j => j.Name == s.Name)?.Enabled ?? false;
-                    await WriteEventAsync(ctx, "job", ToDto(s, enabled), ct);
-                }
+                    await WriteEventAsync(ctx, "job", ToDto(s, config, checkpoints), ct);
             }
         }
         catch (OperationCanceledException)
@@ -256,19 +284,25 @@ public sealed class CompanionServerService(
         return Results.Text(string.Join('\n', lines.TakeLast(LogTailLines)), "text/plain", Encoding.UTF8);
     }
 
-    private async Task<IResult> RunJobAsync(string name)
+    private Task<IResult> RunJobAsync(string name) => StartRunAsync(name, dryRun: false);
+
+    private Task<IResult> DryRunJobAsync(string name) => StartRunAsync(name, dryRun: true);
+
+    private async Task<IResult> StartRunAsync(string name, bool dryRun)
     {
         var config = await configService.GetAsync();
         var index = config.Jobs.FindIndex(j => j.Name == name);
         if (index < 0)
             return Results.NotFound();
+        if (dryRun && tracker.Get(name).Running)
+            return Results.Conflict();
 
-        logger.LogInformation("Companion app requested a run of '{Job}'", name);
+        logger.LogInformation("Companion app requested a {Kind} of '{Job}'", dryRun ? "dry run" : "run", name);
         _ = Task.Run(async () =>
         {
             try
             {
-                await jobRunService.RunJobAsync(index);
+                await jobRunService.RunJobAsync(index, dryRun: dryRun);
             }
             catch (Exception ex)
             {
@@ -276,6 +310,37 @@ public sealed class CompanionServerService(
             }
         });
         return Results.Accepted();
+    }
+
+    private async Task<IResult> SetEnabledAsync(string name, CompanionEnabledRequest request)
+    {
+        var config = await configService.GetAsync();
+        var job = config.Jobs.FirstOrDefault(j => j.Name == name);
+        if (job is null)
+            return Results.NotFound();
+
+        if (job.Enabled != request.Enabled)
+        {
+            job.Enabled = request.Enabled;
+            logger.LogInformation("Companion app {Action} '{Job}'", request.Enabled ? "enabled" : "disabled", name);
+            await configService.SaveAsync();
+        }
+        tracker.Republish(name);
+        return Results.NoContent();
+    }
+
+    private async Task<IResult> DiscardCheckpointAsync(string name)
+    {
+        var config = await configService.GetAsync();
+        if (!config.Jobs.Any(j => j.Name == name))
+            return Results.NotFound();
+        if (tracker.Get(name).Running)
+            return Results.Conflict();
+
+        logger.LogInformation("Companion app discarded the checkpoint of '{Job}'", name);
+        await jobRunService.DiscardCheckpointAsync(name);
+        tracker.Republish(name);
+        return Results.NoContent();
     }
 
     /// <summary>The phone's wireless-debugging port after it (re)enabled wireless debugging. The IP comes from the

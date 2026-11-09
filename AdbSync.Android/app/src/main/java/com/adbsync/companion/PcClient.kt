@@ -26,6 +26,11 @@ data class RemoteJob(
     val devices: List<Pair<String, String>>,
     val lastResult: String?,
     val lastFailed: Boolean,
+    val lastResultAt: OffsetDateTime?,
+    val nextRunAt: OffsetDateTime?,
+    val needsAttention: Boolean,
+    val hasCheckpoint: Boolean,
+    val checkpointSummary: String?,
 ) {
     val isPushing get() = phase == "Push" || devices.any { it.second == "Push" }
 
@@ -49,6 +54,11 @@ data class RemoteJob(
                 },
                 lastResult = o.optStringOrNull("lastResult"),
                 lastFailed = o.optBoolean("lastFailed"),
+                lastResultAt = o.optStringOrNull("lastResultAt")?.let { OffsetDateTime.parse(it) },
+                nextRunAt = o.optStringOrNull("nextRunAt")?.let { OffsetDateTime.parse(it) },
+                needsAttention = o.optBoolean("needsAttention"),
+                hasCheckpoint = o.optBoolean("hasCheckpoint"),
+                checkpointSummary = o.optStringOrNull("checkpointSummary"),
             )
         }
     }
@@ -104,6 +114,13 @@ class PcClient(private val config: PcConfig) {
     fun run(job: String) = post("/api/jobs/${encode(job)}/run")
 
     fun stop(job: String) = post("/api/jobs/${encode(job)}/stop")
+
+    fun dryRun(job: String) = post("/api/jobs/${encode(job)}/dryrun")
+
+    fun discardCheckpoint(job: String) = post("/api/jobs/${encode(job)}/checkpoint/discard")
+
+    fun setEnabled(job: String, enabled: Boolean): Int =
+        postJson("/api/jobs/${encode(job)}/enabled", JSONObject().put("enabled", enabled)).first
 
     fun reportEndpoint(device: String, port: Int): Int =
         postJson("/api/devices/${encode(device)}/endpoint", JSONObject().put("port", port)).first

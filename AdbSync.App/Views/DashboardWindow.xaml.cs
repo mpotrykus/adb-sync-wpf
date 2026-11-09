@@ -211,14 +211,8 @@ public partial class DashboardWindow : Window
     private static void ApplyCheckpoint(JobStatusViewModel vm, SyncCheckpoint checkpoint, AppConfig config)
     {
         var job = config.Jobs.FirstOrDefault(j => j.Name == vm.Name);
-        var totalDevices = job?.Devices.Count ?? 0;
-
-        var where = totalDevices > 0
-            ? $"{checkpoint.Phase} ({checkpoint.CompletedDevices.Count}/{totalDevices} devices done)"
-            : checkpoint.Phase.ToString();
-
         vm.HasCheckpoint = true;
-        vm.CheckpointSummary = $"Interrupted during {where} - saved {JobStatusViewModel.FormatRelative(checkpoint.SavedAt)}";
+        vm.CheckpointSummary = CheckpointSummaryFormatter.Format(checkpoint, job?.Devices.Count ?? 0);
     }
 
     private static void ClearCheckpoint(JobStatusViewModel vm)
