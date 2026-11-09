@@ -706,7 +706,7 @@ public partial class DashboardWindow : Window
         }
 
         var config = await _configService.GetAsync();
-        var window = new SettingsWindow(config) { Owner = this };
+        var window = new SettingsWindow(config, () => _viewModel.AnyJobRunning) { Owner = this };
         _settingsWindow = window;
         window.Closed += async (_, _) =>
         {

@@ -1,5 +1,6 @@
 using AdbSync.App.Services;
 using AdbSync.Core.Models.Config;
+using AdbSync.Core.Services.Config;
 using Microsoft.Win32;
 using System.IO;
 using System.Windows;
@@ -12,10 +13,13 @@ public partial class SettingsWindow : Window
 
     public bool Saved { get; private set; }
 
-    public SettingsWindow(AppConfig config)
+    private readonly Func<bool> _anyJobRunning;
+
+    public SettingsWindow(AppConfig config, Func<bool>? anyJobRunning = null)
     {
         InitializeComponent();
         _config = config;
+        _anyJobRunning = anyJobRunning ?? (() => false);
 
         ProjectsDirectoryBox.Text = config.Settings.ProjectsDirectory;
         LoadFromSettings(config.Settings);
@@ -87,7 +91,12 @@ public partial class SettingsWindow : Window
             return;
         }
 
-        _config.Settings.ProjectsDirectory = ProjectsDirectoryBox.Text.Trim();
+        var newRoot = ProjectsDirectoryBox.Text.Trim();
+        var oldRoot = _config.Settings.ProjectsDirectory;
+        if (!string.Equals(oldRoot, newRoot, StringComparison.OrdinalIgnoreCase) && !TryMigrateProjects(oldRoot, newRoot))
+            return;
+
+        _config.Settings.ProjectsDirectory = newRoot;
         _config.Settings.StartAtLogin = StartAtLoginBox.IsChecked == true;
         _config.Settings.ShowInfoNotifications = ShowInfoNotificationsBox.IsChecked == true;
         _config.Settings.ShowErrorNotifications = ShowErrorNotificationsBox.IsChecked == true;
@@ -139,6 +148,57 @@ public partial class SettingsWindow : Window
 
         Saved = true;
         Close();
+    }
+
+    /// <returns>False if the save should be aborted.</returns>
+    private bool TryMigrateProjects(string oldRoot, string newRoot)
+    {
+        if (ProjectsDirectoryMigrator.IsSameOrNested(oldRoot, newRoot))
+        {
+            ProjectsDirectoryErrorText.Text = "The new directory can't be inside the old one (or vice versa).";
+            ProjectsDirectoryErrorText.Visibility = Visibility.Visible;
+            return false;
+        }
+
+        var plan = ProjectsDirectoryMigrator.Plan(_config.Jobs, oldRoot, newRoot);
+        if (plan.JobFolders.Count == 0)
+            return true;
+
+        if (plan.Conflicts.Count > 0)
+        {
+            ProjectsDirectoryErrorText.Text =
+                $"Can't move: the new directory already contains folders for {string.Join(", ", plan.Conflicts)}.";
+            ProjectsDirectoryErrorText.Visibility = Visibility.Visible;
+            return false;
+        }
+
+        var result = ConfirmDialog.ShowWithResult(this, "Move projects?",
+            $"Move {plan.JobFolders.Count} existing project folder(s) from\n{oldRoot}\nto\n{newRoot}?\n\n" +
+            "Choose \"Don't move\" to change the setting only; jobs will then see empty projects until you move the folders yourself.",
+            confirmText: "Move", secondaryText: "Don't move");
+        if (result == ConfirmDialogResult.Cancel)
+            return false;
+        if (result == ConfirmDialogResult.Secondary)
+            return true;
+
+        if (_anyJobRunning())
+        {
+            ProjectsDirectoryErrorText.Text = "Can't move projects while a job is running. Wait for it to finish and try again.";
+            ProjectsDirectoryErrorText.Visibility = Visibility.Visible;
+            return false;
+        }
+
+        try
+        {
+            ProjectsDirectoryMigrator.Move(plan, oldRoot, newRoot);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            ProjectsDirectoryErrorText.Text = $"Move failed: {ex.Message}. Some folders may already have moved.";
+            ProjectsDirectoryErrorText.Visibility = Visibility.Visible;
+            return false;
+        }
     }
 
     private void Cancel_Click(object sender, RoutedEventArgs e) => Close();
