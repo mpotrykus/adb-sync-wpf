@@ -327,7 +327,7 @@ class MainActivity : Activity() {
             buttons.addView(button("Run now", ButtonKind.Success) { act(job.name, "Run") { it.run(job.name) } })
         }
         buttons.addView(button("Log") { showLog(job.name) })
-        buttons.addView(button("History") { showHistory(job.name) })
+        buttons.addView(button("History") { showHistory(job.name, job.running) })
         if (!job.running || job.hasCheckpoint) {
             lateinit var more: View
             more = button("⋯") { showMoreMenu(more, job) }
@@ -464,7 +464,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun showHistory(jobName: String) {
+    private fun showHistory(jobName: String, running: Boolean) {
         val config = PcConfig.load(this) ?: return
         io.execute {
             val runs = try {
@@ -476,11 +476,16 @@ class MainActivity : Activity() {
                 ui { Toast.makeText(this, "Couldn't load history: ${e.javaClass.simpleName}", Toast.LENGTH_SHORT).show() }
                 return@execute
             }
-            ui { renderHistoryDialog(jobName, runs) }
+            ui { renderHistoryDialog(jobName, runs, running) }
         }
     }
 
-    private fun renderHistoryDialog(jobName: String, runs: List<RemoteRun>) {
+    private fun openRunDetail(jobName: String, title: String, runId: String?) {
+        val config = PcConfig.load(this) ?: return
+        RunDetailDialog(this, config, jobName, title, runId).show()
+    }
+
+    private fun renderHistoryDialog(jobName: String, runs: List<RemoteRun>, running: Boolean) {
         val list = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(4), dp(20), dp(8))
@@ -493,10 +498,19 @@ class MainActivity : Activity() {
             .create()
             .styled()
 
-        if (runs.isEmpty()) list.addView(caption("No runs recorded yet."))
+        if (running) {
+            list.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                isClickable = true
+                setOnClickListener { openRunDetail(jobName, "$jobName · running", null) }
+                addView(statusLine("Running now", Ui.ACCENT, Ui.TEXT_PRIMARY))
+                addView(caption("Tap to watch it live").apply { setPadding(dp(15), dp(2), 0, 0) })
+            })
+        }
+        if (runs.isEmpty() && !running) list.addView(caption("No runs recorded yet."))
         val format = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM, FormatStyle.SHORT)
         runs.forEachIndexed { i, run ->
-            if (i > 0) list.addView(divider())
+            if (i > 0 || running) list.addView(divider())
             val color = when {
                 run.failed -> Ui.DANGER
                 run.skipped -> Ui.WARNING
@@ -506,7 +520,7 @@ class MainActivity : Activity() {
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 isClickable = true
-                setOnClickListener { showLogDialog("$jobName · $started") { it.runLog(jobName, run.runId) } }
+                setOnClickListener { openRunDetail(jobName, "$jobName · $started", run.runId) }
             }
             row.addView(statusLine("${run.outcomeText()} · $started", color, Ui.TEXT_PRIMARY))
             val seconds = Duration.between(run.startedAt, run.completedAt).seconds

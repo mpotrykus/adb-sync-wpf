@@ -6,6 +6,7 @@ using AdbSync.Core.Services.Companion;
 using AdbSync.Core.Services.Config;
 using AdbSync.Core.Services.Scheduling;
 using AdbSync.Core.Services.Devices;
+using AdbSync.Core.Models.Orchestration.RunHistory;
 using AdbSync.Core.Services.Logging;
 using AdbSync.Core.Services.Merge;
 using AdbSync.Core.Services.Orchestration.RunHistory;
@@ -75,6 +76,18 @@ public sealed record CompanionRunDto(
     int ErrorCount,
     long BytesCopied);
 
+public sealed record CompanionStepDto(
+    string Device,
+    string Phase,
+    string Status,
+    DateTimeOffset? StartedAt,
+    DateTimeOffset? EndedAt,
+    int FilesCopied,
+    int FilesDeleted,
+    long BytesCopied,
+    int Errors,
+    int Conflicts);
+
 public sealed record CompanionEndpointReport(int Port);
 
 public sealed record CompanionPairRequest(int Port, string Code);
@@ -89,6 +102,7 @@ public sealed class CompanionServerService(
     ChangeWatchHostedService changeWatch,
     IRunHistoryStore runHistory,
     ILiveRunLogSink liveLog,
+    ILiveRunStepSink liveSteps,
     CompanionCertificateStore certificates,
     IAdbDeviceResolver deviceResolver,
     IPendingConflictStore pendingConflicts,
@@ -143,6 +157,8 @@ public sealed class CompanionServerService(
         app.MapGet("/api/jobs/{name}/log", GetLogAsync);
         app.MapGet("/api/jobs/{name}/history", GetHistoryAsync);
         app.MapGet("/api/jobs/{name}/history/{runId:guid}/log", GetRunLogAsync);
+        app.MapGet("/api/jobs/{name}/history/{runId:guid}/steps", GetRunStepsAsync);
+        app.MapGet("/api/jobs/{name}/steps/live", GetLiveStepsAsync);
         app.MapPost("/api/jobs/{name}/run", RunJobAsync);
         app.MapPost("/api/jobs/{name}/stop", StopJobAsync);
         app.MapPost("/api/jobs/{name}/dryrun", DryRunJobAsync);
@@ -362,6 +378,16 @@ public sealed class CompanionServerService(
         var lines = text.ReplaceLineEndings("\n").TrimEnd('\n').Split('\n');
         return Results.Text(string.Join('\n', lines.TakeLast(LogTailLines)), "text/plain", Encoding.UTF8);
     }
+
+    private async Task<IResult> GetRunStepsAsync(string name, Guid runId) =>
+        Results.Json((await runHistory.GetRunStepsAsync(runId)).Select(ToDto).ToList(), Json);
+
+    private IResult GetLiveStepsAsync(string name) =>
+        Results.Json(liveSteps.TryGet(name, out var steps) ? steps.Select(ToDto).ToList() : [], Json);
+
+    private static CompanionStepDto ToDto(RunStepRecord s) => new(
+        s.DeviceName, s.Phase.ToString(), s.Status.ToString(), s.StartedAt, s.EndedAt,
+        s.FilesCopied, s.FilesDeleted, s.BytesCopied, s.Errors, s.Conflicts);
 
     private Task<IResult> RunJobAsync(string name) => StartRunAsync(name, dryRun: false);
 

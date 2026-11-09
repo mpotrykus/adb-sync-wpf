@@ -115,6 +115,34 @@ data class RemoteRun(
     }
 }
 
+data class RemoteStep(
+    val device: String,
+    val phase: String,
+    val status: String,
+    val startedAt: OffsetDateTime?,
+    val endedAt: OffsetDateTime?,
+    val filesCopied: Int,
+    val filesDeleted: Int,
+    val bytesCopied: Long,
+    val errors: Int,
+    val conflicts: Int,
+) {
+    companion object {
+        fun parse(o: JSONObject) = RemoteStep(
+            device = o.getString("device"),
+            phase = o.getString("phase"),
+            status = o.getString("status"),
+            startedAt = o.optStringOrNull("startedAt")?.let { OffsetDateTime.parse(it) },
+            endedAt = o.optStringOrNull("endedAt")?.let { OffsetDateTime.parse(it) },
+            filesCopied = o.optInt("filesCopied"),
+            filesDeleted = o.optInt("filesDeleted"),
+            bytesCopied = o.optLong("bytesCopied"),
+            errors = o.optInt("errors"),
+            conflicts = o.optInt("conflicts"),
+        )
+    }
+}
+
 data class RemoteConflict(
     val id: String,
     val job: String,
@@ -234,6 +262,16 @@ class PcClient(private val config: PcConfig) {
     fun log(job: String): String = getText("/api/jobs/${encode(job)}/log")
 
     fun runLog(job: String, runId: String): String = getText("/api/jobs/${encode(job)}/history/$runId/log")
+
+    fun runSteps(job: String, runId: String): List<RemoteStep> = parseSteps(getText("/api/jobs/${encode(job)}/history/$runId/steps"))
+
+    /** The in-progress run's steps; empty when the job isn't running. */
+    fun liveSteps(job: String): List<RemoteStep> = parseSteps(getText("/api/jobs/${encode(job)}/steps/live"))
+
+    private fun parseSteps(json: String): List<RemoteStep> {
+        val array = JSONArray(json)
+        return (0 until array.length()).map { RemoteStep.parse(array.getJSONObject(it)) }
+    }
 
     fun history(job: String): List<RemoteRun> {
         val array = JSONArray(getText("/api/jobs/${encode(job)}/history"))
