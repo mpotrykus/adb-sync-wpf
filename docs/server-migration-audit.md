@@ -230,9 +230,10 @@ The audit changes the shape of the plan's decisions:
 ## Decisions (2026-11-10)
 
 1. **Wireless ADB.** The server runs adb and connects to the phones over wireless ADB. The companion's enable-and-report jobs report to the server instead of the PC.
-2. **Masters live on the server**, on a folder on one of the server's external USB drives (usb 1 or usb 2). Phase 2 consequences:
-   - The data volume must be a bind mount of that drive.
-   - The server must refuse to run jobs when the drive isn't mounted or the master root is missing. An unmounted drive is exactly the "fresh empty master next to old manifests" case in §3.3 #4. Check for a marker file on the drive, not just that the directory exists.
-   - USB drives can drop or spin down mid-run, so treat I/O errors on master as a run failure, never as missing files.
+2. **Masters live on the server**, at a configurable projects directory. The user's own install will point it at a folder on one of the server's external USB drives, but nothing in the code may assume USB drives or this environment, because the tool should stay usable by others. Phase 2 rule: **if a job's project folder isn't reachable, refuse to run that job.** Report it visibly as "project folder unavailable", not as a failure that retries forever, and never as an empty master.
+   - "Reachable" means the configured projects directory (or per-job override) exists and is readable and writable. An unreachable folder must never be created on the fly. Today `SyncJobRunner` calls `Directory.CreateDirectory(masterPath)`, which turns an unmounted drive into a fresh empty master next to old manifests (§3.3 #4).
+   - Only the root has to exist already. The job's folder and `master/` underneath it may still be created, which is the normal path for a new job. The root is either the projects directory or the job's `ProjectDirectory` override.
+   - I/O errors reading master mid-run (for example, a drive dropping out) fail the run, and are never interpreted as missing files.
+   - This applies on Windows as well, so it can land before the server work.
 3. **SQLite** for all engine state: manifests, checkpoints, pending conflicts, push-safety and config.
-4. **Fix §3.3 bugs 1–2 first** on a separate branch and PR, before Phase 1.
+4. **Fix §3.3 bugs 1–2 first** on a separate branch and PR, before Phase 1. Done in PR #3, which also fixes a third bug found along the way: files that failed to pull were merged as deletions and removed from every device.
