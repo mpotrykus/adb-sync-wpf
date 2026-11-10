@@ -1,3 +1,4 @@
+using AdbSync.Core.Services.Common;
 using System.Diagnostics;
 using System.Text.RegularExpressions;
 
@@ -22,7 +23,7 @@ public sealed class SyncLockManager : ISyncLockManager
                 return null;
 
             if (Directory.Exists(stagingRoot))
-                Directory.Delete(stagingRoot, recursive: true);
+                DirectoryUtil.DeleteRecursive(stagingRoot);
         }
 
         Directory.CreateDirectory(stagingRoot);

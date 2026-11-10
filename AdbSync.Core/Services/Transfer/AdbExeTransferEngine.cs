@@ -35,7 +35,7 @@ public sealed class AdbExeTransferEngine(IAdbProcessRunner adb, IMirrorDiffer di
         finally
         {
             if (Directory.Exists(tempRoot))
-                Directory.Delete(tempRoot, recursive: true);
+                DirectoryUtil.DeleteRecursive(tempRoot);
         }
     }
 

@@ -1,3 +1,4 @@
+using AdbSync.Core.Services.Common;
 using AdbSync.Core.Models.Config;
 using AdbSync.Core.Models.Orchestration;
 using AdbSync.Core.Services.Devices;
@@ -120,7 +121,7 @@ public sealed class DeviceSnapshotService(IAdbDeviceResolver deviceResolver, IAd
             if (DateTimeOffset.TryParseExact(name, TimestampFormat, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out var createdAt)
                 && createdAt.UtcDateTime < cutoffUtc)
             {
-                Directory.Delete(dir, recursive: true);
+                DirectoryUtil.DeleteRecursive(dir);
             }
         }
     }

@@ -1,3 +1,4 @@
+using AdbSync.Core.Services.Common;
 using AdbSync.Core.Models.Config;
 using AdbSync.Core.Models.Merge;
 using AdbSync.Core.Models.Orchestration;
@@ -320,7 +321,7 @@ public sealed class SyncJobRunner(
                 PruneConflictBackups(mergeOptions.ConflictBackupDir!, eff.ConflictRetentionDays);
 
                 if (Directory.Exists(stagingPath))
-                    Directory.Delete(stagingPath, recursive: true);
+                    DirectoryUtil.DeleteRecursive(stagingPath);
 
                 completed.Add(binding.DeviceName);
                 if (!eff.DryRun)

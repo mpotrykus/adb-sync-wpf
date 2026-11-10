@@ -1,3 +1,4 @@
+using AdbSync.Core.Services.Common;
 using AdbSync.Core.Models.Config;
 
 namespace AdbSync.Core.Services.Config;
@@ -46,7 +47,7 @@ public static class ProjectsDirectoryMigrator
             }
 
             CopyDirectory(source, target);
-            Directory.Delete(source, recursive: true);
+            DirectoryUtil.DeleteRecursive(source);
         }
     }
 

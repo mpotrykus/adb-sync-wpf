@@ -1,3 +1,4 @@
+using AdbSync.Core.Services.Common;
 using AdbSync.Core.Models.Transfer;
 
 namespace AdbSync.Core.Services.Transfer;
@@ -38,7 +39,7 @@ public static class MirrorPlanApplier
             if (entry.IsDirectory)
             {
                 if (Directory.Exists(path))
-                    Directory.Delete(path, recursive: true);
+                    DirectoryUtil.DeleteRecursive(path);
             }
             else if (File.Exists(path))
             {
