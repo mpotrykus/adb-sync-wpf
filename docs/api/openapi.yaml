@@ -967,7 +967,7 @@ paths:
       summary: List folders on the server, for picking the projects directory or a job's folder override.
       description: |
         Folders only, never file contents. The roots are the entries in `ADBSYNC_BROWSE_ROOTS` (default: the
-        server's mounted data volumes) plus, always, the current projects directory and every job's folder
+        volumes mounted into the container) plus, always, the current projects directory and every job's folder
         override, so every configured storage location is reachable. Paths outside the roots get `403`.
       parameters:
         - name: path

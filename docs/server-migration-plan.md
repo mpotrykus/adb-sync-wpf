@@ -46,7 +46,7 @@ Exit criteria: user has read the audit and agreed on the open decisions below.
 
 - Extract or abstract the Windows-specific pieces found in Phase 0 behind interfaces.
 - Create a headless host project (ASP.NET Core) that wires up Core and serves the Phase 1 API.
-- Dockerfile and a compose file. Persist data on a mounted volume.
+- Dockerfile and a compose file; Docker is the primary deployment (audit decision 5). Persist data on a mounted volume.
 - Consider SQLite in place of raw JSON files for transactions and concurrent access. This is also the right place to harden against the empty-master / stale-manifest class of bugs (see memory: nomad_empty_master_stale_manifest).
 - Migration path for existing data from the PC to the server.
 - Tests run on Linux in CI. The existing flaky 2-device runner tests (see memory) need to be understood before relying on them.

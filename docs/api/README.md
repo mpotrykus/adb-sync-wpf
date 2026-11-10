@@ -142,7 +142,7 @@ About 41 UI operations were counted in the audit (§2.3). Every one maps to an e
   - Both move into engine state (SQLite, decision 3).
 - **Typed outcomes.** Run failures carry an `ErrorCode`, for example `PushSafetyException` → `push_safety_blocked`. `JobStatus.canForcePush` is derived from that code, not from message text.
 - **Run ids at queue time.** The runner accepts a run id instead of generating one, so `POST …/runs` can return it immediately.
-- **Project folder availability** (decision 2). Before a run, the server checks that the job's projects root is reachable. If it isn't, the run is skipped with `project_folder_unavailable`, and `JobStatus.availability` shows it. The server never creates the root.
+- **Project folder availability** (decision 2). Before a run, the server checks that the job's projects root is reachable and carries its `.adbsync-root` marker, so an unmounted drive's empty mount point isn't mistaken for a root. If it isn't, the run is skipped with `project_folder_unavailable`, and `JobStatus.availability` shows it. The server never creates the root.
 - **Manifests remember their master.** Each manifest records the master path it was built against. On a mismatch the server refuses to run instead of merging (audit §3.3 #4).
 - **Snapshot restore is safe.** It takes the job lock and resets manifests, like rollback restore already does (audit §3.3 #6).
 - **The scheduler pause is persisted**, along with a `timeZone` setting.
@@ -159,3 +159,4 @@ About 41 UI operations were counted in the audit (§2.3). Every one maps to an e
 4. **Deleting a job can also delete its project folder,** through the opt-in `deleteProjectFolder` flag, which defaults to false.
 5. **USB devices stay.** adb lists a plugged-in phone by serial just like a wireless one, so support is the `transport: usb` value plus a serial field and no endpoint resolution. If it grows beyond that during Phase 2, it gets dropped.
 6. **Server folder browsing stays root-limited.** The roots always include the projects directory and every job's folder override, on top of `ADBSYNC_BROWSE_ROOTS`, so every configured storage location can be browsed.
+7. **Docker is the primary deployment** (audit decision 5): host networking, a `/data` volume plus a projects bind mount, persisted adb keys, a non-root user, and first pairing through `docker exec adbsync adbsync-server pair`.
