@@ -99,6 +99,15 @@ public class SyncLockManagerTests : IDisposable
     }
 
     [Fact]
+    public async Task TryAcquireAsync_ConcurrentCallers_ExactlyOneAcquiresAndNoneThrow()
+    {
+        var handles = await Task.WhenAll(Enumerable.Range(0, 16)
+            .Select(_ => Task.Run(() => _manager.TryAcquireAsync(_projectRoot, StaleAfter))));
+
+        Assert.Single(handles, h => h is not null);
+    }
+
+    [Fact]
     public async Task TryAcquireAsync_AfterDispose_CanBeReacquired()
     {
         var first = await _manager.TryAcquireAsync(_projectRoot, StaleAfter);

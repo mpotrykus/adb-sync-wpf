@@ -17,18 +17,31 @@ public sealed class SyncLockManager : ISyncLockManager
         var stagingRoot = GetStagingRoot(projectRoot);
         var lockPath = GetLockPath(projectRoot);
 
-        if (File.Exists(lockPath))
-        {
-            if (!await IsStaleAsync(lockPath, staleAfter, ct))
-                return null;
-
-            if (Directory.Exists(stagingRoot))
-                DirectoryUtil.DeleteRecursive(stagingRoot);
-        }
-
         Directory.CreateDirectory(stagingRoot);
-        await File.WriteAllTextAsync(lockPath, $"pid={Environment.ProcessId}\nstart={DateTimeOffset.UtcNow:o}", ct);
-        return new LockHandle(lockPath);
+        if (await TryCreateLockFileAsync(lockPath, ct))
+            return new LockHandle(lockPath);
+
+        if (!await IsStaleAsync(lockPath, staleAfter, ct))
+            return null;
+
+        DirectoryUtil.DeleteRecursive(stagingRoot);
+        Directory.CreateDirectory(stagingRoot);
+        return await TryCreateLockFileAsync(lockPath, ct) ? new LockHandle(lockPath) : null;
+    }
+
+    private static async Task<bool> TryCreateLockFileAsync(string lockPath, CancellationToken ct)
+    {
+        try
+        {
+            await using var stream = new FileStream(lockPath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+            await using var writer = new StreamWriter(stream);
+            await writer.WriteAsync($"pid={Environment.ProcessId}\nstart={DateTimeOffset.UtcNow:o}".AsMemory(), ct);
+            return true;
+        }
+        catch (IOException) when (File.Exists(lockPath))
+        {
+            return false;
+        }
     }
 
     public static string GetStagingRoot(string projectRoot) => Path.Combine(projectRoot, ".sync_staging");
@@ -43,7 +56,8 @@ public sealed class SyncLockManager : ISyncLockManager
         }
         catch (IOException)
         {
-            return true;
+            // Unreadable usually means another acquirer is mid-write; treating it as stale would wipe a live run's staging.
+            return DateTime.UtcNow - File.GetLastWriteTimeUtc(lockPath) > staleAfter;
         }
 
         var pidMatch = Regex.Match(content, @"pid=(\d+)");
@@ -73,7 +87,10 @@ public sealed class SyncLockManager : ISyncLockManager
         public ValueTask DisposeAsync()
         {
             if (File.Exists(lockPath))
+            {
+                File.SetAttributes(lockPath, File.GetAttributes(lockPath) & ~FileAttributes.ReadOnly);
                 File.Delete(lockPath);
+            }
             return ValueTask.CompletedTask;
         }
     }
