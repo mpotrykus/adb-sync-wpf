@@ -1,0 +1,2006 @@
+openapi: 3.1.0
+info:
+  title: AdbSync Server API
+  version: 1.0.0-draft
+  summary: Control API for the headless AdbSync sync engine.
+  description: |
+    The contract between the AdbSync server and its clients: the WPF app, the Android companion app,
+    and a future web UI. See `README.md` in this folder for conventions (IDs, errors, concurrency,
+    versioning), the auth and pairing flow, and the live event stream.
+
+    All timestamps are RFC 3339 in UTC. All durations are integer seconds. Enum values are lowerCamelCase strings.
+  license:
+    name: Proprietary
+servers:
+  - url: https://{host}:{port}/api/v1
+    variables:
+      host:
+        default: adbsync.local
+      port:
+        default: "47615"
+
+security:
+  - bearer: []
+
+tags:
+  - name: system
+  - name: auth
+  - name: status
+  - name: jobs
+  - name: runs
+  - name: snapshots
+  - name: devices
+  - name: conflicts
+  - name: settings
+  - name: operations
+  - name: events
+
+paths:
+  # ---------------------------------------------------------------- system
+  /info:
+    get:
+      tags: [system]
+      operationId: getInfo
+      summary: Server identity and API version. No auth, so clients can check compatibility before pairing.
+      security: []
+      responses:
+        "200":
+          description: Server info.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ServerInfo" }
+  /health:
+    get:
+      tags: [system]
+      operationId: getHealth
+      summary: Liveness and readiness. No auth.
+      security: []
+      responses:
+        "200":
+          description: Healthy.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+        "503":
+          description: Running but not ready (for example, the data directory is unavailable).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+
+  # ---------------------------------------------------------------- auth
+  /auth/pair:
+    post:
+      tags: [auth]
+      operationId: pairClient
+      summary: Exchange a one-time pairing code for a client token.
+      description: The only unauthenticated write. Rate-limited, and codes expire (see README, Auth).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PairRequest" }
+      responses:
+        "201":
+          description: Paired. The token is returned once and never again.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PairResponse" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+  /auth/pairing-codes:
+    post:
+      tags: [auth]
+      operationId: createPairingCode
+      summary: Create a short-lived pairing code to pair another client.
+      responses:
+        "201":
+          description: Code created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PairingCode" }
+  /auth/clients:
+    get:
+      tags: [auth]
+      operationId: listClients
+      responses:
+        "200":
+          description: Paired clients.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Client" }
+  /auth/clients/{clientId}:
+    parameters:
+      - $ref: "#/components/parameters/ClientId"
+    delete:
+      tags: [auth]
+      operationId: revokeClient
+      summary: Revoke a client's token. Its open event streams are closed.
+      responses:
+        "204": { description: Revoked. }
+        "404": { $ref: "#/components/responses/Problem" }
+
+  # ---------------------------------------------------------------- status
+  /status:
+    get:
+      tags: [status]
+      operationId: getStatus
+      summary: Dashboard snapshot. Clients load this once, then apply events.
+      responses:
+        "200":
+          description: Snapshot, including the event sequence it corresponds to.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StatusSnapshot" }
+  /scheduler:
+    get:
+      tags: [status]
+      operationId: getScheduler
+      responses:
+        "200":
+          description: Scheduler state.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SchedulerState" }
+    patch:
+      tags: [status]
+      operationId: updateScheduler
+      summary: Pause or resume all scheduled and on-change runs. Persisted across restarts.
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema:
+              type: object
+              properties:
+                paused: { type: boolean }
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SchedulerState" }
+
+  # ---------------------------------------------------------------- jobs
+  /jobs:
+    get:
+      tags: [jobs]
+      operationId: listJobs
+      responses:
+        "200":
+          description: All jobs, in the server's job order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Job" }
+    post:
+      tags: [jobs]
+      operationId: createJob
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/JobInput" }
+      responses:
+        "201":
+          description: Created.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+            Location: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /jobs/run-all:
+    post:
+      tags: [jobs]
+      operationId: runAllJobs
+      summary: Queue a run of every enabled job.
+      responses:
+        "202":
+          description: Runs queued. Jobs that were already running are listed as skipped.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [queued, skipped]
+                properties:
+                  queued:
+                    type: array
+                    items: { $ref: "#/components/schemas/Run" }
+                  skipped:
+                    type: array
+                    items:
+                      type: object
+                      required: [jobId, code]
+                      properties:
+                        jobId: { $ref: "#/components/schemas/Id" }
+                        code: { $ref: "#/components/schemas/ErrorCode" }
+  /jobs/{jobId}:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+    get:
+      tags: [jobs]
+      operationId: getJob
+      responses:
+        "200":
+          description: The job.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+        "404": { $ref: "#/components/responses/Problem" }
+    patch:
+      tags: [jobs]
+      operationId: updateJob
+      summary: Partial update (JSON Merge Patch). Renaming moves the job's folder, so it is refused while the job runs.
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema: { $ref: "#/components/schemas/JobPatch" }
+      responses:
+        "200":
+          description: Updated.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "412": { $ref: "#/components/responses/Problem" }
+    delete:
+      tags: [jobs]
+      operationId: deleteJob
+      summary: Delete the job definition and its engine state (checkpoint, manifests, pending conflicts). Refused while running.
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+        - name: deleteProjectFolder
+          in: query
+          description: Also delete the job's project folder (master, rollback points, snapshots). Default false.
+          schema: { type: boolean, default: false }
+      responses:
+        "204": { description: Deleted. }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "412": { $ref: "#/components/responses/Problem" }
+  /jobs/{jobId}/status:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+    get:
+      tags: [jobs]
+      operationId: getJobStatus
+      responses:
+        "200":
+          description: Live status.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JobStatus" }
+        "404": { $ref: "#/components/responses/Problem" }
+  /jobs/{jobId}/effective-settings:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+    get:
+      tags: [jobs]
+      operationId: getJobEffectiveSettings
+      summary: The job's overrides resolved against global settings.
+      responses:
+        "200":
+          description: Resolved settings.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EffectiveJobSettings" }
+        "404": { $ref: "#/components/responses/Problem" }
+  /jobs/{jobId}/runs:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+    post:
+      tags: [jobs, runs]
+      operationId: startRun
+      summary: Queue a run. Returns immediately; follow progress through events or GET /runs/{runId}.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/StartRunRequest" }
+      responses:
+        "202":
+          description: Run accepted (status `queued`).
+          headers:
+            Location: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Run" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409":
+          description: "`job_running` or `project_folder_unavailable`. Disabled jobs can still be run manually; `enabled` only gates scheduled, on-change and run-all runs."
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+  /jobs/{jobId}/stop:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+    post:
+      tags: [jobs]
+      operationId: stopJob
+      summary: Cancel the job's active run, or its pending on-change trigger (waiting for debounce or for the app to close).
+      responses:
+        "202": { description: Stop requested. The run ends with outcome `cancelled`. }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409":
+          description: "`job_not_running`."
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+  /jobs/{jobId}/checkpoint:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+    get:
+      tags: [jobs]
+      operationId: getCheckpoint
+      responses:
+        "200":
+          description: The resumable checkpoint.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Checkpoint" }
+        "404": { $ref: "#/components/responses/Problem" }
+    delete:
+      tags: [jobs]
+      operationId: discardCheckpoint
+      summary: Discard the checkpoint so the next run starts from scratch. Refused while running.
+      responses:
+        "204": { description: Discarded. }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /jobs/{jobId}/manifests:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+    get:
+      tags: [jobs]
+      operationId: listManifests
+      summary: Read-only summary of each device's merge baseline, for diagnostics.
+      responses:
+        "200":
+          description: One summary per bound device.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ManifestSummary" }
+  /jobs/{jobId}/watch:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+    get:
+      tags: [jobs]
+      operationId: getWatchState
+      summary: Per-device state of the on-change watcher.
+      responses:
+        "200":
+          description: Watch state.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/WatchState" }
+  /jobs/{jobId}/watch/test:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+    post:
+      tags: [jobs]
+      operationId: testWatch
+      summary: Check whether live watch is supported for each binding (the job editor's "Test watch" button).
+      description: Synchronous; can take several seconds per device.
+      requestBody:
+        required: false
+        description: Test unsaved bindings. Omit to test the job's saved bindings.
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                devices:
+                  type: array
+                  items: { $ref: "#/components/schemas/JobDeviceBinding" }
+      responses:
+        "200":
+          description: One result per binding.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/WatchAvailability" }
+  /jobs/{jobId}/app/open:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+    post:
+      tags: [jobs]
+      operationId: openApp
+      summary: Launch the job's linked app on a device.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DeviceRef" }
+      responses:
+        "204": { description: Launched. }
+        "409": { $ref: "#/components/responses/Problem" }
+        "502": { $ref: "#/components/responses/Problem" }
+  /jobs/{jobId}/app/close-and-sync:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+    post:
+      tags: [jobs]
+      operationId: closeAppAndSync
+      summary: Force-stop the linked app on a device, then run the job.
+      description: Replaces today's request that blocks for up to 25 minutes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DeviceRef" }
+      responses:
+        "202":
+          description: Operation started. Its result carries the run id.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Operation" }
+        "409": { $ref: "#/components/responses/Problem" }
+
+  # ---------------------------------------------------------------- snapshots / rollback points
+  /jobs/{jobId}/snapshots:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+    get:
+      tags: [snapshots]
+      operationId: listSnapshots
+      summary: Manual snapshots and automatic rollback points, newest first.
+      parameters:
+        - name: kind
+          in: query
+          schema: { $ref: "#/components/schemas/SnapshotKind" }
+      responses:
+        "200":
+          description: Snapshots.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Snapshot" }
+    post:
+      tags: [snapshots]
+      operationId: createSnapshot
+      summary: Pull every bound device's current state into a new manual snapshot.
+      responses:
+        "202":
+          description: Operation started. Its result carries the snapshot.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Operation" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /jobs/{jobId}/snapshots/{snapshotId}/restore:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+      - $ref: "#/components/parameters/SnapshotId"
+    post:
+      tags: [snapshots]
+      operationId: restoreSnapshot
+      summary: Restore a snapshot or rollback point. Takes the job's lock; refused while the job runs.
+      description: |
+        A rollback point restores master and pushes it to the devices. A manual snapshot pushes each
+        device's saved folder back to that device. Either way the job's manifests are reset, so the next
+        sync cannot mistake restored files for fresh edits.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                deviceIds:
+                  type: array
+                  description: Restrict to these devices. Omit for all devices in the snapshot.
+                  items: { $ref: "#/components/schemas/Id" }
+      responses:
+        "202":
+          description: Operation started.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Operation" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+
+  # ---------------------------------------------------------------- runs
+  /runs:
+    get:
+      tags: [runs]
+      operationId: listRuns
+      summary: Run history, newest first, cursor-paginated.
+      parameters:
+        - name: jobId
+          in: query
+          schema: { $ref: "#/components/schemas/Id" }
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: A page of runs.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Run" }
+                  nextCursor: { type: [string, "null"] }
+  /runs/{runId}:
+    parameters:
+      - $ref: "#/components/parameters/RunId"
+    get:
+      tags: [runs]
+      operationId: getRun
+      responses:
+        "200":
+          description: The run, with its steps (the execution graph).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RunDetail" }
+        "404": { $ref: "#/components/responses/Problem" }
+  /runs/{runId}/log:
+    parameters:
+      - $ref: "#/components/parameters/RunId"
+    get:
+      tags: [runs]
+      operationId: getRunLog
+      summary: The run's log. For an active run, the lines so far; subscribe to `run.log` for the rest.
+      parameters:
+        - name: tail
+          in: query
+          description: Return only the last N lines.
+          schema: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: Plain-text log.
+          content:
+            text/plain:
+              schema: { type: string }
+        "404": { $ref: "#/components/responses/Problem" }
+  /runs/{runId}/files:
+    parameters:
+      - $ref: "#/components/parameters/RunId"
+    get:
+      tags: [runs]
+      operationId: listRunFiles
+      summary: Per-file change list. Only kept for the job's most recent `fileDetailRunsKept` runs.
+      parameters:
+        - name: deviceId
+          in: query
+          schema: { $ref: "#/components/schemas/Id" }
+        - name: action
+          in: query
+          schema: { $ref: "#/components/schemas/RunFileAction" }
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: A page of file changes. `retained` is false when the list was pruned.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, retained]
+                properties:
+                  retained: { type: boolean }
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/RunFileChange" }
+                  nextCursor: { type: [string, "null"] }
+        "404": { $ref: "#/components/responses/Problem" }
+
+  # ---------------------------------------------------------------- devices
+  /devices:
+    get:
+      tags: [devices]
+      operationId: listDevices
+      responses:
+        "200":
+          description: Configured devices with their live connection state.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Device" }
+    post:
+      tags: [devices]
+      operationId: createDevice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DeviceInput" }
+      responses:
+        "201":
+          description: Created.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Device" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /devices/discovered:
+    get:
+      tags: [devices]
+      operationId: listDiscoveredDevices
+      summary: Devices adb currently sees, or mDNS announces, that may not be configured yet.
+      responses:
+        "200":
+          description: Discovered devices.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/DiscoveredDevice" }
+  /devices/{deviceId}:
+    parameters:
+      - $ref: "#/components/parameters/DeviceId"
+    get:
+      tags: [devices]
+      operationId: getDevice
+      responses:
+        "200":
+          description: The device.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Device" }
+        "404": { $ref: "#/components/responses/Problem" }
+    patch:
+      tags: [devices]
+      operationId: updateDevice
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema: { $ref: "#/components/schemas/DevicePatch" }
+      responses:
+        "200":
+          description: Updated.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Device" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "412": { $ref: "#/components/responses/Problem" }
+    delete:
+      tags: [devices]
+      operationId: deleteDevice
+      summary: Refused with `device_in_use` while any job binds the device.
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      responses:
+        "204": { description: Deleted. }
+        "409": { $ref: "#/components/responses/Problem" }
+        "412": { $ref: "#/components/responses/Problem" }
+  /devices/{deviceId}/test:
+    parameters:
+      - $ref: "#/components/parameters/DeviceId"
+    post:
+      tags: [devices]
+      operationId: testDevice
+      summary: Try to connect now (cached endpoint, then mDNS) and report the result.
+      responses:
+        "200":
+          description: Result. A failed connection is a 200 with `connected` false, not an error.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConnectionTestResult" }
+  /devices/{deviceId}/pair:
+    parameters:
+      - $ref: "#/components/parameters/DeviceId"
+    post:
+      tags: [devices]
+      operationId: pairDevice
+      summary: Run `adb pair` against the phone's wireless-debugging pairing port.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdbPairRequest" }
+      responses:
+        "204": { description: Paired. }
+        "400": { $ref: "#/components/responses/Problem" }
+        "502": { $ref: "#/components/responses/Problem" }
+  /devices/{deviceId}/endpoint:
+    parameters:
+      - $ref: "#/components/parameters/DeviceId"
+    post:
+      tags: [devices]
+      operationId: reportDeviceEndpoint
+      summary: The companion app reports its current wireless-debugging port.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EndpointReport" }
+      responses:
+        "204": { description: Recorded. }
+        "400": { $ref: "#/components/responses/Problem" }
+  /devices/{deviceId}/browse:
+    parameters:
+      - $ref: "#/components/parameters/DeviceId"
+    get:
+      tags: [devices]
+      operationId: browseDevice
+      summary: List one folder on the device (job editor folder picker).
+      parameters:
+        - name: path
+          in: query
+          required: true
+          schema: { type: string, examples: ["/sdcard"] }
+      responses:
+        "200":
+          description: Folder listing.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FolderListing" }
+        "502": { $ref: "#/components/responses/Problem" }
+  /devices/{deviceId}/packages:
+    parameters:
+      - $ref: "#/components/parameters/DeviceId"
+    get:
+      tags: [devices]
+      operationId: listDevicePackages
+      summary: Installed third-party packages (job editor app-gate picker).
+      responses:
+        "200":
+          description: Package ids.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: string }
+        "502": { $ref: "#/components/responses/Problem" }
+
+  # ---------------------------------------------------------------- conflicts
+  /conflicts:
+    get:
+      tags: [conflicts]
+      operationId: listConflicts
+      summary: Conflicts held for a decision ("Ask me" policy).
+      parameters:
+        - name: jobId
+          in: query
+          schema: { $ref: "#/components/schemas/Id" }
+      responses:
+        "200":
+          description: Pending conflicts.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Conflict" }
+  /conflicts/resolve:
+    post:
+      tags: [conflicts]
+      operationId: resolveConflicts
+      summary: Resolve several conflicts with one choice.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [choice]
+              properties:
+                choice: { $ref: "#/components/schemas/ConflictChoice" }
+                jobId:
+                  $ref: "#/components/schemas/Id"
+                  description: Limit to one job. Ignored when `ids` is given.
+                ids:
+                  type: array
+                  items: { type: string }
+      responses:
+        "200":
+          description: Outcome per conflict. A follow-up run is queued for each affected job.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResolveResult" }
+  /conflicts/{conflictId}:
+    parameters:
+      - $ref: "#/components/parameters/ConflictId"
+    get:
+      tags: [conflicts]
+      operationId: getConflict
+      responses:
+        "200":
+          description: The conflict.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Conflict" }
+        "404": { $ref: "#/components/responses/Problem" }
+  /conflicts/{conflictId}/thumbnail:
+    parameters:
+      - $ref: "#/components/parameters/ConflictId"
+    get:
+      tags: [conflicts]
+      operationId: getConflictThumbnail
+      summary: JPEG preview of one side, rendered by the server.
+      parameters:
+        - name: side
+          in: query
+          required: true
+          schema: { $ref: "#/components/schemas/ConflictSide" }
+        - name: maxSize
+          in: query
+          schema: { type: integer, minimum: 32, maximum: 1024, default: 320 }
+      responses:
+        "200":
+          description: Thumbnail.
+          content:
+            image/jpeg:
+              schema: { type: string, contentEncoding: binary }
+        "404":
+          description: "`not_found`, or `no_preview` when that side was deleted or isn't an image."
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+  /conflicts/{conflictId}/resolve:
+    parameters:
+      - $ref: "#/components/parameters/ConflictId"
+    post:
+      tags: [conflicts]
+      operationId: resolveConflict
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [choice]
+              properties:
+                choice: { $ref: "#/components/schemas/ConflictChoice" }
+      responses:
+        "204": { description: Resolved. A follow-up run is queued for the job. }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+
+  # ---------------------------------------------------------------- settings
+  /settings:
+    get:
+      tags: [settings]
+      operationId: getSettings
+      responses:
+        "200":
+          description: Global settings.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settings" }
+    patch:
+      tags: [settings]
+      operationId: updateSettings
+      summary: Partial update. `projectsDirectory` can't be changed here; use /settings/projects-directory.
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema: { $ref: "#/components/schemas/SettingsPatch" }
+      responses:
+        "200":
+          description: Updated.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settings" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "412": { $ref: "#/components/responses/Problem" }
+  /settings/projects-directory/plan:
+    get:
+      tags: [settings]
+      operationId: planProjectsDirectoryChange
+      summary: Preview what changing the projects directory would move, and anything blocking it.
+      parameters:
+        - name: path
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: The plan.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProjectsDirectoryPlan" }
+  /settings/projects-directory:
+    post:
+      tags: [settings]
+      operationId: changeProjectsDirectory
+      summary: Change the projects directory, optionally moving existing project folders. Refused while any job runs.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [path, moveExisting]
+              properties:
+                path: { type: string }
+                moveExisting: { type: boolean }
+      responses:
+        "202":
+          description: Operation started. The scheduler holds new runs until it finishes.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Operation" }
+        "400": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /server-fs/browse:
+    get:
+      tags: [settings]
+      operationId: browseServerFolders
+      summary: List folders on the server, for picking the projects directory or a job's folder override.
+      description: Folders only, never file contents. Hidden in deployments that set `ADBSYNC_BROWSE_ROOTS` to an empty list.
+      parameters:
+        - name: path
+          in: query
+          description: Omit to list the allowed roots.
+          schema: { type: string }
+      responses:
+        "200":
+          description: Folder listing.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FolderListing" }
+        "403": { $ref: "#/components/responses/Problem" }
+  /preferences/dashboard:
+    get:
+      tags: [settings]
+      operationId: getDashboardPreferences
+      summary: Shared view preferences (job sort order), so the phone and PC lists match.
+      responses:
+        "200":
+          description: Preferences.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DashboardPreferences" }
+    put:
+      tags: [settings]
+      operationId: putDashboardPreferences
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DashboardPreferences" }
+      responses:
+        "200":
+          description: Saved.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DashboardPreferences" }
+
+  # ---------------------------------------------------------------- operations
+  /operations:
+    get:
+      tags: [operations]
+      operationId: listOperations
+      parameters:
+        - name: active
+          in: query
+          schema: { type: boolean }
+      responses:
+        "200":
+          description: Recent operations (kept for 24 hours after finishing).
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Operation" }
+  /operations/{operationId}:
+    parameters:
+      - name: operationId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [operations]
+      operationId: getOperation
+      responses:
+        "200":
+          description: The operation.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Operation" }
+        "404": { $ref: "#/components/responses/Problem" }
+
+  # ---------------------------------------------------------------- events
+  /events:
+    get:
+      tags: [events]
+      operationId: streamEvents
+      summary: Server-Sent Events stream. See README, Events.
+      parameters:
+        - name: Last-Event-ID
+          in: header
+          description: Resume after this sequence number. If it's too old, the server sends `resync` first.
+          schema: { type: string }
+        - name: topics
+          in: query
+          description: |
+            Comma-separated opt-in topics on top of the default set. `run.log:{runId}` streams that run's
+            log lines. `run.log:*` streams every run's log lines.
+          schema: { type: string, examples: ["run.log:3f2a9c1e-0000-4000-8000-000000000000"] }
+      responses:
+        "200":
+          description: |
+            `text/event-stream`. Each message has `id: <seq>`, `event: <type>` and `data: <EventEnvelope JSON>`.
+            A comment line (`: ping`) is sent every 20 seconds.
+          content:
+            text/event-stream:
+              schema: { $ref: "#/components/schemas/EventEnvelope" }
+
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      description: Per-client token from /auth/pair.
+
+  headers:
+    ETag:
+      description: Opaque version of the resource. Send it back in `If-Match` to update safely.
+      schema: { type: string }
+
+  parameters:
+    JobId:
+      name: jobId
+      in: path
+      required: true
+      schema: { $ref: "#/components/schemas/Id" }
+    DeviceId:
+      name: deviceId
+      in: path
+      required: true
+      schema: { $ref: "#/components/schemas/Id" }
+    RunId:
+      name: runId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ConflictId:
+      name: conflictId
+      in: path
+      required: true
+      schema: { type: string }
+    SnapshotId:
+      name: snapshotId
+      in: path
+      required: true
+      schema: { type: string }
+    ClientId:
+      name: clientId
+      in: path
+      required: true
+      schema: { $ref: "#/components/schemas/Id" }
+    IfMatch:
+      name: If-Match
+      in: header
+      required: false
+      description: Required for config editors. When sent and stale, the server returns 412 `precondition_failed`.
+      schema: { type: string }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 500, default: 50 }
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+
+  responses:
+    Problem:
+      description: Error (RFC 9457 problem details).
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+
+  schemas:
+    # ------------------------------------------------------------ primitives
+    Id:
+      type: string
+      description: Stable opaque id (UUID today). Never reused, survives renames.
+      examples: ["7c1e2d4a-5b6f-4c3d-9e8f-0a1b2c3d4e5f"]
+    Name:
+      type: string
+      description: |
+        Display name, unique case-insensitively within its collection. Job names are also folder names, so they
+        must be 1–100 characters, must not be `.` or `..`, and must not contain `/ \ : * ? " < > |` or control characters.
+      minLength: 1
+      maxLength: 100
+    ErrorCode:
+      type: string
+      description: Machine-readable error or skip reason. Clients must treat unknown values as a generic error.
+      enum:
+        - validation_failed
+        - unauthorized
+        - forbidden
+        - not_found
+        - precondition_failed
+        - name_taken
+        - job_running
+        - job_not_running
+        - jobs_running
+        - device_in_use
+        - device_unreachable
+        - device_command_failed
+        - pairing_failed
+        - pairing_code_invalid
+        - project_folder_unavailable
+        - push_safety_blocked
+        - app_running
+        - already_running
+        - conflict_already_resolved
+        - no_preview
+        - rate_limited
+        - unsupported_api_version
+        - internal_error
+
+    Problem:
+      type: object
+      required: [type, title, status, code]
+      properties:
+        type: { type: string, format: uri, examples: ["https://adbsync.dev/problems/job_running"] }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        code: { $ref: "#/components/schemas/ErrorCode" }
+        errors:
+          type: object
+          description: Field-level validation messages for `validation_failed`, keyed by JSON pointer.
+          additionalProperties:
+            type: array
+            items: { type: string }
+
+    # ------------------------------------------------------------ system / auth
+    ServerInfo:
+      type: object
+      required: [name, serverVersion, apiVersions, timeZone]
+      properties:
+        name: { type: string, description: Server display name (replaces the companion's `pc` field). }
+        serverVersion: { type: string, examples: ["2.0.0"] }
+        apiVersions:
+          type: array
+          description: Major API versions served, for example `["v1"]`.
+          items: { type: string }
+        minClientVersions:
+          type: object
+          description: Oldest client build per client kind that this server still supports.
+          additionalProperties: { type: string }
+        timeZone: { type: string, description: IANA zone the schedule and quiet hours are evaluated in. }
+        features:
+          type: array
+          description: Optional capabilities, for clients to feature-detect within v1.
+          items: { type: string }
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [ok, degraded, unavailable] }
+        checks:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              status: { type: string, enum: [ok, degraded, unavailable] }
+              detail: { type: string }
+    ClientKind:
+      type: string
+      enum: [android, windows, web, cli, other]
+    PairRequest:
+      type: object
+      required: [code, clientName, clientKind]
+      properties:
+        code: { type: string, description: The pairing code (from QR or typed in). }
+        clientName: { type: string, examples: ["Mitch S23+"] }
+        clientKind: { $ref: "#/components/schemas/ClientKind" }
+        clientVersion: { type: string }
+    PairResponse:
+      type: object
+      required: [clientId, token]
+      properties:
+        clientId: { $ref: "#/components/schemas/Id" }
+        token: { type: string, description: Bearer token. Store securely; it is not retrievable again. }
+    PairingCode:
+      type: object
+      required: [code, expiresAt]
+      properties:
+        code: { type: string }
+        expiresAt: { type: string, format: date-time }
+        qrPayload:
+          type: string
+          description: "`adbsync://pair?url=…&code=…&fp=<sha256 of the TLS cert>`, for clients to render as a QR code."
+    Client:
+      type: object
+      required: [id, name, kind, createdAt]
+      properties:
+        id: { $ref: "#/components/schemas/Id" }
+        name: { type: string }
+        kind: { $ref: "#/components/schemas/ClientKind" }
+        version: { type: [string, "null"] }
+        createdAt: { type: string, format: date-time }
+        lastSeenAt: { type: [string, "null"], format: date-time }
+        current: { type: boolean, description: True for the client making the request. }
+
+    # ------------------------------------------------------------ status
+    SchedulerState:
+      type: object
+      required: [paused]
+      properties:
+        paused: { type: boolean }
+        pausedAt: { type: [string, "null"], format: date-time }
+    StatusSnapshot:
+      type: object
+      required: [seq, server, scheduler, jobs]
+      properties:
+        seq:
+          type: integer
+          description: Sequence number of the last event already reflected. Connect to /events with `Last-Event-ID` set to this.
+        server: { $ref: "#/components/schemas/ServerInfo" }
+        scheduler: { $ref: "#/components/schemas/SchedulerState" }
+        jobs:
+          type: array
+          description: In the shared dashboard sort order.
+          items: { $ref: "#/components/schemas/JobStatus" }
+    JobStatus:
+      type: object
+      description: Everything a list row or tray icon needs for one job. Pushed as `job.status`.
+      required: [jobId, name, enabled, state, devices, pendingConflicts, availability]
+      properties:
+        jobId: { $ref: "#/components/schemas/Id" }
+        name: { $ref: "#/components/schemas/Name" }
+        enabled: { type: boolean }
+        state:
+          type: string
+          enum: [idle, queued, running, waitingForApp, stopping]
+        activeRunId: { type: [string, "null"], format: uuid }
+        phase:
+          oneOf:
+            - $ref: "#/components/schemas/SyncPhase"
+            - type: "null"
+        devices:
+          type: array
+          description: Per-device phase while running.
+          items:
+            type: object
+            required: [deviceId, phase]
+            properties:
+              deviceId: { $ref: "#/components/schemas/Id" }
+              phase: { $ref: "#/components/schemas/SyncPhase" }
+        lastRun:
+          oneOf:
+            - $ref: "#/components/schemas/RunSummary"
+            - type: "null"
+        nextRunAt: { type: [string, "null"], format: date-time }
+        checkpoint:
+          oneOf:
+            - $ref: "#/components/schemas/CheckpointSummary"
+            - type: "null"
+        pendingConflicts: { type: integer, minimum: 0 }
+        appPackage: { type: [string, "null"] }
+        staleDevices:
+          type: array
+          description: Devices whose linked app has changes newer than the last sync.
+          items:
+            type: object
+            required: [deviceId, reason]
+            properties:
+              deviceId: { $ref: "#/components/schemas/Id" }
+              reason: { type: string }
+        blockedByAppOn:
+          description: Device whose running app is blocking the job, if any.
+          oneOf:
+            - $ref: "#/components/schemas/Id"
+            - type: "null"
+        canForcePush:
+          type: boolean
+          description: True when the last run failed with `push_safety_blocked`.
+        availability:
+          type: object
+          required: [projectFolder]
+          properties:
+            projectFolder: { type: string, enum: [ok, unavailable] }
+            detail: { type: [string, "null"] }
+        watch:
+          type: array
+          items: { $ref: "#/components/schemas/WatchState" }
+
+    # ------------------------------------------------------------ jobs
+    SyncPhase:
+      type: string
+      enum: [preConnect, pull, merge, push, waitingForAppClose, waitingForDevice]
+    ConflictPolicy:
+      type: string
+      enum: [newestWins, ask]
+    ScheduleKind:
+      type: string
+      enum: [manual, interval, dailyAt, onChange]
+    Schedule:
+      type: object
+      required: [kind]
+      properties:
+        kind: { $ref: "#/components/schemas/ScheduleKind" }
+        intervalSeconds: { type: integer, minimum: 60, default: 14400 }
+        dailyTimes:
+          type: array
+          description: Local times in the server's `timeZone`, `HH:mm`.
+          items: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+        debounceSeconds: { type: integer, minimum: 0, default: 10 }
+        rescanSeconds: { type: integer, minimum: 60, default: 900 }
+    JobDeviceBinding:
+      type: object
+      required: [deviceId, remotePath]
+      properties:
+        deviceId: { $ref: "#/components/schemas/Id" }
+        remotePath:
+          type: string
+          description: Absolute on-device path, no trailing slash.
+          examples: ["/sdcard/Android/data/com.example.app"]
+    JobOverrides:
+      type: object
+      description: Per-job overrides. `null` means use the global setting.
+      properties:
+        staleLockHours: { type: [integer, "null"], minimum: 1 }
+        conflictRetentionDays: { type: [integer, "null"], minimum: 0 }
+        showInfoNotifications: { type: [boolean, "null"] }
+        showErrorNotifications: { type: [boolean, "null"] }
+        maxRunHistoryEntries: { type: [integer, "null"], minimum: 1 }
+        fileDetailRunsKept: { type: [integer, "null"], minimum: 0 }
+        backupConflictLosers: { type: [boolean, "null"] }
+        conflictPolicy:
+          oneOf:
+            - $ref: "#/components/schemas/ConflictPolicy"
+            - type: "null"
+        checkpointRetentionDays: { type: [integer, "null"], minimum: 0 }
+        rollbackPointsToKeep: { type: [integer, "null"], minimum: 0 }
+        bandwidthThrottleKBps: { type: [integer, "null"], minimum: 1 }
+        retryMaxAttempts: { type: [integer, "null"], minimum: 1 }
+        retryBackoffSeconds: { type: [integer, "null"], minimum: 0 }
+        pushSafetyMinimumPercent: { type: [integer, "null"], minimum: 0, maximum: 100 }
+    JobFields:
+      type: object
+      properties:
+        name: { $ref: "#/components/schemas/Name" }
+        projectDirectory:
+          type: [string, "null"]
+          description: Server path overriding the global projects directory for this job.
+        appPackage: { type: [string, "null"] }
+        exclude:
+          type: array
+          items: { type: string }
+        devices:
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/JobDeviceBinding" }
+        schedule: { $ref: "#/components/schemas/Schedule" }
+        enabled: { type: boolean, default: true }
+        dryRun: { type: boolean, default: false }
+        overrides: { $ref: "#/components/schemas/JobOverrides" }
+    JobInput:
+      allOf:
+        - $ref: "#/components/schemas/JobFields"
+        - required: [name, devices]
+    JobPatch:
+      description: JSON Merge Patch of the job fields. Arrays are replaced wholesale.
+      allOf:
+        - $ref: "#/components/schemas/JobFields"
+    Job:
+      description: |
+        Configuration only. Runtime state (last run time, cached device endpoints) lives in JobStatus and
+        Device.connection, so editing config can never race a run's bookkeeping.
+      allOf:
+        - $ref: "#/components/schemas/JobInput"
+        - type: object
+          required: [id, order, projectPath]
+          properties:
+            id: { $ref: "#/components/schemas/Id" }
+            order: { type: integer, description: Position in the server's job list. }
+            projectPath: { type: string, description: Resolved project folder on the server (read-only). }
+    EffectiveJobSettings:
+      type: object
+      description: Every override resolved to a concrete value.
+      required: [projectsDirectory, conflictPolicy, rollbackPointsToKeep, pushSafetyMinimumPercent, dryRun]
+      properties:
+        projectsDirectory: { type: string }
+        staleLockHours: { type: integer }
+        conflictRetentionDays: { type: integer }
+        showInfoNotifications: { type: boolean }
+        showErrorNotifications: { type: boolean }
+        maxRunHistoryEntries: { type: integer }
+        fileDetailRunsKept: { type: integer }
+        backupConflictLosers: { type: boolean }
+        conflictPolicy: { $ref: "#/components/schemas/ConflictPolicy" }
+        checkpointRetentionDays: { type: integer }
+        rollbackPointsToKeep: { type: integer }
+        bandwidthThrottleKBps: { type: [integer, "null"] }
+        retryMaxAttempts: { type: integer }
+        retryBackoffSeconds: { type: integer }
+        pushSafetyMinimumPercent: { type: integer }
+        dryRun: { type: boolean }
+    Checkpoint:
+      type: object
+      required: [savedAt, phase, completedDeviceIds]
+      properties:
+        savedAt: { type: string, format: date-time }
+        phase: { $ref: "#/components/schemas/SyncPhase" }
+        completedDeviceIds:
+          type: array
+          items: { $ref: "#/components/schemas/Id" }
+        unpulledPaths:
+          type: object
+          description: Per device id, files whose pull failed and that the resumed push will leave alone.
+          additionalProperties:
+            type: array
+            items: { type: string }
+    CheckpointSummary:
+      type: object
+      required: [savedAt, phase, summary]
+      properties:
+        savedAt: { type: string, format: date-time }
+        phase: { $ref: "#/components/schemas/SyncPhase" }
+        summary: { type: string, examples: ["Pull done on 1 of 2 devices"] }
+    ManifestSummary:
+      type: object
+      required: [deviceId, entries]
+      properties:
+        deviceId: { $ref: "#/components/schemas/Id" }
+        entries: { type: integer }
+        lastMergedAt: { type: [string, "null"], format: date-time }
+        masterPath:
+          type: [string, "null"]
+          description: The master folder this baseline was recorded against. A mismatch blocks the run (audit §3.3 #4).
+    WatchState:
+      type: object
+      required: [deviceId, state]
+      properties:
+        deviceId: { $ref: "#/components/schemas/Id" }
+        state: { type: string, enum: [off, live, polling, degraded, stopped] }
+        detail: { type: [string, "null"] }
+        since: { type: [string, "null"], format: date-time }
+    WatchAvailability:
+      type: object
+      required: [deviceId, liveWatchSupported, detail]
+      properties:
+        deviceId: { $ref: "#/components/schemas/Id" }
+        liveWatchSupported: { type: boolean }
+        detail: { type: string }
+        warning: { type: [string, "null"] }
+    DeviceRef:
+      type: object
+      required: [deviceId]
+      properties:
+        deviceId: { $ref: "#/components/schemas/Id" }
+
+    # ------------------------------------------------------------ runs
+    RunMode:
+      type: string
+      enum: [normal, dryRun, forcePush]
+    RunTrigger:
+      type: string
+      enum: [manual, schedule, onChange, conflictResolved, closeAndSync, runAll, missedSchedule]
+    StartRunRequest:
+      type: object
+      properties:
+        mode: { $ref: "#/components/schemas/RunMode" }
+    RunStatus:
+      type: string
+      enum: [queued, running, completed, completedNoChanges, skipped, skippedAppRunning, failed, dryRunCompleted, cancelled]
+    RunSummary:
+      type: object
+      required: [runId, status, finishedAt]
+      properties:
+        runId: { type: string, format: uuid }
+        status: { $ref: "#/components/schemas/RunStatus" }
+        finishedAt: { type: string, format: date-time }
+        errorCode:
+          oneOf:
+            - $ref: "#/components/schemas/ErrorCode"
+            - type: "null"
+        message: { type: [string, "null"] }
+    Run:
+      type: object
+      required: [id, jobId, jobName, status, mode, trigger, queuedAt]
+      properties:
+        id: { type: string, format: uuid }
+        jobId: { $ref: "#/components/schemas/Id" }
+        jobName: { type: string, description: The job's name when the run happened. }
+        status: { $ref: "#/components/schemas/RunStatus" }
+        mode: { $ref: "#/components/schemas/RunMode" }
+        trigger: { $ref: "#/components/schemas/RunTrigger" }
+        requestedBy:
+          description: Client that started it, or null for the scheduler.
+          oneOf:
+            - $ref: "#/components/schemas/Id"
+            - type: "null"
+        queuedAt: { type: string, format: date-time }
+        startedAt: { type: [string, "null"], format: date-time }
+        finishedAt: { type: [string, "null"], format: date-time }
+        errorCode:
+          oneOf:
+            - $ref: "#/components/schemas/ErrorCode"
+            - type: "null"
+        message: { type: [string, "null"], description: Human-readable error or skip reason. }
+        filesCopied: { type: integer }
+        filesDeleted: { type: integer }
+        errorCount: { type: integer }
+        bytesCopied: { type: integer, format: int64 }
+        pullSeconds: { type: [number, "null"] }
+        pushSeconds: { type: [number, "null"] }
+    RunStepStatus:
+      type: string
+      enum: [pending, waiting, running, succeeded, failed, skipped, cancelled]
+    RunStep:
+      type: object
+      required: [deviceId, phase, status]
+      properties:
+        deviceId: { $ref: "#/components/schemas/Id" }
+        deviceName: { type: string }
+        phase: { $ref: "#/components/schemas/SyncPhase" }
+        status: { $ref: "#/components/schemas/RunStepStatus" }
+        startedAt: { type: [string, "null"], format: date-time }
+        endedAt: { type: [string, "null"], format: date-time }
+        filesCopied: { type: integer }
+        filesDeleted: { type: integer }
+        bytesCopied: { type: integer, format: int64 }
+        errors: { type: integer }
+        conflicts: { type: integer }
+    RunDetail:
+      allOf:
+        - $ref: "#/components/schemas/Run"
+        - type: object
+          required: [steps]
+          properties:
+            steps:
+              type: array
+              items: { $ref: "#/components/schemas/RunStep" }
+    RunFileAction:
+      type: string
+      enum: [copied, created, updated, deleted, conflict, held, error]
+    RunFileChange:
+      type: object
+      required: [deviceId, phase, path, action]
+      properties:
+        deviceId: { $ref: "#/components/schemas/Id" }
+        phase: { $ref: "#/components/schemas/SyncPhase" }
+        path: { type: string, description: Empty for an error that isn't tied to one file. }
+        action: { $ref: "#/components/schemas/RunFileAction" }
+        size: { type: [integer, "null"], format: int64 }
+        detail: { type: [string, "null"] }
+
+    # ------------------------------------------------------------ snapshots
+    SnapshotKind:
+      type: string
+      enum: [manual, rollbackPoint]
+    Snapshot:
+      type: object
+      required: [id, jobId, kind, createdAt, deviceIds]
+      properties:
+        id: { type: string }
+        jobId: { $ref: "#/components/schemas/Id" }
+        kind: { $ref: "#/components/schemas/SnapshotKind" }
+        createdAt: { type: string, format: date-time }
+        deviceIds:
+          type: array
+          description: Devices captured. May include devices no longer bound to the job.
+          items: { $ref: "#/components/schemas/Id" }
+        includesMaster: { type: boolean }
+        sizeBytes: { type: [integer, "null"], format: int64 }
+        path: { type: string, description: Server path, for display only. }
+
+    # ------------------------------------------------------------ devices
+    DeviceTransport:
+      type: string
+      enum: [wifi, usb]
+    DeviceFields:
+      type: object
+      properties:
+        name: { $ref: "#/components/schemas/Name" }
+        transport: { $ref: "#/components/schemas/DeviceTransport" }
+        host:
+          type: [string, "null"]
+          description: For `wifi`, the device's IP or hostname. The port is learned from mDNS or the companion app.
+        serial:
+          type: [string, "null"]
+          description: For `usb`, the adb serial.
+        staticPort:
+          type: [integer, "null"]
+          description: Optional fixed wireless-debugging port, for networks where mDNS doesn't reach the server.
+    DeviceInput:
+      allOf:
+        - $ref: "#/components/schemas/DeviceFields"
+        - required: [name, transport]
+    DevicePatch:
+      description: JSON Merge Patch of the device fields.
+      allOf:
+        - $ref: "#/components/schemas/DeviceFields"
+    Device:
+      allOf:
+        - $ref: "#/components/schemas/DeviceInput"
+        - type: object
+          required: [id, connection]
+          properties:
+            id: { $ref: "#/components/schemas/Id" }
+            usedByJobIds:
+              type: array
+              items: { $ref: "#/components/schemas/Id" }
+            connection: { $ref: "#/components/schemas/DeviceConnection" }
+    DeviceConnection:
+      type: object
+      description: Runtime state, kept apart from configuration.
+      required: [state]
+      properties:
+        state: { type: string, enum: [connected, disconnected, unauthorized, unknown] }
+        endpoint: { type: [string, "null"], description: Last resolved `host:port`. }
+        endpointSource: { type: [string, "null"], enum: [mdns, companion, static, usb, null] }
+        endpointAt: { type: [string, "null"], format: date-time }
+        companionLastSeenAt: { type: [string, "null"], format: date-time }
+    DiscoveredDevice:
+      type: object
+      required: [source, label]
+      properties:
+        source: { type: string, enum: [adb, mdnsConnect, mdnsPairing] }
+        label: { type: string }
+        serial: { type: [string, "null"] }
+        endpoint: { type: [string, "null"] }
+        matchedDeviceId:
+          oneOf:
+            - $ref: "#/components/schemas/Id"
+            - type: "null"
+    ConnectionTestResult:
+      type: object
+      required: [connected]
+      properties:
+        connected: { type: boolean }
+        serial: { type: [string, "null"] }
+        endpoint: { type: [string, "null"] }
+        code:
+          oneOf:
+            - $ref: "#/components/schemas/ErrorCode"
+            - type: "null"
+        detail: { type: [string, "null"] }
+    AdbPairRequest:
+      type: object
+      required: [port, code]
+      properties:
+        host:
+          type: [string, "null"]
+          description: Defaults to the device's configured host, then to the caller's address when the caller is that device's companion.
+        port: { type: integer, minimum: 1, maximum: 65535 }
+        code: { type: string, pattern: "^[0-9]{6}$" }
+    EndpointReport:
+      type: object
+      required: [port]
+      properties:
+        port: { type: integer, minimum: 1, maximum: 65535 }
+        host:
+          type: [string, "null"]
+          description: |
+            The phone's own LAN address. Optional; the server falls back to the request's remote address.
+            Send it explicitly when the request may arrive over a VPN, so a tunnel address doesn't overwrite
+            the device's LAN host.
+    FolderListing:
+      type: object
+      required: [path, entries]
+      properties:
+        path: { type: string }
+        parent: { type: [string, "null"] }
+        entries:
+          type: array
+          items:
+            type: object
+            required: [name, isDirectory]
+            properties:
+              name: { type: string }
+              isDirectory: { type: boolean }
+              size: { type: [integer, "null"], format: int64 }
+              modifiedAt: { type: [string, "null"], format: date-time }
+
+    # ------------------------------------------------------------ conflicts
+    ConflictSide:
+      type: string
+      enum: [master, device]
+    ConflictChoice:
+      type: string
+      description: "`master` and `device` keep that side; `both` keeps both (the device copy is renamed); `newest` keeps the newer file."
+      enum: [master, device, both, newest]
+    Conflict:
+      type: object
+      required: [id, jobId, deviceId, path, detectedAt, master, device]
+      properties:
+        id: { type: string }
+        jobId: { $ref: "#/components/schemas/Id" }
+        deviceId: { $ref: "#/components/schemas/Id" }
+        path: { type: string }
+        detectedAt: { type: string, format: date-time }
+        master: { $ref: "#/components/schemas/ConflictSideInfo" }
+        device: { $ref: "#/components/schemas/ConflictSideInfo" }
+    ConflictSideInfo:
+      type: object
+      required: [deleted]
+      properties:
+        deleted: { type: boolean }
+        size: { type: [integer, "null"], format: int64 }
+        modifiedAt: { type: [string, "null"], format: date-time }
+        hasPreview: { type: boolean }
+    ResolveResult:
+      type: object
+      required: [resolved, failed]
+      properties:
+        resolved: { type: integer }
+        failed:
+          type: array
+          items:
+            type: object
+            required: [id, code]
+            properties:
+              id: { type: string }
+              code: { $ref: "#/components/schemas/ErrorCode" }
+              detail: { type: string }
+
+    # ------------------------------------------------------------ settings
+    Settings:
+      description: Server-wide settings. Client-only preferences (start at login, tray behaviour) are not stored here.
+      allOf:
+        - $ref: "#/components/schemas/SettingsFields"
+        - required: [projectsDirectory, timeZone]
+    SettingsFields:
+      type: object
+      properties:
+        projectsDirectory: { type: string, readOnly: true }
+        timeZone: { type: string, description: IANA zone, for example `America/Chicago`. }
+        staleLockHours: { type: integer, minimum: 1 }
+        logRetentionDays: { type: integer, minimum: 1 }
+        conflictRetentionDays: { type: integer, minimum: 0 }
+        perLogFileMaxBytes: { type: integer, format: int64 }
+        maxConcurrentJobs: { type: integer, minimum: 1 }
+        maxConcurrentPerDevice: { type: integer, minimum: 1 }
+        notifications: { $ref: "#/components/schemas/NotificationSettings" }
+        checkpointRetentionDays: { type: integer, minimum: 0 }
+        rollbackPointsToKeep: { type: integer, minimum: 0 }
+        bandwidthThrottleKBps: { type: [integer, "null"], minimum: 1 }
+        retryMaxAttempts: { type: integer, minimum: 1 }
+        retryBackoffSeconds: { type: integer, minimum: 0 }
+        pushSafetyMinimumPercent: { type: integer, minimum: 0, maximum: 100 }
+        maxRunHistoryEntries: { type: integer, minimum: 1 }
+        fileDetailRunsKept: { type: integer, minimum: 0 }
+        conflictPolicy: { $ref: "#/components/schemas/ConflictPolicy" }
+        backupConflictLosers: { type: boolean }
+        runMissedSchedules: { type: boolean }
+        companionBroadcastsEnabled: { type: boolean }
+    NotificationSettings:
+      type: object
+      description: Shared so every client applies the same rules. Each client does its own notifying.
+      properties:
+        showInfo: { type: boolean }
+        showErrors: { type: boolean }
+        quietHours:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            start: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+            end: { type: string, pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+    SettingsPatch:
+      description: JSON Merge Patch of the settings fields. `projectsDirectory` is read-only here.
+      allOf:
+        - $ref: "#/components/schemas/SettingsFields"
+    ProjectsDirectoryPlan:
+      type: object
+      required: [path, reachable, moves, blockers]
+      properties:
+        path: { type: string }
+        reachable: { type: boolean }
+        moves:
+          type: array
+          items:
+            type: object
+            required: [jobId, from, to]
+            properties:
+              jobId: { $ref: "#/components/schemas/Id" }
+              from: { type: string }
+              to: { type: string }
+              sizeBytes: { type: [integer, "null"], format: int64 }
+              crossDevice: { type: boolean, description: True when the move is a copy-then-delete across file systems. }
+        blockers:
+          type: array
+          items:
+            type: object
+            required: [code, detail]
+            properties:
+              code: { $ref: "#/components/schemas/ErrorCode" }
+              jobId:
+                oneOf:
+                  - $ref: "#/components/schemas/Id"
+                  - type: "null"
+              detail: { type: string }
+    DashboardPreferences:
+      type: object
+      properties:
+        sortKey: { type: string, enum: [order, name, lastRun, nextRun, status] }
+        descending: { type: boolean }
+
+    # ------------------------------------------------------------ operations
+    Operation:
+      type: object
+      description: A long-running action other than a sync run. Progress is pushed as `operation.updated`.
+      required: [id, kind, status, createdAt]
+      properties:
+        id: { type: string }
+        kind: { type: string, enum: [closeAndSync, createSnapshot, restoreSnapshot, changeProjectsDirectory] }
+        status: { type: string, enum: [running, succeeded, failed, cancelled] }
+        jobId:
+          oneOf:
+            - $ref: "#/components/schemas/Id"
+            - type: "null"
+        createdAt: { type: string, format: date-time }
+        finishedAt: { type: [string, "null"], format: date-time }
+        progress:
+          type: [object, "null"]
+          properties:
+            message: { type: string }
+            fraction: { type: [number, "null"], minimum: 0, maximum: 1 }
+        result:
+          type: [object, "null"]
+          description: Kind-specific. `closeAndSync` → `{runId}`; `createSnapshot` → `Snapshot`.
+        errorCode:
+          oneOf:
+            - $ref: "#/components/schemas/ErrorCode"
+            - type: "null"
+        message: { type: [string, "null"] }
+
+    # ------------------------------------------------------------ events
+    EventType:
+      type: string
+      enum:
+        - resync
+        - job.status
+        - job.changed
+        - job.deleted
+        - device.changed
+        - device.deleted
+        - device.connection
+        - run.queued
+        - run.started
+        - run.steps
+        - run.log
+        - run.finished
+        - run.conflicts
+        - conflict.added
+        - conflict.resolved
+        - watch.changed
+        - scheduler.changed
+        - settings.changed
+        - preferences.changed
+        - operation.updated
+        - client.revoked
+    EventEnvelope:
+      type: object
+      required: [seq, type, at, data]
+      properties:
+        seq: { type: integer, description: Strictly increasing per server instance. Also sent as the SSE `id`. }
+        type: { $ref: "#/components/schemas/EventType" }
+        at: { type: string, format: date-time }
+        data:
+          description: Payload; its shape depends on `type` (see the Event* schemas).
+          oneOf:
+            - $ref: "#/components/schemas/EventResync"
+            - $ref: "#/components/schemas/JobStatus"
+            - $ref: "#/components/schemas/Job"
+            - $ref: "#/components/schemas/EventDeleted"
+            - $ref: "#/components/schemas/Device"
+            - $ref: "#/components/schemas/EventDeviceConnection"
+            - $ref: "#/components/schemas/Run"
+            - $ref: "#/components/schemas/EventRunSteps"
+            - $ref: "#/components/schemas/EventRunLog"
+            - $ref: "#/components/schemas/EventRunConflicts"
+            - $ref: "#/components/schemas/Conflict"
+            - $ref: "#/components/schemas/EventConflictResolved"
+            - $ref: "#/components/schemas/EventWatchChanged"
+            - $ref: "#/components/schemas/SchedulerState"
+            - $ref: "#/components/schemas/Settings"
+            - $ref: "#/components/schemas/DashboardPreferences"
+            - $ref: "#/components/schemas/Operation"
+            - $ref: "#/components/schemas/EventClientRevoked"
+    EventResync:
+      type: object
+      description: "`resync`: the server can't replay from `Last-Event-ID`. Reload GET /status, then keep reading."
+      required: [reason]
+      properties:
+        reason: { type: string, enum: [tooOld, serverRestarted] }
+    EventDeleted:
+      type: object
+      description: "`job.deleted`, `device.deleted`."
+      required: [id]
+      properties:
+        id: { $ref: "#/components/schemas/Id" }
+    EventDeviceConnection:
+      type: object
+      description: "`device.connection`: attach, detach or endpoint change."
+      required: [deviceId, connection]
+      properties:
+        deviceId: { $ref: "#/components/schemas/Id" }
+        connection: { $ref: "#/components/schemas/DeviceConnection" }
+    EventRunSteps:
+      type: object
+      description: "`run.steps`: the full step list after any step changes (it is small, so no diffing)."
+      required: [runId, jobId, steps]
+      properties:
+        runId: { type: string, format: uuid }
+        jobId: { $ref: "#/components/schemas/Id" }
+        steps:
+          type: array
+          items: { $ref: "#/components/schemas/RunStep" }
+    EventRunLog:
+      type: object
+      description: "`run.log` (opt-in topic): log lines appended since the previous event, batched at most every 250 ms."
+      required: [runId, fromLine, lines]
+      properties:
+        runId: { type: string, format: uuid }
+        fromLine: { type: integer, description: Zero-based index of the first line, so clients can detect gaps. }
+        lines:
+          type: array
+          items: { type: string }
+    EventRunConflicts:
+      type: object
+      description: "`run.conflicts`: a merge found conflicts (auto-resolved or held)."
+      required: [runId, jobId, deviceId, autoResolved, held, totalPending]
+      properties:
+        runId: { type: string, format: uuid }
+        jobId: { $ref: "#/components/schemas/Id" }
+        deviceId: { $ref: "#/components/schemas/Id" }
+        autoResolved: { type: integer }
+        held: { type: integer }
+        totalPending: { type: integer }
+    EventConflictResolved:
+      type: object
+      description: "`conflict.resolved`."
+      required: [id, jobId, choice]
+      properties:
+        id: { type: string }
+        jobId: { $ref: "#/components/schemas/Id" }
+        choice: { $ref: "#/components/schemas/ConflictChoice" }
+        resolvedBy:
+          oneOf:
+            - $ref: "#/components/schemas/Id"
+            - type: "null"
+    EventWatchChanged:
+      type: object
+      description: "`watch.changed`."
+      required: [jobId, watch]
+      properties:
+        jobId: { $ref: "#/components/schemas/Id" }
+        watch: { $ref: "#/components/schemas/WatchState" }
+    EventClientRevoked:
+      type: object
+      description: "`client.revoked`: sent to the revoked client just before its stream closes."
+      required: [clientId]
+      properties:
+        clientId: { $ref: "#/components/schemas/Id" }
