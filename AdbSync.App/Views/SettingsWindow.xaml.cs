@@ -49,6 +49,7 @@ public partial class SettingsWindow : Window
         CheckpointRetentionDaysBox.Text = settings.CheckpointRetentionDays.ToString();
         MaxRunHistoryEntriesBox.Text = settings.MaxRunHistoryEntries.ToString();
         FileDetailRunsKeptBox.Text = settings.FileDetailRunsKept.ToString();
+        RollbackPointsToKeepBox.Text = settings.RollbackPointsToKeep.ToString();
         BandwidthThrottleKBpsBox.Text = settings.BandwidthThrottleKBps?.ToString() ?? "";
         RetryMaxAttemptsBox.Text = settings.RetryMaxAttempts.ToString();
         RetryBackoffSecondsBox.Text = settings.RetryBackoffSeconds.ToString();
@@ -128,6 +129,8 @@ public partial class SettingsWindow : Window
             _config.Settings.MaxRunHistoryEntries = maxRunHistoryEntries;
         if (int.TryParse(FileDetailRunsKeptBox.Text, out var fileDetailRunsKept) && fileDetailRunsKept >= 0)
             _config.Settings.FileDetailRunsKept = fileDetailRunsKept;
+        if (int.TryParse(RollbackPointsToKeepBox.Text, out var rollbackPointsToKeep) && rollbackPointsToKeep >= 0)
+            _config.Settings.RollbackPointsToKeep = rollbackPointsToKeep;
         _config.Settings.BandwidthThrottleKBps = int.TryParse(BandwidthThrottleKBpsBox.Text, out var throttle) && throttle > 0
             ? throttle
             : null;

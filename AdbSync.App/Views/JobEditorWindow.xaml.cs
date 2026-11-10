@@ -78,6 +78,7 @@ public partial class JobEditorWindow : Window
             CheckpointRetentionDaysOverrideBox.Text = job.CheckpointRetentionDays?.ToString() ?? "";
             MaxRunHistoryEntriesOverrideBox.Text = job.MaxRunHistoryEntries?.ToString() ?? "";
             FileDetailRunsKeptOverrideBox.Text = job.FileDetailRunsKept?.ToString() ?? "";
+            RollbackPointsToKeepOverrideBox.Text = job.RollbackPointsToKeep?.ToString() ?? "";
             BandwidthThrottleKBpsOverrideBox.Text = job.BandwidthThrottleKBps?.ToString() ?? "";
             PushSafetyMinimumPercentOverrideBox.Text = job.PushSafetyMinimumPercent?.ToString() ?? "";
             RetryMaxAttemptsOverrideBox.Text = job.RetryMaxAttempts?.ToString() ?? "";
@@ -262,6 +263,7 @@ public partial class JobEditorWindow : Window
             CheckpointRetentionDays = ParseIntOrNull(CheckpointRetentionDaysOverrideBox.Text),
             MaxRunHistoryEntries = ParseIntOrNull(MaxRunHistoryEntriesOverrideBox.Text),
             FileDetailRunsKept = ParseIntOrNull(FileDetailRunsKeptOverrideBox.Text) is { } kept and >= 0 ? kept : null,
+            RollbackPointsToKeep = ParseIntOrNull(RollbackPointsToKeepOverrideBox.Text) is { } rollbackKept and >= 0 ? rollbackKept : null,
             BandwidthThrottleKBps = ParseIntOrNull(BandwidthThrottleKBpsOverrideBox.Text),
             PushSafetyMinimumPercent = ParseIntOrNull(PushSafetyMinimumPercentOverrideBox.Text),
             RetryMaxAttempts = ParseIntOrNull(RetryMaxAttemptsOverrideBox.Text),

@@ -20,7 +20,7 @@
             <controls:TitleBar Grid.Row="0"/>
 
             <DockPanel Grid.Row="1" Margin="20">
-                <TextBlock DockPanel.Dock="Top" Text="Pick a snapshot to restore. Restoring pushes it back out to every matching device, overwriting current device files and deleting anything not in the snapshot."
+                <TextBlock DockPanel.Dock="Top" Text="Pick a snapshot to restore. A manual snapshot is pushed back out to every matching device. A before-sync point also puts master back and gives each device its own folder from just before that sync. Either way, current device files are overwritten and anything not in it is deleted."
                            TextWrapping="Wrap" Margin="0,0,0,12" Foreground="{StaticResource Brush.Text.Secondary}"/>
 
                 <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
@@ -33,6 +33,7 @@
                           SelectionChanged="SnapshotsGrid_SelectionChanged" MouseDoubleClick="SnapshotsGrid_MouseDoubleClick">
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="CREATED" Binding="{Binding CreatedText}" Width="170"/>
+                        <DataGridTextColumn Header="TYPE" Binding="{Binding KindText}" Width="95"/>
                         <DataGridTextColumn Header="DEVICES" Binding="{Binding DevicesText}" Width="*">
                             <DataGridTextColumn.ElementStyle>
                                 <Style TargetType="TextBlock">

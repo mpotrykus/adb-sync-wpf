@@ -18,7 +18,8 @@ public sealed record EffectiveJobSettings(
     TimeSpan RetryBackoff,
     int PushSafetyMinimumPercent,
     ConflictPolicy ConflictPolicy = ConflictPolicy.NewestWins,
-    int FileDetailRunsKept = 10)
+    int FileDetailRunsKept = 10,
+    int RollbackPointsToKeep = 3)
 {
     public TransferPolicy ToTransferPolicy() => new(RetryMaxAttempts, RetryBackoff, BandwidthThrottleKBps);
 }
@@ -41,5 +42,6 @@ public static class SyncJobConfigExtensions
         RetryBackoff: TimeSpan.FromSeconds(job.RetryBackoffSeconds ?? global.RetryBackoffSeconds),
         PushSafetyMinimumPercent: job.PushSafetyMinimumPercent ?? global.PushSafetyMinimumPercent,
         ConflictPolicy: job.ConflictPolicy ?? global.ConflictPolicy,
-        FileDetailRunsKept: job.FileDetailRunsKept ?? global.FileDetailRunsKept);
+        FileDetailRunsKept: job.FileDetailRunsKept ?? global.FileDetailRunsKept,
+        RollbackPointsToKeep: job.RollbackPointsToKeep ?? global.RollbackPointsToKeep);
 }
