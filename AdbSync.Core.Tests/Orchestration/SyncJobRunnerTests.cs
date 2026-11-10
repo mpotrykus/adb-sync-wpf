@@ -316,6 +316,78 @@ public class SyncJobRunnerTests : IDisposable
         Assert.Equal(JobRunOutcome.Completed, result.Outcome);
     }
 
+    [Fact]
+    public async Task RunAsync_OneFileFailsToPull_IsNeitherDeletedFromMasterNorOverwrittenOnTheDevice()
+    {
+        WriteDeviceFile("DeviceA", "doc.txt", "v1");
+        WriteDeviceFile("DeviceA", "other.txt", "other");
+        var device = new DeviceConfig { Name = "DeviceA", Serial = "DeviceA" };
+        var job = new SyncJobConfig
+        {
+            Name = "JobPullFails",
+            Devices = [new JobDeviceBinding { DeviceName = "DeviceA", RemotePath = "/sdcard/app" }],
+        };
+        var folders = new Dictionary<string, string> { ["DeviceA"] = DeviceFolder("DeviceA") };
+        await CreateRunner(folders).RunAsync(job, 0, [device], _settings, resumeFrom: null);
+
+        var deviceFile = Path.Combine(DeviceFolder("DeviceA"), "doc.txt");
+        File.WriteAllText(deviceFile, "edited-on-device");
+        File.SetLastWriteTimeUtc(deviceFile, DateTime.UtcNow.AddHours(1));
+        var masterFile = Path.Combine(_projectsDirectory, "JobPullFails", "master", "doc.txt");
+
+        var flaky = new PullFailureTransferEngine(new FakeAdbTransferEngine(folders), failPath: "doc.txt");
+        await CreateRunner(folders, transfer: flaky).RunAsync(job, 0, [device], _settings, resumeFrom: null);
+
+        Assert.Equal("v1", File.ReadAllText(masterFile));
+        Assert.Equal("edited-on-device", File.ReadAllText(deviceFile));
+
+        await CreateRunner(folders).RunAsync(job, 0, [device], _settings, resumeFrom: null);
+
+        Assert.Equal("edited-on-device", File.ReadAllText(masterFile));
+    }
+
+    [Fact]
+    public async Task RunAsync_WholePullFails_FailsWithoutDeletingAnythingFromMasterOrDevice()
+    {
+        WriteDeviceFile("DeviceA", "doc.txt", "v1");
+        var device = new DeviceConfig { Name = "DeviceA", Serial = "DeviceA" };
+        var job = new SyncJobConfig
+        {
+            Name = "JobWholePullFails",
+            Devices = [new JobDeviceBinding { DeviceName = "DeviceA", RemotePath = "/sdcard/app" }],
+        };
+        var folders = new Dictionary<string, string> { ["DeviceA"] = DeviceFolder("DeviceA") };
+        await CreateRunner(folders).RunAsync(job, 0, [device], _settings, resumeFrom: null);
+
+        var broken = new PullFailureTransferEngine(new FakeAdbTransferEngine(folders), failPath: null);
+        var result = await CreateRunner(folders, transfer: broken).RunAsync(job, 0, [device], _settings, resumeFrom: null);
+
+        Assert.Equal(JobRunOutcome.Failed, result.Outcome);
+        Assert.Equal("v1", File.ReadAllText(Path.Combine(_projectsDirectory, "JobWholePullFails", "master", "doc.txt")));
+        Assert.Equal("v1", File.ReadAllText(Path.Combine(DeviceFolder("DeviceA"), "doc.txt")));
+    }
+
+    private sealed class PullFailureTransferEngine(IAdbTransferEngine inner, string? failPath) : IAdbTransferEngine
+    {
+        public async Task<TransferResult> PullMirrorAsync(string serial, string remotePath, string localPath, IExcludeMatcher exclude, TransferPolicy? policy = null, CancellationToken ct = default)
+        {
+            if (failPath is null)
+                return new TransferResult(0, 0, 0, ["adb pull failed (exit 1): device offline"], [], []);
+
+            var result = await inner.PullMirrorAsync(serial, remotePath, localPath, exclude, policy, ct);
+            File.Delete(Path.Combine(localPath, failPath));
+            return result with
+            {
+                Errors = [$"pull '{failPath}' failed: connection reset"],
+                CopiedPaths = result.CopiedPaths.Where(p => p != failPath).ToList(),
+                FailedPaths = [failPath],
+            };
+        }
+
+        public Task<TransferResult> PushMirrorAsync(string serial, string localPath, string remotePath, IExcludeMatcher exclude, TransferPolicy? policy = null, CancellationToken ct = default) =>
+            inner.PushMirrorAsync(serial, localPath, remotePath, exclude, policy, ct);
+    }
+
     private sealed class FailingPushTransferEngine(IAdbTransferEngine inner) : IAdbTransferEngine
     {
         public Task<TransferResult> PullMirrorAsync(string serial, string remotePath, string localPath, IExcludeMatcher exclude, TransferPolicy? policy = null, CancellationToken ct = default) =>

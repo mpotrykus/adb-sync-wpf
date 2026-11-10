@@ -27,16 +27,17 @@ public sealed class NativeAdbTransferEngine(IRemoteFileSystemFactory remoteFacto
         var copied = 0;
         var bytesCopied = 0L;
         var copiedPaths = new List<string>();
+        var failedPaths = new List<string>();
         foreach (var entry in plan.ToCopy.Where(e => !e.IsDirectory))
         {
+            var destPath = Path.Combine(localPath, entry.RelativePath);
+            var tempPath = $"{destPath}.tmp-{Guid.NewGuid():N}";
             try
             {
-                var destPath = Path.Combine(localPath, entry.RelativePath);
                 var destDir = Path.GetDirectoryName(destPath);
                 if (!string.IsNullOrEmpty(destDir))
                     Directory.CreateDirectory(destDir);
 
-                var tempPath = $"{destPath}.tmp-{Guid.NewGuid():N}";
                 await remote.PullFileAsync($"{remotePath}/{entry.RelativePath}", tempPath, ct);
                 File.SetLastWriteTimeUtc(tempPath, entry.ModifiedUtc.UtcDateTime);
                 File.Move(tempPath, destPath, overwrite: true);
@@ -47,6 +48,9 @@ public sealed class NativeAdbTransferEngine(IRemoteFileSystemFactory remoteFacto
             catch (Exception ex)
             {
                 errors.Add($"pull '{entry.RelativePath}' failed: {ex.Message}");
+                failedPaths.Add(entry.RelativePath);
+                // A half-written temp file left in staging would be merged as a brand-new device file.
+                try { File.Delete(tempPath); } catch (IOException) { } catch (UnauthorizedAccessException) { }
             }
         }
 
@@ -68,7 +72,7 @@ public sealed class NativeAdbTransferEngine(IRemoteFileSystemFactory remoteFacto
             deletedPaths.Add(entry.RelativePath);
         }
 
-        return new TransferResult(copied, deleted, bytesCopied, errors, copiedPaths, deletedPaths);
+        return new TransferResult(copied, deleted, bytesCopied, errors, copiedPaths, deletedPaths, failedPaths);
     }
 
     public async Task<TransferResult> PushMirrorAsync(string serial, string localPath, string remotePath, IExcludeMatcher exclude, TransferPolicy? policy = null, CancellationToken ct = default)

@@ -38,12 +38,20 @@ public sealed class TwoWayMergeEngine : ITwoWayMergeEngine
         var held = new List<HeldConflict>();
         var changes = new List<MergeFileChange>();
         int created = 0, updated = 0, deleted = 0;
+        var skip = options.SkipPaths is { Count: > 0 } ? new HashSet<string>(options.SkipPaths, StringComparer.Ordinal) : null;
 
         foreach (var path in allPaths)
         {
             staging.TryGetValue(path, out var s);
             master.TryGetValue(path, out var m);
             manifest.Entries.TryGetValue(path, out var k);
+
+            if (skip?.Contains(path) == true)
+            {
+                if (k is not null)
+                    newEntries[path] = k;
+                continue;
+            }
 
             switch (Classify(stagingPath, masterPath, s, m, k))
             {

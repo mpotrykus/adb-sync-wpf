@@ -119,6 +119,9 @@ public sealed class SyncJobRunner(
             }
 
             var pendingManifests = new Dictionary<string, SyncManifest>(StringComparer.OrdinalIgnoreCase);
+            var unpulled = resumeFrom?.UnpulledPaths is { } carried
+                ? new Dictionary<string, List<string>>(carried, StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
             var resumingPush = resumeFrom is { Phase: SyncPhase.Push };
             var anyChange = resumingPush;
             if (!resumingPush)
@@ -140,7 +143,7 @@ public sealed class SyncJobRunner(
                 }
 
                 var pullStopwatch = Stopwatch.StartNew();
-                var pullStats = await RunPullPhaseAsync(job, jobIndex, masterPath, serials, exclude, resumeFrom, eff, settings.MaxConcurrentPerDevice, steps, rollback, pendingManifests, ct);
+                var pullStats = await RunPullPhaseAsync(job, jobIndex, masterPath, serials, exclude, resumeFrom, eff, settings.MaxConcurrentPerDevice, steps, rollback, pendingManifests, unpulled, ct);
                 pullDuration = pullStopwatch.Elapsed;
                 // Devices merged before the checkpoint may have changed master, and that change is not visible in
                 // this run's merge results, so the push must still happen.
@@ -177,7 +180,7 @@ public sealed class SyncJobRunner(
             }
 
             var pushStopwatch = Stopwatch.StartNew();
-            var pushStats = await RunPushPhaseAsync(job, jobIndex, masterPath, serials, exclude, resumeFrom, eff, settings.MaxConcurrentPerDevice, steps, pendingManifests, ct);
+            var pushStats = await RunPushPhaseAsync(job, jobIndex, masterPath, serials, exclude, resumeFrom, eff, settings.MaxConcurrentPerDevice, steps, pendingManifests, unpulled, ct);
             pushDuration = pushStopwatch.Elapsed;
             totalFilesCopied = pushStats.CopiedPaths.Count;
             totalFilesDeleted = pushStats.DeletedPaths.Count;
@@ -231,7 +234,8 @@ public sealed class SyncJobRunner(
     private async Task<PhaseStats> RunPullPhaseAsync(
         SyncJobConfig job, int jobIndex, string masterPath, Dictionary<string, string> serials,
         ExcludeMatcher exclude, SyncCheckpoint? resumeFrom, EffectiveJobSettings eff, int maxConcurrentPerDevice,
-        RunStepRecorder steps, RollbackSession? rollback, Dictionary<string, SyncManifest> pendingManifests, CancellationToken ct)
+        RunStepRecorder steps, RollbackSession? rollback, Dictionary<string, SyncManifest> pendingManifests,
+        Dictionary<string, List<string>> unpulled, CancellationToken ct)
     {
         var projectRoot = Path.GetDirectoryName(masterPath)!;
         var completed = resumeFrom is { Phase: SyncPhase.Pull } r ? new List<string>(r.CompletedDevices) : [];
@@ -270,6 +274,15 @@ public sealed class SyncJobRunner(
             steps.Finish(binding.DeviceName, SyncPhase.Pull, pullResult.FilesCopied, pullResult.FilesDeleted, pullResult.BytesCopied, pullResult.Errors.Count);
             steps.AddFiles(TransferFiles(binding.DeviceName, SyncPhase.Pull, pullResult));
 
+            if (pullResult.HasUnattributedErrors)
+                throw new InvalidOperationException(
+                    $"Pull from '{binding.DeviceName}' failed ({pullResult.Errors[0]}) - merge skipped so files that were not pulled are not treated as deletions.");
+            var failedPulls = pullResult.FailedPaths ?? [];
+            if (failedPulls.Count > 0)
+                _logger.LogWarning(
+                    "Job '{Job}' could not pull {Count} file(s) from '{Device}' - leaving them untouched on both sides this run: {Paths}",
+                    job.Name, failedPulls.Count, binding.DeviceName, string.Join(", ", failedPulls));
+
             var fileCount = Directory.Exists(stagingPath)
                 ? Directory.EnumerateFiles(stagingPath, "*", SearchOption.AllDirectories).Count()
                 : 0;
@@ -279,11 +292,16 @@ public sealed class SyncJobRunner(
                 BackupConflictLosers: eff.BackupConflictLosers,
                 ConflictBackupDir: GetConflictBackupDir(projectRoot, binding.DeviceName),
                 DryRun: eff.DryRun,
-                HoldConflicts: eff.ConflictPolicy == ConflictPolicy.Ask && pendingConflicts is not null);
+                HoldConflicts: eff.ConflictPolicy == ConflictPolicy.Ask && pendingConflicts is not null,
+                SkipPaths: failedPulls);
 
             await bookkeepingGate.WaitAsync(ct);
             try
             {
+                if (failedPulls.Count > 0)
+                    unpulled[binding.DeviceName] = failedPulls.ToList();
+                else
+                    unpulled.Remove(binding.DeviceName);
                 filesCopied += pullResult.FilesCopied;
                 filesDeleted += pullResult.FilesDeleted;
                 errors += pullResult.Errors.Count;
@@ -343,7 +361,7 @@ public sealed class SyncJobRunner(
 
                 completed.Add(binding.DeviceName);
                 if (!eff.DryRun)
-                    await checkpoints.SaveAsync(job.Name, new SyncCheckpoint(1, DateTimeOffset.UtcNow, jobIndex, job.Name, SyncPhase.Pull, completed.ToList(), serials), ct);
+                    await checkpoints.SaveAsync(job.Name, new SyncCheckpoint(1, DateTimeOffset.UtcNow, jobIndex, job.Name, SyncPhase.Pull, completed.ToList(), serials, Snapshot(unpulled)), ct);
             }
             finally
             {
@@ -359,7 +377,8 @@ public sealed class SyncJobRunner(
     private async Task<PhaseStats> RunPushPhaseAsync(
         SyncJobConfig job, int jobIndex, string masterPath, Dictionary<string, string> serials,
         ExcludeMatcher exclude, SyncCheckpoint? resumeFrom, EffectiveJobSettings eff, int maxConcurrentPerDevice,
-        RunStepRecorder steps, Dictionary<string, SyncManifest> pendingManifests, CancellationToken ct)
+        RunStepRecorder steps, Dictionary<string, SyncManifest> pendingManifests,
+        Dictionary<string, List<string>> unpulled, CancellationToken ct)
     {
         var completed = resumeFrom is { Phase: SyncPhase.Push } r ? new List<string>(r.CompletedDevices) : [];
         var alreadyDone = new HashSet<string>(completed, StringComparer.OrdinalIgnoreCase);
@@ -377,15 +396,17 @@ public sealed class SyncJobRunner(
         {
             var serial = serials[binding.DeviceName];
             IExcludeMatcher pushExclude = exclude;
+            var leaveAlone = new List<string>();
             if (pendingConflicts is not null)
             {
-                var held = (await pendingConflicts.ListAsync(job.Name, ct))
+                leaveAlone.AddRange((await pendingConflicts.ListAsync(job.Name, ct))
                     .Where(c => string.Equals(c.DeviceName, binding.DeviceName, StringComparison.OrdinalIgnoreCase))
-                    .Select(c => c.RelativePath)
-                    .ToList();
-                if (held.Count > 0)
-                    pushExclude = new PathSetExcludeMatcher(exclude, held);
+                    .Select(c => c.RelativePath));
             }
+            if (unpulled.TryGetValue(binding.DeviceName, out var notPulled))
+                leaveAlone.AddRange(notPulled);
+            if (leaveAlone.Count > 0)
+                pushExclude = new PathSetExcludeMatcher(exclude, leaveAlone);
 
             if (_deviceAccessGate.IsBusy(binding.DeviceName))
             {
@@ -428,7 +449,7 @@ public sealed class SyncJobRunner(
                 }
 
                 completed.Add(binding.DeviceName);
-                await checkpoints.SaveAsync(job.Name, new SyncCheckpoint(1, DateTimeOffset.UtcNow, jobIndex, job.Name, SyncPhase.Push, completed.ToList(), serials), ct);
+                await checkpoints.SaveAsync(job.Name, new SyncCheckpoint(1, DateTimeOffset.UtcNow, jobIndex, job.Name, SyncPhase.Push, completed.ToList(), serials, Snapshot(unpulled)), ct);
             }
             finally
             {
@@ -459,6 +480,9 @@ public sealed class SyncJobRunner(
                 Detail: (c.WinningSide == "staging" ? "device version kept" : "master version kept") + (c.BackupPath is null ? "" : ", other side backed up"))))
             .Concat(result.Held.Select(h => new RunFileChange(
                 device, SyncPhase.Merge, h.RelativePath, RunFileAction.Held, h.StagingSize ?? h.MasterSize, "waiting for your decision")));
+
+    private static Dictionary<string, List<string>>? Snapshot(Dictionary<string, List<string>> unpulled) =>
+        unpulled.Count == 0 ? null : unpulled.ToDictionary(kv => kv.Key, kv => kv.Value.ToList(), StringComparer.OrdinalIgnoreCase);
 
     private readonly record struct PhaseStats(
         bool AnyChange, int FilesCopied, int FilesDeleted, int Errors, long BytesCopied,
