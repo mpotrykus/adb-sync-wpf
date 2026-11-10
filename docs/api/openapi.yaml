@@ -239,7 +239,12 @@ paths:
     patch:
       tags: [jobs]
       operationId: updateJob
-      summary: Partial update (JSON Merge Patch). Renaming moves the job's folder, so it is refused while the job runs.
+      summary: Partial update (JSON Merge Patch).
+      description: |
+        Changing `name` renames the job: its project folder (master, rollback points, snapshots) moves to the new
+        name under the same root. Engine state is keyed by id and doesn't move. A rename is refused with
+        `job_running` while the job is running or queued, and with `folder_exists` if a folder with the new name
+        already exists under the root.
       parameters:
         - $ref: "#/components/parameters/IfMatch"
       requestBody:
@@ -960,7 +965,10 @@ paths:
       tags: [settings]
       operationId: browseServerFolders
       summary: List folders on the server, for picking the projects directory or a job's folder override.
-      description: Folders only, never file contents. Hidden in deployments that set `ADBSYNC_BROWSE_ROOTS` to an empty list.
+      description: |
+        Folders only, never file contents. The roots are the entries in `ADBSYNC_BROWSE_ROOTS` (default: the
+        server's mounted data volumes) plus, always, the current projects directory and every job's folder
+        override, so every configured storage location is reachable. Paths outside the roots get `403`.
       parameters:
         - name: path
           in: query
@@ -1147,6 +1155,7 @@ components:
         - not_found
         - precondition_failed
         - name_taken
+        - folder_exists
         - job_running
         - job_not_running
         - jobs_running

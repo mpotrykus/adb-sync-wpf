@@ -2,7 +2,7 @@
 
 Phase 1 deliverable of [the migration plan](../server-migration-plan.md). The endpoints and schemas are in [`openapi.yaml`](openapi.yaml). This document covers the decisions behind them: conventions, auth, the event stream, how today's code maps onto the contract, and what the contract requires of the engine in Phase 2.
 
-Nothing here is implemented yet. Review comments are most useful on the [open questions](#open-questions) at the end.
+Nothing here is implemented yet. The contract was reviewed on 2026-11-10; the outcomes are under [review decisions](#review-decisions-2026-11-10) at the end.
 
 ## Scope
 
@@ -119,7 +119,7 @@ Tray balloons are driven from `run.finished`. Each client applies the shared not
 | `GET /api/conflicts`, `/thumb/{pc\|device}`, `/resolve`, `/resolve-all` | `/conflicts…`. The `pc` choice and side become `master`, because the master is no longer on a PC. |
 | `POST /api/devices/{name}/endpoint`, `/pair` | `POST /devices/{id}/endpoint` (now with an optional explicit `host`, so a VPN address doesn't overwrite the LAN host), `POST /devices/{id}/pair` |
 
-**Transition:** the server also serves today's `/api/*` routes as a thin compatibility layer on top of v1, so phones on the current build keep working while the new companion build rolls out. The layer accepts the legacy shared token and is removed after Phase 3. Without it, the server and the phone app would have to update in lockstep, which is what the plan wants to avoid.
+**Transition:** full cut-over. The server serves only `/api/v1`; today's `/api/*` routes and the shared token go away when it goes live. The companion build that speaks v1 ships at the same time, and each phone pairs again once.
 
 ### WPF dashboard
 About 41 UI operations were counted in the audit (§2.3). Every one maps to an endpoint above. The ones that are new compared with the companion API:
@@ -149,14 +149,13 @@ About 41 UI operations were counted in the audit (§2.3). Every one maps to an e
 - **Server-side thumbnails** (ImageSharp or SkiaSharp), replacing WPF imaging.
 - **The event bus.** A single in-process publisher assigns `seq` and keeps the replay buffer. `ISyncEventSink`, the status tracker, live steps and live logs all feed it.
 - **Name validation** at the API and config boundary (audit A13, A14).
+- **Job rename** (decision 3). Takes the job lock, moves `{root}/{old}` to `{root}/{new}` (same filesystem, so a rename, not a copy), then saves the config. If the save fails, the folder is moved back.
 
-## Open questions
+## Review decisions (2026-11-10)
 
-1. **Legacy `/api/*` compatibility layer:** keep it through Phase 3 as proposed, or require the new companion build at the same moment the server goes live? Keeping it costs about a day and removes the lockstep risk.
-2. **First-client pairing:** is `adbsync-server pair` on the server host (an SSH step) acceptable for the very first client? Alternatives:
-   - the server prints a pairing code to its log on first start
-   - an unauthenticated pairing window that stays open until the first client pairs (weaker)
-3. **Job rename:** the contract allows renaming (`PATCH name`), which moves the project folder and engine state. Is renaming worth supporting in v1, or should names be immutable and renaming come later?
-4. **`deleteProjectFolder` on job delete:** offering to delete the master is convenient but dangerous. Keep it as an opt-in flag, or leave folder deletion to the user entirely?
-5. **USB devices:** `transport: usb` is kept so other users with phones plugged into the server can use it. Confirm that's wanted, even though your own setup is all wireless.
-6. **Server folder browsing** (`/server-fs/browse`): by default it is limited to configured roots (`ADBSYNC_BROWSE_ROOTS`, default the data volume's mount points). Acceptable, or should path entry be text-only?
+1. **No legacy compatibility layer.** Full cut-over: the server and the v1 companion build go live together.
+2. **First-client pairing** uses `adbsync-server pair` on the server host.
+3. **Job rename is supported in v1.** `PATCH name` moves the job's project folder under the same root. It is refused while the job is running or queued (`job_running`) and when the target folder exists (`folder_exists`).
+4. **Deleting a job can also delete its project folder,** through the opt-in `deleteProjectFolder` flag, which defaults to false.
+5. **USB devices stay.** adb lists a plugged-in phone by serial just like a wireless one, so support is the `transport: usb` value plus a serial field and no endpoint resolution. If it grows beyond that during Phase 2, it gets dropped.
+6. **Server folder browsing stays root-limited.** The roots always include the projects directory and every job's folder override, on top of `ADBSYNC_BROWSE_ROOTS`, so every configured storage location can be browsed.
