@@ -39,7 +39,12 @@ public sealed class JobRunService(
         var globalGate = await _globalGate.Value;
 
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        _runningJobs[jobIndex] = cts;
+        if (!_runningJobs.TryAdd(jobIndex, cts))
+        {
+            events.JobSkipped(job.Name, SyncJobRunner.AlreadyRunningReason);
+            return new JobRunResult(JobRunOutcome.Skipped, null, RunErrorCode.AlreadyRunning);
+        }
+
         try
         {
             if (!await globalGate.WaitAsync(0, cts.Token))
