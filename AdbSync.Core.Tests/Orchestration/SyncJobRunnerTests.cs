@@ -6,6 +6,8 @@ using AdbSync.Core.Services.Logging;
 using AdbSync.Core.Services.Merge;
 using AdbSync.Core.Services.Orchestration;
 using AdbSync.Core.Services.Orchestration.RunHistory;
+using AdbSync.Core.Models.Transfer;
+using AdbSync.Core.Services.Transfer;
 using AdbSync.Core.Tests.Orchestration.Fakes;
 
 namespace AdbSync.Core.Tests.Orchestration;
@@ -38,12 +40,13 @@ public class SyncJobRunnerTests : IDisposable
     private string DeviceFolder(string name) => Path.Combine(_root, "devices", name);
 
     private SyncJobRunner CreateRunner(
-        IReadOnlyDictionary<string, string> deviceFolders, bool appRunning = false, IPushSafetyGuard? pushSafety = null, ISyncEventSink? events = null) =>
+        IReadOnlyDictionary<string, string> deviceFolders, bool appRunning = false, IPushSafetyGuard? pushSafety = null, ISyncEventSink? events = null,
+        IAdbTransferEngine? transfer = null) =>
         new(
             new FakeDeviceResolver(),
             new FakeAppRunningGuard(appRunning),
             new SyncLockManager(),
-            new FakeAdbTransferEngine(deviceFolders),
+            transfer ?? new FakeAdbTransferEngine(deviceFolders),
             new TwoWayMergeEngine(),
             new ManifestStore(_appPaths),
             pushSafety ?? new PushSafetyGuard(_appPaths),
@@ -260,6 +263,66 @@ public class SyncJobRunnerTests : IDisposable
         Assert.DoesNotContain("DeviceA", pullPhaseDevices);
         Assert.Contains("DeviceB", pullPhaseDevices);
         Assert.Equal("from-b", File.ReadAllText(Path.Combine(DeviceFolder("DeviceA"), "b.txt")));
+    }
+
+    [Fact]
+    public async Task RunAsync_ResumedPullWithEveryDeviceAlreadyCompleted_StillPushesMasterToDevices()
+    {
+        var masterPath = Path.Combine(_projectsDirectory, "JobResumeAllPulled", "master");
+        Directory.CreateDirectory(masterPath);
+        File.WriteAllText(Path.Combine(masterPath, "merged-before-crash.txt"), "from-master");
+        Directory.CreateDirectory(DeviceFolder("DeviceA"));
+        var device = new DeviceConfig { Name = "DeviceA", Serial = "DeviceA" };
+        var job = new SyncJobConfig
+        {
+            Name = "JobResumeAllPulled",
+            Devices = [new JobDeviceBinding { DeviceName = "DeviceA", RemotePath = "/sdcard/app" }],
+        };
+        var runner = CreateRunner(new Dictionary<string, string> { ["DeviceA"] = DeviceFolder("DeviceA") });
+        var resumeFrom = new SyncCheckpoint(1, DateTimeOffset.UtcNow, 0, job.Name, SyncPhase.Pull, ["DeviceA"],
+            new Dictionary<string, string> { ["DeviceA"] = "DeviceA" });
+
+        var result = await runner.RunAsync(job, 0, [device], _settings, resumeFrom);
+
+        Assert.Equal(JobRunOutcome.Completed, result.Outcome);
+        Assert.Equal("from-master", File.ReadAllText(Path.Combine(DeviceFolder("DeviceA"), "merged-before-crash.txt")));
+    }
+
+    [Fact]
+    public async Task RunAsync_PushFailsAfterMasterChanged_NextRunPushesMasterInsteadOfRevertingIt()
+    {
+        WriteDeviceFile("DeviceA", "doc.txt", "v1");
+        var device = new DeviceConfig { Name = "DeviceA", Serial = "DeviceA" };
+        var job = new SyncJobConfig
+        {
+            Name = "JobPushFails",
+            Devices = [new JobDeviceBinding { DeviceName = "DeviceA", RemotePath = "/sdcard/app" }],
+        };
+        var folders = new Dictionary<string, string> { ["DeviceA"] = DeviceFolder("DeviceA") };
+        await CreateRunner(folders).RunAsync(job, 0, [device], _settings, resumeFrom: null);
+
+        var masterFile = Path.Combine(_projectsDirectory, "JobPushFails", "master", "doc.txt");
+        File.WriteAllText(masterFile, "version-2");
+        File.SetLastWriteTimeUtc(masterFile, DateTime.UtcNow.AddHours(1));
+
+        var failingPush = new FailingPushTransferEngine(new FakeAdbTransferEngine(folders));
+        await CreateRunner(folders, transfer: failingPush).RunAsync(job, 0, [device], _settings, resumeFrom: null);
+        Assert.Equal("v1", File.ReadAllText(Path.Combine(DeviceFolder("DeviceA"), "doc.txt")));
+
+        var result = await CreateRunner(folders).RunAsync(job, 0, [device], _settings, resumeFrom: null);
+
+        Assert.Equal("version-2", File.ReadAllText(masterFile));
+        Assert.Equal("version-2", File.ReadAllText(Path.Combine(DeviceFolder("DeviceA"), "doc.txt")));
+        Assert.Equal(JobRunOutcome.Completed, result.Outcome);
+    }
+
+    private sealed class FailingPushTransferEngine(IAdbTransferEngine inner) : IAdbTransferEngine
+    {
+        public Task<TransferResult> PullMirrorAsync(string serial, string remotePath, string localPath, IExcludeMatcher exclude, TransferPolicy? policy = null, CancellationToken ct = default) =>
+            inner.PullMirrorAsync(serial, remotePath, localPath, exclude, policy, ct);
+
+        public Task<TransferResult> PushMirrorAsync(string serial, string localPath, string remotePath, IExcludeMatcher exclude, TransferPolicy? policy = null, CancellationToken ct = default) =>
+            Task.FromResult(new TransferResult(0, 0, 0, ["push 'doc.txt' failed: device disconnected"], [], []));
     }
 
     private sealed class DeviceObservingSyncEventSink(Action<SyncPhase, string?> onPhaseChanged) : ISyncEventSink

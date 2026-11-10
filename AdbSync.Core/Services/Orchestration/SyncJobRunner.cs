@@ -118,8 +118,10 @@ public sealed class SyncJobRunner(
                 }
             }
 
-            var anyChange = resumeFrom is { Phase: SyncPhase.Push };
-            if (!anyChange)
+            var pendingManifests = new Dictionary<string, SyncManifest>(StringComparer.OrdinalIgnoreCase);
+            var resumingPush = resumeFrom is { Phase: SyncPhase.Push };
+            var anyChange = resumingPush;
+            if (!resumingPush)
             {
                 var masterIsEmpty = !Directory.EnumerateFiles(masterPath, "*", SearchOption.AllDirectories).Any();
                 if (masterIsEmpty && await manifests.AnyEntriesAsync(job.Name, ct))
@@ -138,9 +140,11 @@ public sealed class SyncJobRunner(
                 }
 
                 var pullStopwatch = Stopwatch.StartNew();
-                var pullStats = await RunPullPhaseAsync(job, jobIndex, masterPath, serials, exclude, resumeFrom, eff, settings.MaxConcurrentPerDevice, steps, rollback, ct);
+                var pullStats = await RunPullPhaseAsync(job, jobIndex, masterPath, serials, exclude, resumeFrom, eff, settings.MaxConcurrentPerDevice, steps, rollback, pendingManifests, ct);
                 pullDuration = pullStopwatch.Elapsed;
-                anyChange = pullStats.AnyChange;
+                // Devices merged before the checkpoint may have changed master, and that change is not visible in
+                // this run's merge results, so the push must still happen.
+                anyChange = pullStats.AnyChange || resumeFrom is { Phase: SyncPhase.Pull, CompletedDevices.Count: > 0 };
                 totalErrors += pullStats.Errors;
                 totalBytesCopied += pullStats.BytesCopied;
             }
@@ -154,6 +158,8 @@ public sealed class SyncJobRunner(
 
             if (!anyChange)
             {
+                foreach (var (deviceName, manifest) in pendingManifests)
+                    await manifests.SaveAsync(job.Name, deviceName, manifest, ct);
                 _logger.LogInformation("Job '{Job}' completed - no changes", job.Name);
                 events.JobCompleted(job.Name, pushed: false);
                 await checkpoints.ClearAsync(job.Name, ct);
@@ -171,7 +177,7 @@ public sealed class SyncJobRunner(
             }
 
             var pushStopwatch = Stopwatch.StartNew();
-            var pushStats = await RunPushPhaseAsync(job, jobIndex, masterPath, serials, exclude, resumeFrom, eff, settings.MaxConcurrentPerDevice, steps, ct);
+            var pushStats = await RunPushPhaseAsync(job, jobIndex, masterPath, serials, exclude, resumeFrom, eff, settings.MaxConcurrentPerDevice, steps, pendingManifests, ct);
             pushDuration = pushStopwatch.Elapsed;
             totalFilesCopied = pushStats.CopiedPaths.Count;
             totalFilesDeleted = pushStats.DeletedPaths.Count;
@@ -225,7 +231,7 @@ public sealed class SyncJobRunner(
     private async Task<PhaseStats> RunPullPhaseAsync(
         SyncJobConfig job, int jobIndex, string masterPath, Dictionary<string, string> serials,
         ExcludeMatcher exclude, SyncCheckpoint? resumeFrom, EffectiveJobSettings eff, int maxConcurrentPerDevice,
-        RunStepRecorder steps, RollbackSession? rollback, CancellationToken ct)
+        RunStepRecorder steps, RollbackSession? rollback, Dictionary<string, SyncManifest> pendingManifests, CancellationToken ct)
     {
         var projectRoot = Path.GetDirectoryName(masterPath)!;
         var completed = resumeFrom is { Phase: SyncPhase.Pull } r ? new List<string>(r.CompletedDevices) : [];
@@ -293,8 +299,11 @@ public sealed class SyncJobRunner(
                 var mergeResult = await merge.MergeAsync(stagingPath, masterPath, manifest, mergeOptions, ct);
                 if (mergeResult.AnyChange)
                     rollback?.MarkChanged();
+                // The merged manifest describes the device as it will be after the push, so it is only committed
+                // once that push succeeds. Saving it now would let a failed push make the device's stale copy look
+                // like a device-side edit next run, which then overwrites the newer master.
                 if (!eff.DryRun)
-                    await manifests.SaveAsync(job.Name, binding.DeviceName, mergeResult.UpdatedManifest, ct);
+                    pendingManifests[binding.DeviceName] = mergeResult.UpdatedManifest;
                 anyChange |= pullResult.AnyChange || mergeResult.AnyChange;
                 _logger.LogInformation(
                     "Job '{Job}' merge with '{Device}' completed: {Created} created, {Updated} updated, {Deleted} deleted, {Conflicts} conflict(s)",
@@ -350,7 +359,7 @@ public sealed class SyncJobRunner(
     private async Task<PhaseStats> RunPushPhaseAsync(
         SyncJobConfig job, int jobIndex, string masterPath, Dictionary<string, string> serials,
         ExcludeMatcher exclude, SyncCheckpoint? resumeFrom, EffectiveJobSettings eff, int maxConcurrentPerDevice,
-        RunStepRecorder steps, CancellationToken ct)
+        RunStepRecorder steps, Dictionary<string, SyncManifest> pendingManifests, CancellationToken ct)
     {
         var completed = resumeFrom is { Phase: SyncPhase.Push } r ? new List<string>(r.CompletedDevices) : [];
         var alreadyDone = new HashSet<string>(completed, StringComparer.OrdinalIgnoreCase);
@@ -407,6 +416,16 @@ public sealed class SyncJobRunner(
                 bytesCopied += pushResult.BytesCopied;
                 copiedPaths.UnionWith(pushResult.CopiedPaths);
                 deletedPaths.UnionWith(pushResult.DeletedPaths);
+
+                if (pendingManifests.TryGetValue(binding.DeviceName, out var pendingManifest))
+                {
+                    if (pushResult.Errors.Count == 0)
+                        await manifests.SaveAsync(job.Name, binding.DeviceName, pendingManifest, ct);
+                    else
+                        _logger.LogWarning(
+                            "Job '{Job}' push to '{Device}' had {Count} error(s) - keeping the previous manifest so the next run retries instead of treating the device's old files as edits",
+                            job.Name, binding.DeviceName, pushResult.Errors.Count);
+                }
 
                 completed.Add(binding.DeviceName);
                 await checkpoints.SaveAsync(job.Name, new SyncCheckpoint(1, DateTimeOffset.UtcNow, jobIndex, job.Name, SyncPhase.Push, completed.ToList(), serials), ct);
