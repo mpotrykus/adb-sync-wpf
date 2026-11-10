@@ -144,7 +144,8 @@ SyncJobRunner BuildRunner(bool useNativeTransfer)
         new ConsoleSyncEventSink(),
         new RunHistoryStore(paths),
         loggerFactory.CreateLogger<SyncJobRunner>(),
-        pendingConflicts: new PendingConflictStore(paths));
+        pendingConflicts: new PendingConflictStore(paths),
+        rollbackPoints: new RollbackPointStore());
 }
 
 int PrintResultsAndExitCode(AppConfig config, IReadOnlyList<JobRunResult> results, IReadOnlyList<string>? jobNames = null)

@@ -35,7 +35,8 @@ public sealed class SyncJobRunner(
     ILiveRunLogSink? liveLog = null,
     IDeviceAccessGate? deviceAccessGate = null,
     IPendingConflictStore? pendingConflicts = null,
-    ILiveRunStepSink? liveSteps = null)
+    ILiveRunStepSink? liveSteps = null,
+    RollbackPointStore? rollbackPoints = null)
 {
     public const string AlreadyRunningReason = "already running";
 
@@ -67,6 +68,9 @@ public sealed class SyncJobRunner(
         var projectsDirectory = eff.ProjectsDirectory;
         var projectRoot = Path.Combine(projectsDirectory, job.Name);
         var masterPath = Path.Combine(projectRoot, "master");
+        var rollback = rollbackPoints is not null && eff.RollbackPointsToKeep > 0 && !eff.DryRun && resumeFrom is null
+            ? new RollbackSession(rollbackPoints, projectRoot, masterPath, eff.RollbackPointsToKeep, _logger)
+            : null;
 
         _logger.LogInformation("Starting run for job '{Job}'", job.Name);
         _logger.LogInformation("Using {Engine} engine", transfer.GetType().Name);
@@ -134,7 +138,7 @@ public sealed class SyncJobRunner(
                 }
 
                 var pullStopwatch = Stopwatch.StartNew();
-                var pullStats = await RunPullPhaseAsync(job, jobIndex, masterPath, serials, exclude, resumeFrom, eff, settings.MaxConcurrentPerDevice, steps, ct);
+                var pullStats = await RunPullPhaseAsync(job, jobIndex, masterPath, serials, exclude, resumeFrom, eff, settings.MaxConcurrentPerDevice, steps, rollback, ct);
                 pullDuration = pullStopwatch.Elapsed;
                 anyChange = pullStats.AnyChange;
                 totalErrors += pullStats.Errors;
@@ -201,6 +205,7 @@ public sealed class SyncJobRunner(
                 runId, job.Name, startedAt, DateTimeOffset.UtcNow, outcome, errorMessage,
                 totalFilesCopied, totalFilesDeleted, totalErrors, totalBytesCopied, pullDuration, pushDuration);
             var finalSteps = steps.Complete(outcome);
+            rollback?.Finish();
             try
             {
                 await runHistory.SaveRunAsync(record, runLog.BuildText(), eff.MaxRunHistoryEntries, finalSteps, steps.Files, eff.FileDetailRunsKept, CancellationToken.None);
@@ -220,7 +225,7 @@ public sealed class SyncJobRunner(
     private async Task<PhaseStats> RunPullPhaseAsync(
         SyncJobConfig job, int jobIndex, string masterPath, Dictionary<string, string> serials,
         ExcludeMatcher exclude, SyncCheckpoint? resumeFrom, EffectiveJobSettings eff, int maxConcurrentPerDevice,
-        RunStepRecorder steps, CancellationToken ct)
+        RunStepRecorder steps, RollbackSession? rollback, CancellationToken ct)
     {
         var projectRoot = Path.GetDirectoryName(masterPath)!;
         var completed = resumeFrom is { Phase: SyncPhase.Pull } r ? new List<string>(r.CompletedDevices) : [];
@@ -280,10 +285,14 @@ public sealed class SyncJobRunner(
 
                 await pushSafety.RecordDeviceSnapshotAsync(job.Name, binding.DeviceName, fileCount, ct);
 
+                rollback?.CaptureBeforeMerge(binding.DeviceName, stagingPath);
+
                 steps.Start(binding.DeviceName, SyncPhase.Merge);
                 events.PhaseChanged(job.Name, SyncPhase.Merge, binding.DeviceName);
                 _logger.LogInformation("Job '{Job}' merge with '{Device}' started", job.Name, binding.DeviceName);
                 var mergeResult = await merge.MergeAsync(stagingPath, masterPath, manifest, mergeOptions, ct);
+                if (mergeResult.AnyChange)
+                    rollback?.MarkChanged();
                 if (!eff.DryRun)
                     await manifests.SaveAsync(job.Name, binding.DeviceName, mergeResult.UpdatedManifest, ct);
                 anyChange |= pullResult.AnyChange || mergeResult.AnyChange;
@@ -445,6 +454,71 @@ public sealed class SyncJobRunner(
 
     private static string GetConflictBackupDir(string projectRoot, string deviceName) =>
         Path.Combine(projectRoot, ".sync_conflicts", deviceName);
+
+    /// <summary>Lazily creates one rollback point per run, the first time a device is about to merge (so master is
+    /// still untouched), and drops it again at the end if no merge changed anything - an idle schedule tick must
+    /// not push real rollback points out of the keep-last-N window. A failure to copy never fails the sync.</summary>
+    private sealed class RollbackSession(RollbackPointStore store, string projectRoot, string masterPath, int keep, ILogger logger)
+    {
+        private string? _point;
+        private bool _failed;
+        private bool _changed;
+
+        public void CaptureBeforeMerge(string deviceName, string stagingPath)
+        {
+            if (_failed)
+                return;
+
+            try
+            {
+                if (_point is null)
+                {
+                    _point = store.Create(projectRoot);
+                    store.CaptureMaster(_point, masterPath);
+                }
+                store.CaptureDevice(_point, deviceName, stagingPath);
+            }
+            catch (Exception ex)
+            {
+                _failed = true;
+                logger.LogWarning(ex, "Could not capture a rollback point for '{Path}' - continuing the sync without one", projectRoot);
+                Discard();
+            }
+        }
+
+        public void MarkChanged() => _changed = true;
+
+        public void Finish()
+        {
+            if (!_changed)
+                Discard();
+
+            try
+            {
+                store.Prune(projectRoot, keep);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Could not prune old rollback points under '{Path}'", projectRoot);
+            }
+        }
+
+        private void Discard()
+        {
+            if (_point is null)
+                return;
+
+            try
+            {
+                store.Discard(_point);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Could not remove rollback point '{Point}'", _point);
+            }
+            _point = null;
+        }
+    }
 
     private static void PruneConflictBackups(string backupDir, int retentionDays)
     {

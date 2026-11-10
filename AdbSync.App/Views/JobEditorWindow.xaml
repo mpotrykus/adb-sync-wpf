@@ -294,6 +294,15 @@
                                                 <Rectangle Style="{StaticResource OverrideIndicatorBar}"
                                                            Visibility="{Binding Text, ElementName=FileDetailRunsKeptOverrideBox, Converter={StaticResource StringNotEmptyToVisibilityConverter}}"/>
                                             </Grid>
+                                            <TextBlock Grid.Row="2" Grid.Column="3" VerticalAlignment="Center" Margin="0,12,0,0"
+                                                       ToolTip="How many of this job's latest syncs keep a rollback point (a copy of master and each device's folder from just before the sync). Each one is a full copy. 0 turns it off.">
+                                                <Run Text="Rollback points kept "/><Run Text="(0 = off)" Style="{StaticResource DescriptorRun}"/>
+                                            </TextBlock>
+                                            <Grid Grid.Row="2" Grid.Column="4" Margin="0,12,0,0">
+                                                <TextBox x:Name="RollbackPointsToKeepOverrideBox" controls:TextBoxHelper.Placeholder="Inherit"/>
+                                                <Rectangle Style="{StaticResource OverrideIndicatorBar}"
+                                                           Visibility="{Binding Text, ElementName=RollbackPointsToKeepOverrideBox, Converter={StaticResource StringNotEmptyToVisibilityConverter}}"/>
+                                            </Grid>
                                         </Grid>
                                     </StackPanel>
                                 </Border>

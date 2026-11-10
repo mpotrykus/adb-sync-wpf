@@ -153,6 +153,8 @@ public partial class App : Application
         services.AddSingleton<IPushSafetyGuard, PushSafetyGuard>();
         services.AddSingleton<ICheckpointManager, CheckpointManager>();
         services.AddSingleton<IDeviceSnapshotService, DeviceSnapshotService>();
+        services.AddSingleton<RollbackPointStore>();
+        services.AddSingleton<RollbackService>();
         services.AddSingleton<IRunHistoryStore, RunHistoryStore>();
         services.AddSingleton<ILiveRunLogSink, LiveRunLogSink>();
         services.AddSingleton<ILiveRunStepSink, LiveRunStepSink>();

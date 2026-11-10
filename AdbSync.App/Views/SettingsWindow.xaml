@@ -161,6 +161,7 @@
                                                 <RowDefinition/>
                                                 <RowDefinition/>
                                                 <RowDefinition/>
+                                                <RowDefinition/>
                                             </Grid.RowDefinitions>
                                             <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center">
                                                 <Run Text="Log retention "/><Run Text="(days)" Style="{StaticResource DescriptorRun}"/>
@@ -185,6 +186,11 @@
                                                 <Run Text="File details kept for last "/><Run Text="(runs, 0 = all)" Style="{StaticResource DescriptorRun}"/>
                                             </TextBlock>
                                             <TextBox Grid.Row="5" Grid.Column="1" x:Name="FileDetailRunsKeptBox" Margin="0,12,0,0" controls:TextBoxHelper.Placeholder="10"/>
+                                            <TextBlock Grid.Row="6" Grid.Column="0" VerticalAlignment="Center" Margin="0,12,0,0"
+                                                       ToolTip="Before a sync changes anything, AdbSync copies master and each device's pulled folder so you can roll back to it. This many of the most recent such points are kept per job. Each one is a full copy, so it multiplies disk use. 0 turns it off.">
+                                                <Run Text="Rollback points kept "/><Run Text="(syncs, 0 = off)" Style="{StaticResource DescriptorRun}"/>
+                                            </TextBlock>
+                                            <TextBox Grid.Row="6" Grid.Column="1" x:Name="RollbackPointsToKeepBox" Margin="0,12,0,0" controls:TextBoxHelper.Placeholder="3"/>
                                         </Grid>
                                     </StackPanel>
                                 </Border>

@@ -610,10 +610,13 @@ public partial class DashboardWindow : Window
         if (picker.ShowDialog() != true || picker.SelectedSnapshot is not { } snapshot)
             return;
 
-        var confirmed = ConfirmDialog.Show(this, "Restore Snapshot",
-            $"This pushes the snapshot from {snapshot.CreatedAt.LocalDateTime:g} back out to every matching device in '{vm.Name}', " +
-            "overwriting current device files and deleting any device file that isn't in the snapshot. This cannot be undone.",
-            confirmText: "Restore");
+        var confirmMessage = snapshot.Kind == SnapshotKind.RollbackPoint
+            ? $"This puts '{vm.Name}' back to how it was just before the sync at {snapshot.CreatedAt.LocalDateTime:g}: master is replaced with the saved copy " +
+              "and each device is overwritten with its own saved folder, deleting any device file that isn't in it. " +
+              "Master is saved as a new before-sync point first so you can undo this, but device folders are not."
+            : $"This pushes the snapshot from {snapshot.CreatedAt.LocalDateTime:g} back out to every matching device in '{vm.Name}', " +
+              "overwriting current device files and deleting any device file that isn't in the snapshot. This cannot be undone.";
+        var confirmed = ConfirmDialog.Show(this, "Restore Snapshot", confirmMessage, confirmText: "Restore");
         if (!confirmed)
             return;
 

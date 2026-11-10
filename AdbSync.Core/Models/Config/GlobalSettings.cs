@@ -36,6 +36,11 @@ public sealed class GlobalSettings
     /// <summary>Default retention for job checkpoints/snapshots, unless a job overrides it. Mirrors <see cref="ConflictRetentionDays"/>.</summary>
     public int CheckpointRetentionDays { get; set; } = 30;
 
+    /// <summary>Default number of automatic rollback points kept per job, unless a job overrides it. Each sync that
+    /// changes something first copies master plus every device's pulled folder, so this multiplies the project's
+    /// disk footprint. 0 turns automatic rollback points off.</summary>
+    public int RollbackPointsToKeep { get; set; } = 3;
+
     /// <summary>Default cap on adb transfer throughput, unless a job overrides it. Null/unset = unlimited.</summary>
     public int? BandwidthThrottleKBps { get; set; }
 

@@ -45,6 +45,9 @@ public sealed class SyncJobConfig
     /// <summary>Optional override of <see cref="GlobalSettings.CheckpointRetentionDays"/> for this job only.</summary>
     public int? CheckpointRetentionDays { get; set; }
 
+    /// <summary>Optional override of <see cref="GlobalSettings.RollbackPointsToKeep"/> for this job only.</summary>
+    public int? RollbackPointsToKeep { get; set; }
+
     /// <summary>Optional override of <see cref="GlobalSettings.BandwidthThrottleKBps"/> for this job only.</summary>
     public int? BandwidthThrottleKBps { get; set; }
 

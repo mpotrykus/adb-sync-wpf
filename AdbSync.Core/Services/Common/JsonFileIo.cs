@@ -11,7 +11,8 @@ internal static class JsonFileIo
         if (!File.Exists(path))
             return default;
 
-        await using var stream = File.OpenRead(path);
+        // FileShare.Delete lets a concurrent WriteAtomicAsync rename over the file while we read it.
+        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
         return await JsonSerializer.DeserializeAsync(stream, typeInfo, ct);
     }
 
@@ -27,6 +28,30 @@ internal static class JsonFileIo
         {
             await JsonSerializer.SerializeAsync(stream, value, typeInfo, ct);
         }
-        File.Move(tempPath, path, overwrite: true);
+
+        try
+        {
+            // Windows reports a transiently locked target (scanner, indexer, reader without FileShare.Delete) as UnauthorizedAccessException.
+            for (var attempt = 0; ; attempt++)
+            {
+                try
+                {
+                    File.Move(tempPath, path, overwrite: true);
+                    return;
+                }
+                catch (Exception ex) when (attempt < MoveRetries && ex is UnauthorizedAccessException or IOException)
+                {
+                    await Task.Delay(MoveRetryDelayMs * (attempt + 1), ct);
+                }
+            }
+        }
+        catch
+        {
+            try { File.Delete(tempPath); } catch { }
+            throw;
+        }
     }
+
+    private const int MoveRetries = 5;
+    private const int MoveRetryDelayMs = 50;
 }

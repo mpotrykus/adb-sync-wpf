@@ -1,3 +1,4 @@
+using System.IO;
 using AdbSync.Core.Models.Config;
 using AdbSync.Core.Models.Orchestration;
 using AdbSync.Core.Services.Orchestration;
@@ -18,7 +19,8 @@ namespace AdbSync.App.Services;
 /// </summary>
 public sealed class JobRunService(
     AppConfigService configService, SyncJobRunner runner, IDeviceSnapshotService snapshotService,
-    ICheckpointManager checkpoints, IDeviceAccessGate deviceAccessGate, ISyncEventSink events)
+    ICheckpointManager checkpoints, IDeviceAccessGate deviceAccessGate, ISyncEventSink events,
+    RollbackPointStore rollbackPoints, RollbackService rollbackService)
 {
     private readonly Lazy<Task<SemaphoreSlim>> _globalGate = new(async () =>
     {
@@ -130,7 +132,11 @@ public sealed class JobRunService(
     {
         var config = await configService.GetAsync();
         var job = config.Jobs[jobIndex];
-        return snapshotService.ListSnapshots(job, config.Settings);
+        var projectRoot = Path.Combine(job.Resolve(config.Settings).ProjectsDirectory, job.Name);
+        return snapshotService.ListSnapshots(job, config.Settings)
+            .Concat(rollbackPoints.List(projectRoot))
+            .OrderByDescending(s => s.CreatedAt)
+            .ToList();
     }
 
     /// <summary>Pushes a stored checkpoint back out to the job's devices. Shares the same device gates as
@@ -140,7 +146,9 @@ public sealed class JobRunService(
         var config = await configService.GetAsync();
         var job = config.Jobs[jobIndex];
         await using var _ = await AcquireDevicesAsync(job, config.Settings.MaxConcurrentPerDevice, ct);
-        return await snapshotService.RestoreSnapshotAsync(job, config.Devices, config.Settings, snapshotPath, ct);
+        return RollbackPointStore.IsRollbackPoint(snapshotPath)
+            ? await rollbackService.RestoreAsync(job, config.Devices, config.Settings, snapshotPath, ct)
+            : await snapshotService.RestoreSnapshotAsync(job, config.Devices, config.Settings, snapshotPath, ct);
     }
 
     public async Task RunAllEnabledAsync(CancellationToken ct = default)
