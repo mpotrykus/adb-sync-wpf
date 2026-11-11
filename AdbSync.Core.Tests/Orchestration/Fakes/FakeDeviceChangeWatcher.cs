@@ -35,12 +35,13 @@ public sealed class FakeDeviceChangeWatcher : IDeviceChangeWatcher
     public async IAsyncEnumerable<ChangeSignal> WatchAsync(
         string serial, IReadOnlyList<string> paths, [EnumeratorCancellation] CancellationToken ct = default)
     {
+        // Registered before the call is counted: tests wait on the count and then emit, so a signal sent in between would be lost.
+        var channel = Channel.CreateUnbounded<ChangeSignal>();
+        _channels.Add(channel);
+
         var callIndex = WatchAsyncCallCount++;
         if (ThrowOnWatchCall?.Invoke(callIndex) == true)
             throw new InvalidOperationException($"simulated stream failure on attempt {callIndex}");
-
-        var channel = Channel.CreateUnbounded<ChangeSignal>();
-        _channels.Add(channel);
         while (await channel.Reader.WaitToReadAsync(ct))
         {
             while (channel.Reader.TryRead(out var signal))
