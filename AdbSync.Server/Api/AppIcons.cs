@@ -205,6 +205,13 @@ public static partial class ApkIcons
         return xmlPath is null ? null : new IconLayer(xmlPath, null);
     }
 
+    [GeneratedRegex(@"=@(?<id>0x[0-9a-fA-F]{8})")]
+    private static partial Regex ResourceReferencePattern();
+
+    /// <summary>The distinct resource ids a drawable's XML refers to (<c>=@0x7f080006</c>), in order of appearance.</summary>
+    public static IReadOnlyList<string> ReferencedResourceIds(string xmltree) =>
+        ResourceReferencePattern().Matches(xmltree).Select(m => m.Groups["id"].Value).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
     /// <summary>The first solid color in a drawable's XML (<c>aapt dump xmltree</c>), for flat vector or shape backgrounds.</summary>
     public static uint? ParseFirstColor(string xmltree) =>
         FillColorPattern().Match(xmltree) is { Success: true } m ? ParseColor(m.Groups["hex"].Value) : null;
@@ -428,17 +435,42 @@ public sealed class AppIconService(IAdbClient adb, IRemoteFileSystemFactory file
             return null;
 
         string? values = null;
+        async Task EnsureValuesAsync() => values ??= await RunAaptAsync(aapt, ["dump", "--values", "resources", apk], ct) ?? "";
+
         async Task<ApkIcons.IconLayer?> ResolveAsync(string layer)
         {
             if (layer.StartsWith('#'))
                 return ApkIcons.ResolveLayer(layer, "");
-            values ??= await RunAaptAsync(aapt, ["dump", "--values", "resources", apk], ct) ?? "";
-            return ApkIcons.ResolveLayer(layer, values);
+            await EnsureValuesAsync();
+            return ApkIcons.ResolveLayer(layer, values!);
         }
 
-        if (await ResolveAsync(foregroundRef) is not { Path: { } foregroundPath } || !ApkIcons.IsRaster(foregroundPath))
+        async Task<SKBitmap?> LoadBitmapAsync(ApkIcons.IconLayer layer)
+        {
+            if (layer.Path is not { } path)
+                return null;
+            if (ApkIcons.IsRaster(path))
+                return ReadBitmap(apk, path);
+            if (!path.EndsWith(".xml", StringComparison.OrdinalIgnoreCase) || await RunAaptAsync(aapt, ["dump", "xmltree", apk, path], ct) is not { } xml)
+                return null;
+            var fills = new Dictionary<string, VectorDrawables.VectorFill>(StringComparer.OrdinalIgnoreCase);
+            foreach (var id in ApkIcons.ReferencedResourceIds(xml))
+            {
+                await EnsureValuesAsync();
+                if (ApkIcons.ResolveLayer(id, values!) is not { } fillLayer)
+                    continue;
+                if (fillLayer.ArgbColor is { } argb)
+                    fills[id] = new VectorDrawables.VectorFill(argb);
+                else if (fillLayer.Path is { } fillPath && fillPath.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)
+                    && await RunAaptAsync(aapt, ["dump", "xmltree", apk, fillPath], ct) is { } gradient)
+                    fills[id] = new VectorDrawables.VectorFill(null, gradient);
+            }
+            return VectorDrawables.Render(xml, id => fills.GetValueOrDefault(id), VectorLayerPixels);
+        }
+
+        if (await ResolveAsync(foregroundRef) is not { } foregroundLayer)
             return null;
-        using var foreground = ReadBitmap(apk, foregroundPath);
+        using var foreground = await LoadBitmapAsync(foregroundLayer);
         if (foreground is null)
             return null;
 
@@ -450,10 +482,12 @@ public sealed class AppIconService(IAdbClient adb, IRemoteFileSystemFactory file
             {
                 if (layer.ArgbColor is { } color)
                     backgroundColor = color;
-                else if (layer.Path is { } path && ApkIcons.IsRaster(path))
-                    background = ReadBitmap(apk, path);
-                else if (layer.Path is { } xml && await RunAaptAsync(aapt, ["dump", "xmltree", apk, xml], ct) is { } xmlTree)
-                    backgroundColor = ApkIcons.ParseFirstColor(xmlTree);
+                else
+                {
+                    background = await LoadBitmapAsync(layer);
+                    if (background is null && layer.Path is { } xml && await RunAaptAsync(aapt, ["dump", "xmltree", apk, xml], ct) is { } xmlTree)
+                        backgroundColor = ApkIcons.ParseFirstColor(xmlTree);
+                }
             }
             return ApkIcons.ComposeAdaptiveIconPng(background, backgroundColor, foreground);
         }
@@ -462,6 +496,8 @@ public sealed class AppIconService(IAdbClient adb, IRemoteFileSystemFactory file
             background?.Dispose();
         }
     }
+
+    private const int VectorLayerPixels = 432;
 
     private static SKBitmap? ReadBitmap(string apk, string entryName)
     {
