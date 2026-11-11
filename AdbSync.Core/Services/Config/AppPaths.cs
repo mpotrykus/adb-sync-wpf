@@ -20,6 +20,8 @@ public sealed class AppPaths(string root, string? defaultProjectsDirectory = nul
     public string LogsDir => Path.Combine(Root, "logs");
     public string CheckpointsDir => Path.Combine(Root, "checkpoints");
     public string RunHistoryDbFile => Path.Combine(Root, "run-history.db");
+    public string EngineDbFile => Path.Combine(Root, "adbsync.db");
+    public string InstanceLockFile => Path.Combine(Root, ".instance.lock");
     public string LocalStateFile => Path.Combine(Root, "local-state.json");
     public string CompanionCertificateFile => Path.Combine(Root, "companion-cert.pfx");
 

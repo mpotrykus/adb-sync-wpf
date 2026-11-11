@@ -8,6 +8,7 @@ using AdbSync.Core.Services.Devices;
 using AdbSync.Core.Services.Logging;
 using AdbSync.Core.Services.Merge;
 using AdbSync.Core.Services.Orchestration;
+using AdbSync.Core.Services.Persistence;
 using AdbSync.Core.Services.Orchestration.RunHistory;
 using AdbSync.Core.Services.Transfer;
 using AdvancedSharpAdbClient;
@@ -30,6 +31,7 @@ public partial class App : Application
 {
     private IHost? _host;
     private Mutex? _singleInstanceMutex;
+    private InstanceLock? _instanceLock;
     private bool _hostStopped;
 
     public static IServiceProvider Services { get; private set; } = null!;
@@ -53,6 +55,16 @@ public partial class App : Application
         if (!createdNew)
         {
             MessageBox.Show("AdbSync is already running.", "AdbSync", MessageBoxButton.OK, MessageBoxImage.Information);
+            Shutdown();
+            return;
+        }
+
+        _instanceLock = InstanceLock.TryAcquire(AppPaths.Default, "AdbSync app");
+        if (_instanceLock is null)
+        {
+            MessageBox.Show(
+                "AdbSync's data folder is in use by another process, such as an adbsync command. Close it and start AdbSync again.",
+                "AdbSync", MessageBoxButton.OK, MessageBoxImage.Information);
             Shutdown();
             return;
         }
@@ -122,6 +134,7 @@ public partial class App : Application
             Task.Run(() => host.StopAsync(TimeSpan.FromSeconds(5))).GetAwaiter().GetResult();
         _host?.Dispose();
         _singleInstanceMutex?.ReleaseMutex();
+        _instanceLock?.Dispose();
         base.OnExit(e);
     }
 

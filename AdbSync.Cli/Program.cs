@@ -7,6 +7,7 @@ using AdbSync.Core.Services.Devices;
 using AdbSync.Core.Services.Logging;
 using AdbSync.Core.Services.Merge;
 using AdbSync.Core.Services.Orchestration;
+using AdbSync.Core.Services.Persistence;
 using AdbSync.Core.Services.Orchestration.RunHistory;
 using AdbSync.Core.Services.Transfer;
 using AdvancedSharpAdbClient;
@@ -15,6 +16,15 @@ using Serilog;
 
 var paths = AppPaths.Default;
 var configStore = new AppConfigStore(paths);
+
+if (args.Length == 0)
+    return PrintUsage();
+using var instanceLock = InstanceLock.TryAcquire(paths, "adbsync CLI");
+if (instanceLock is null)
+{
+    Console.Error.WriteLine("AdbSync's data folder is in use by another process, such as the AdbSync app. Close it and try again.");
+    return 2;
+}
 
 return args switch
 {
