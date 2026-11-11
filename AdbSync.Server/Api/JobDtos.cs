@@ -7,25 +7,6 @@ using System.Text.Json;
 
 namespace AdbSync.Server.Api;
 
-public sealed record JobBindingDto(Guid DeviceId, string RemotePath);
-
-public sealed record ScheduleDto(string Kind, int? IntervalSeconds, IReadOnlyList<string>? DailyTimes, int? DebounceSeconds, int? RescanSeconds);
-
-public sealed record JobOverridesDto(
-    int? ConflictRetentionDays, bool? ShowInfoNotifications, bool? ShowErrorNotifications, int? MaxRunHistoryEntries,
-    int? FileDetailRunsKept, bool? BackupConflictLosers, string? ConflictPolicy, int? CheckpointRetentionDays,
-    int? RollbackPointsToKeep, int? BandwidthThrottleKBps, int? RetryMaxAttempts, int? RetryBackoffSeconds,
-    int? PushSafetyMinimumPercent);
-
-/// <summary>JobInput: what clients send to create a job, and what a PATCH is merged into.</summary>
-public sealed record JobInputDto(
-    string? Name, string? ProjectDirectory, string? AppPackage, IReadOnlyList<string>? Exclude, IReadOnlyList<JobBindingDto>? Devices,
-    ScheduleDto? Schedule, bool? Enabled, bool? DryRun, JobOverridesDto? Overrides);
-
-public sealed record JobDto(
-    Guid Id, int Order, string ProjectPath, string Name, string? ProjectDirectory, string? AppPackage, IReadOnlyList<string> Exclude,
-    IReadOnlyList<JobBindingDto> Devices, ScheduleDto Schedule, bool Enabled, bool DryRun, JobOverridesDto Overrides);
-
 public static class JobMapping
 {
     public static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);

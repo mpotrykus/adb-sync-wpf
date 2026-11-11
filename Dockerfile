@@ -5,10 +5,14 @@ ARG TARGETARCH
 WORKDIR /src
 COPY AdbSync.Core/AdbSync.Core.csproj AdbSync.Core/
 COPY AdbSync.Engine/AdbSync.Engine.csproj AdbSync.Engine/
+COPY AdbSync.Contracts/AdbSync.Contracts.csproj AdbSync.Contracts/
+COPY AdbSync.Web/AdbSync.Web.csproj AdbSync.Web/
 COPY AdbSync.Server/AdbSync.Server.csproj AdbSync.Server/
 RUN dotnet restore AdbSync.Server/AdbSync.Server.csproj -a $TARGETARCH
 COPY AdbSync.Core/ AdbSync.Core/
 COPY AdbSync.Engine/ AdbSync.Engine/
+COPY AdbSync.Contracts/ AdbSync.Contracts/
+COPY AdbSync.Web/ AdbSync.Web/
 COPY AdbSync.Server/ AdbSync.Server/
 RUN dotnet publish AdbSync.Server/AdbSync.Server.csproj -c Release -a $TARGETARCH --self-contained false --no-restore -o /app
 

@@ -11,9 +11,17 @@
 
   <ItemGroup>
     <ProjectReference Include="..\AdbSync.Engine\AdbSync.Engine.csproj" />
+    <ProjectReference Include="..\AdbSync.Contracts\AdbSync.Contracts.csproj" />
+    <!-- The UI always builds for browser-wasm; a -a/-r passed to the server publish must not reach it. -->
+    <ProjectReference Include="..\AdbSync.Web\AdbSync.Web.csproj" GlobalPropertiesToRemove="RuntimeIdentifier;SelfContained" />
   </ItemGroup>
 
   <ItemGroup>
+    <Using Include="AdbSync.Contracts" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="8.0.34" />
     <PackageReference Include="SixLabors.ImageSharp" Version="3.1.7" />
   </ItemGroup>
 

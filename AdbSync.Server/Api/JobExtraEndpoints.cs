@@ -9,15 +9,6 @@ using System.Text.Json.Nodes;
 
 namespace AdbSync.Server.Api;
 
-public sealed record SnapshotDto(
-    string Id, Guid JobId, string Kind, DateTimeOffset CreatedAt, IReadOnlyList<Guid> DeviceIds, bool IncludesMaster, long? SizeBytes, string Path);
-
-public sealed record ManifestSummaryDto(Guid DeviceId, int Entries, DateTimeOffset? LastMergedAt, string? MasterPath);
-
-public sealed record WatchAvailabilityDto(Guid DeviceId, bool LiveWatchSupported, string Detail, string? Warning);
-
-public sealed record DeviceRefDto(Guid DeviceId);
-
 /// <summary>The job sub-resources besides runs: settings view, manifests, watch, linked app and snapshots.</summary>
 public static class JobExtraEndpoints
 {

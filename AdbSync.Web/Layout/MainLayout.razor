@@ -1,0 +1,227 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject Session Session
+@inject StatusStore Status
+@inject ApiClient Api
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+@inject IJSRuntime JS
+
+<MudThemeProvider @ref="_themeProvider" Theme="_theme" IsDarkMode="_dark" />
+<MudPopoverProvider />
+<MudDialogProvider CloseOnEscapeKey="true" />
+<MudSnackbarProvider />
+
+@if (!Session.Loaded)
+{
+    <div class="boot"><div class="boot-spinner"></div></div>
+}
+else if (!Session.SignedIn)
+{
+    @if (OnSignInPage)
+    {
+        <MudLayout>
+            <MudMainContent>@Body</MudMainContent>
+        </MudLayout>
+    }
+}
+else
+{
+    <MudLayout>
+        <MudAppBar Elevation="0">
+            <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@(() => _drawerOpen = !_drawerOpen)" />
+            <MudText Typo="Typo.h6" Class="ml-2">AdbSync</MudText>
+            @if (Status.Snapshot?.Server.Name is { } name)
+            {
+                <MudText Typo="Typo.caption" Class="ml-3 mt-1 d-none d-sm-flex" Style="opacity:.8">@name</MudText>
+            }
+            <MudSpacer />
+            @if (Status.Snapshot is { } snapshot)
+            {
+                <MudTooltip Text="@(snapshot.Scheduler.Paused ? "Timed runs are paused. On-change runs still start when a phone changes." : "Timed runs are on")">
+                    <MudButton Variant="Variant.Text" Color="Color.Inherit" Disabled="_schedulerBusy"
+                               StartIcon="@(snapshot.Scheduler.Paused ? Icons.Material.Filled.PauseCircle : Icons.Material.Filled.PlayCircle)"
+                               OnClick="ToggleSchedulerAsync">
+                        <span class="d-none d-sm-inline">@(snapshot.Scheduler.Paused ? "Scheduler paused" : "Scheduler on")</span>
+                    </MudButton>
+                </MudTooltip>
+            }
+            <MudIconButton Icon="@(_dark ? Icons.Material.Filled.LightMode : Icons.Material.Filled.DarkMode)" Color="Color.Inherit" OnClick="ToggleDarkAsync" />
+            <MudMenu Icon="@Icons.Material.Filled.AccountCircle" Color="Color.Inherit" AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
+                <MudMenuItem Icon="@Icons.Material.Filled.QrCode2" OnClick="PairClientAsync">Pair another client</MudMenuItem>
+                <MudMenuItem Icon="@Icons.Material.Filled.Logout" OnClick="SignOutAsync">Sign out</MudMenuItem>
+            </MudMenu>
+        </MudAppBar>
+        <MudDrawer @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="0" Variant="DrawerVariant.Responsive" Breakpoint="Breakpoint.Md">
+            <MudNavMenu Class="mt-2">
+                <MudNavLink Href="" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Sync">Jobs</MudNavLink>
+                <MudNavLink Href="devices" Icon="@Icons.Material.Filled.PhoneAndroid">Devices</MudNavLink>
+            </MudNavMenu>
+        </MudDrawer>
+        <MudMainContent>
+            @if (Status.Error is { } error)
+            {
+                <MudAlert Severity="Severity.Warning" Square="true" Dense="true">Can't reach the server: @error</MudAlert>
+            }
+            <MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
+                @Body
+            </MudContainer>
+        </MudMainContent>
+    </MudLayout>
+}
+
+@code {
+    private const string ThemeKey = "adbsync.theme";
+
+    private MudThemeProvider? _themeProvider;
+    private bool _dark;
+    private bool _drawerOpen = true;
+    private bool _schedulerBusy;
+    private bool _watching;
+
+    private readonly MudTheme _theme = new()
+    {
+        PaletteLight = new PaletteLight
+        {
+            Primary = "#22867a",
+            Secondary = "#e76f51",
+            AppbarBackground = "#1f6f66",
+            Background = "#f5f6f8",
+            DrawerBackground = "#ffffff",
+        },
+        PaletteDark = new PaletteDark
+        {
+            Primary = "#3fbfae",
+            Secondary = "#f4a261",
+            AppbarBackground = "#1d2127",
+            Background = "#16181d",
+            Surface = "#1f232a",
+            DrawerBackground = "#1b1e24",
+        },
+        Typography = new Typography
+        {
+            Default = new DefaultTypography { FontFamily = ["Inter", "Segoe UI", "Roboto", "system-ui", "sans-serif"] },
+        },
+        LayoutProperties = new LayoutProperties { DefaultBorderRadius = "10px" },
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        Session.Changed += OnSessionChanged;
+        Status.Changed += OnStatusChanged;
+        await Session.LoadAsync();
+        EnsureRoute();
+        UpdateWatch();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _themeProvider is null)
+            return;
+        string? stored = null;
+        try
+        {
+            stored = await JS.InvokeAsync<string?>("localStorage.getItem", ThemeKey);
+        }
+        catch (JSException)
+        {
+        }
+        _dark = stored switch
+        {
+            "dark" => true,
+            "light" => false,
+            _ => await _themeProvider.GetSystemDarkModeAsync(),
+        };
+        StateHasChanged();
+    }
+
+    private bool OnSignInPage => Navigation.ToBaseRelativePath(Navigation.Uri).StartsWith("signin", StringComparison.OrdinalIgnoreCase);
+
+    private void EnsureRoute()
+    {
+        if (!Session.SignedIn && !OnSignInPage)
+            Navigation.NavigateTo("signin");
+    }
+
+    private void UpdateWatch()
+    {
+        if (Session.SignedIn && !_watching)
+        {
+            Status.Watch();
+            _watching = true;
+        }
+        else if (!Session.SignedIn && _watching)
+        {
+            Status.Unwatch();
+            _watching = false;
+        }
+    }
+
+    private void OnSessionChanged()
+    {
+        UpdateWatch();
+        EnsureRoute();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnStatusChanged() => InvokeAsync(StateHasChanged);
+
+    private async Task ToggleSchedulerAsync()
+    {
+        if (Status.Snapshot is not { } snapshot)
+            return;
+        _schedulerBusy = true;
+        try
+        {
+            var state = await Api.PatchAsync<SchedulerStateDto>("scheduler", new { paused = !snapshot.Scheduler.Paused });
+            Snackbar.Add(state.Paused ? "Scheduler paused" : "Scheduler resumed", Severity.Info);
+            await Status.RefreshAsync();
+        }
+        catch (ApiException ex)
+        {
+            if (!ex.IsSignedOut()) Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _schedulerBusy = false;
+        }
+    }
+
+    private async Task ToggleDarkAsync()
+    {
+        _dark = !_dark;
+        try
+        {
+            await JS.InvokeVoidAsync("localStorage.setItem", ThemeKey, _dark ? "dark" : "light");
+        }
+        catch (JSException)
+        {
+        }
+    }
+
+    private async Task PairClientAsync() =>
+        await Dialogs.ShowAsync<PairingCodeDialog>("Pair another client", new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true });
+
+    private async Task SignOutAsync()
+    {
+        try
+        {
+            var clients = await Api.GetAsync<List<ClientResponse>>("auth/clients");
+            if (clients.FirstOrDefault(c => c.Current) is { } me)
+                await Api.DeleteAsync($"auth/clients/{me.Id}");
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException)
+        {
+        }
+        await Session.SignOutAsync();
+    }
+
+    public void Dispose()
+    {
+        Session.Changed -= OnSessionChanged;
+        Status.Changed -= OnStatusChanged;
+        if (_watching)
+            Status.Unwatch();
+    }
+}

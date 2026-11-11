@@ -1,0 +1,84 @@
+@page "/signin"
+@inject Session Session
+@inject HttpClient Http
+@inject NavigationManager Navigation
+
+<PageTitle>Sign in · AdbSync</PageTitle>
+
+<div class="d-flex justify-center align-center" style="min-height:100vh;padding:16px">
+    <MudPaper Elevation="2" Class="pa-8" Style="width:100%;max-width:440px">
+        <div class="d-flex align-center gap-3 mb-6">
+            <img src="favicon.svg" width="40" height="40" alt="" />
+            <div>
+                <MudText Typo="Typo.h5">AdbSync</MudText>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">Pair this browser with the server</MudText>
+            </div>
+        </div>
+
+        <MudText Typo="Typo.body2" Class="mb-4">
+            Get a pairing code from a client that's already signed in (account menu → <b>Pair another client</b>),
+            or on the server:
+        </MudText>
+        <MudPaper Outlined="true" Class="pa-3 mb-6 mono" Style="font-size:13px;overflow-x:auto">docker exec adbsync adbsync-server pair</MudPaper>
+
+        <EditForm Model="this" OnValidSubmit="PairAsync">
+            <MudTextField @bind-Value="_code" Label="Pairing code" Placeholder="ABCD-EFGH" Variant="Variant.Outlined"
+                          Immediate="true" AutoFocus="true" Class="mb-4 mono-input" Disabled="_busy" />
+            <MudTextField @bind-Value="_name" Label="Name for this browser" Variant="Variant.Outlined" Class="mb-6" Disabled="_busy"
+                          HelperText="Shown in the server's client list, so you can revoke it later." />
+            @if (_error is not null)
+            {
+                <MudAlert Severity="Severity.Error" Dense="true" Class="mb-4">@_error</MudAlert>
+            }
+            <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" Size="Size.Large"
+                       Disabled="@(_busy || string.IsNullOrWhiteSpace(_code))">
+                @if (_busy)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                }
+                Pair
+            </MudButton>
+        </EditForm>
+    </MudPaper>
+</div>
+
+@code {
+    private string _code = "";
+    private string _name = "Web browser";
+    private string? _error;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Session.LoadAsync();
+        if (Session.SignedIn)
+            Navigation.NavigateTo("");
+    }
+
+    private async Task PairAsync()
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            using var response = await Http.PostAsJsonAsync("api/v1/auth/pair", new PairRequest(
+                _code.Trim().ToUpperInvariant(), string.IsNullOrWhiteSpace(_name) ? "Web browser" : _name.Trim(), "web", "web-0.1"));
+            if (!response.IsSuccessStatusCode)
+            {
+                _error = (await ApiException.FromAsync(response)).Message;
+                return;
+            }
+            var paired = (await response.Content.ReadFromJsonAsync<PairResponse>())!;
+            await Session.SignInAsync(paired.Token);
+            Navigation.NavigateTo("");
+        }
+        catch (HttpRequestException ex)
+        {
+            _error = "Can't reach the server: " + ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

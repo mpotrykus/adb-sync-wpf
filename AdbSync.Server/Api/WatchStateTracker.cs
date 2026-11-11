@@ -5,8 +5,6 @@ using System.Collections.Concurrent;
 
 namespace AdbSync.Server.Api;
 
-public sealed record WatchStateDto(Guid DeviceId, string State, string? Detail, DateTimeOffset? Since);
-
 /// <summary>
 /// The on-change watcher's state per job and device, from the engine's watch events (it doesn't keep one itself).
 /// Publishes <c>watch.changed</c>. Keyed by name, as the events are; ids are attached when read.

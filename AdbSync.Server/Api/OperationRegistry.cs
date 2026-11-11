@@ -3,12 +3,6 @@ using System.Collections.Concurrent;
 
 namespace AdbSync.Server.Api;
 
-public sealed record OperationProgressDto(string Message, double? Fraction);
-
-public sealed record OperationDto(
-    string Id, string Kind, string Status, Guid? JobId, DateTimeOffset CreatedAt, DateTimeOffset? FinishedAt,
-    OperationProgressDto? Progress, object? Result, string? ErrorCode, string? Message);
-
 /// <summary>Thrown inside an operation to fail it with a contract error code.</summary>
 public sealed class OperationFailedException(string code, string message) : Exception(message)
 {

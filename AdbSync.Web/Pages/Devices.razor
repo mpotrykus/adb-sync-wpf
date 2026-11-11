@@ -1,0 +1,141 @@
+@page "/devices"
+@inject ApiClient Api
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+
+<PageTitle>Devices · AdbSync</PageTitle>
+
+<div class="d-flex align-center mb-6">
+    <MudText Typo="Typo.h4">Devices</MudText>
+    <MudSpacer />
+    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Refresh" OnClick="LoadAsync">Refresh</MudButton>
+</div>
+
+@if (_devices is null)
+{
+    <MudGrid>
+        @for (var i = 0; i < 2; i++)
+        {
+            <MudItem xs="12" md="6"><MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="180px" /></MudItem>
+        }
+    </MudGrid>
+}
+else if (_devices.Count == 0)
+{
+    <MudPaper Class="pa-8 d-flex flex-column align-center" Outlined="true">
+        <MudIcon Icon="@Icons.Material.Filled.PhonelinkOff" Size="Size.Large" Class="mb-2" />
+        <MudText>No devices yet.</MudText>
+    </MudPaper>
+}
+else
+{
+    <MudGrid>
+        @foreach (var device in _devices)
+        {
+            var test = _tests.GetValueOrDefault(device.Id);
+            var state = test is null ? device.Connection.State : test.Connected ? "connected" : "unreachable";
+            <MudItem xs="12" md="6">
+                <MudCard Elevation="1">
+                    <MudCardHeader>
+                        <CardHeaderAvatar>
+                            <MudAvatar Color="StateColor(state)" Variant="Variant.Outlined">
+                                <MudIcon Icon="@Icons.Material.Filled.PhoneAndroid" />
+                            </MudAvatar>
+                        </CardHeaderAvatar>
+                        <CardHeaderContent>
+                            <MudText Typo="Typo.h6">@device.Name</MudText>
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                @(device.Transport == "usb" ? "USB" : "Wi-Fi") · @(device.Host ?? device.Serial ?? "no address")
+                            </MudText>
+                        </CardHeaderContent>
+                        <CardHeaderActions>
+                            <MudChip T="string" Size="Size.Small" Color="StateColor(state)">@Format.Words(state)</MudChip>
+                        </CardHeaderActions>
+                    </MudCardHeader>
+                    <MudCardContent Class="pt-0">
+                        <MudText Typo="Typo.body2">
+                            Used by @device.UsedByJobIds.Count job@(device.UsedByJobIds.Count == 1 ? "" : "s")
+                            @if ((test?.Endpoint ?? device.Connection.Endpoint) is { } endpoint)
+                            {
+                                <span> · adb at <span class="mono">@endpoint</span></span>
+                            }
+                        </MudText>
+                        @if (test is { Connected: false })
+                        {
+                            <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-3">
+                                Not reachable@(test.Detail is { } detail ? ": " + detail : ".")
+                                If this server hasn't been paired with the phone yet, use <b>Pair</b>.
+                            </MudAlert>
+                        }
+                    </MudCardContent>
+                    <MudCardActions Class="px-4 pb-4">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Link"
+                                   OnClick="() => PairAsync(device)">Pair</MudButton>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Primary" Class="ml-2" StartIcon="@Icons.Material.Filled.NetworkCheck"
+                                   Disabled="_testing.Contains(device.Id)" OnClick="() => TestAsync(device)">
+                            @(_testing.Contains(device.Id) ? "Testing…" : "Test connection")
+                        </MudButton>
+                    </MudCardActions>
+                </MudCard>
+            </MudItem>
+        }
+    </MudGrid>
+}
+
+@code {
+    private List<DeviceDto>? _devices;
+    private readonly Dictionary<Guid, ConnectionTestResultDto> _tests = [];
+    private readonly HashSet<Guid> _testing = [];
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _devices = await Api.GetAsync<List<DeviceDto>>("devices");
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException)
+        {
+            if (!ex.IsSignedOut()) Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private static Color StateColor(string state) => state switch
+    {
+        "connected" => Color.Success,
+        "unreachable" or "unauthorized" => Color.Error,
+        _ => Color.Default,
+    };
+
+    private async Task TestAsync(DeviceDto device)
+    {
+        _testing.Add(device.Id);
+        try
+        {
+            var result = await Api.PostAsync<ConnectionTestResultDto>($"devices/{device.Id}/test");
+            _tests[device.Id] = result;
+            Snackbar.Add(result.Connected ? $"{device.Name} is connected" : $"{device.Name} isn't reachable",
+                result.Connected ? Severity.Success : Severity.Warning);
+        }
+        catch (ApiException ex)
+        {
+            if (!ex.IsSignedOut()) Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _testing.Remove(device.Id);
+        }
+    }
+
+    private async Task PairAsync(DeviceDto device)
+    {
+        var dialog = await Dialogs.ShowAsync<PairDeviceDialog>($"Pair {device.Name}",
+            new DialogParameters<PairDeviceDialog> { { d => d.Device, device } },
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true });
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: ConnectionTestResultDto test })
+            _tests[device.Id] = test;
+        await LoadAsync();
+    }
+}

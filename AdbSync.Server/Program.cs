@@ -46,7 +46,7 @@ if (instanceLock is null)
 
 var identity = new ServerIdentity(paths, options);
 
-var builder = WebApplication.CreateBuilder(args);
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions { Args = args, ContentRootPath = AppContext.BaseDirectory });
 builder.WebHost.ConfigureKestrel(kestrel =>
     kestrel.Listen(options.ListenAddress, options.Port, listen => listen.UseHttps(identity.Certificate)));
 builder.Host.ConfigureHostOptions(host => host.ShutdownTimeout = TimeSpan.FromSeconds(60));
@@ -92,6 +92,9 @@ builder.Services.AddRateLimiter(limiter =>
 });
 
 var app = builder.Build();
+app.UseBlazorFrameworkFiles();
+app.UseDefaultFiles();
+app.UseStaticFiles();
 app.UseRateLimiter();
 app.Services.GetRequiredService<RunRegistry>().Attach(app.Services.GetRequiredService<JobRunService>());
 
@@ -110,6 +113,9 @@ api.MapDeviceEndpoints();
 api.MapConflictEndpoints();
 api.MapSettingsEndpoints();
 api.MapJobExtraEndpoints();
+
+// The web UI's client-side routes. Unknown /api paths still get the API's 404, not the app's index page.
+app.MapFallbackToFile("{*path:regex(^(?!api/).*$):nonfile}", "index.html");
 
 app.Logger.LogInformation(
     "AdbSync server listening on https://{Address}:{Port} as {Url}, data in {DataDir}, certificate fingerprint {Fingerprint}",

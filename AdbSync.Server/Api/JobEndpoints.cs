@@ -228,7 +228,7 @@ public static class JobEndpoints
             var start = cursor is not null && int.TryParse(cursor, out var offset) && offset > 0 ? offset : 0;
             var take = Math.Clamp(limit ?? 50, 1, 200);
             var page = ordered.Skip(start).Take(take).ToList();
-            return new { items = page, nextCursor = start + take < ordered.Count ? (start + take).ToString() : null };
+            return new RunPageDto(page, start + take < ordered.Count ? (start + take).ToString() : null);
         });
 
         api.MapGet("/runs/{runId:guid}", async (Guid runId, AppConfigService configService, IRunHistoryStore history, RunRegistry registry, ILiveRunStepSink live, CancellationToken ct) =>
@@ -266,18 +266,16 @@ public static class JobEndpoints
             var deviceIds = config.Devices.ToDictionary(d => d.Name, d => d.Id, StringComparer.OrdinalIgnoreCase);
             var files = await history.GetRunFilesAsync(runId, ct);
             var items = files
-                .Select(f => new
-                {
-                    deviceId = deviceIds.GetValueOrDefault(f.DeviceName),
-                    phase = Contract.SyncPhase(f.Phase),
-                    path = f.Path,
-                    action = char.ToLowerInvariant(f.Action.ToString()[0]) + f.Action.ToString()[1..],
-                    size = f.Size,
-                    detail = f.Detail,
-                })
-                .Where(f => (deviceId is null || f.deviceId == deviceId) && (action is null || f.action == action))
+                .Select(f => new RunFileDto(
+                    deviceIds.GetValueOrDefault(f.DeviceName),
+                    Contract.SyncPhase(f.Phase),
+                    f.Path,
+                    char.ToLowerInvariant(f.Action.ToString()[0]) + f.Action.ToString()[1..],
+                    f.Size,
+                    f.Detail))
+                .Where(f => (deviceId is null || f.DeviceId == deviceId) && (action is null || f.Action == action))
                 .ToList();
-            return Results.Ok(new { retained = files.Count > 0, items, nextCursor = (string?)null });
+            return Results.Ok(new RunFilesPageDto(files.Count > 0, items, null));
         });
     }
 

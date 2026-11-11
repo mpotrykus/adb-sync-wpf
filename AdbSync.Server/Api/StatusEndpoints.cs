@@ -35,5 +35,3 @@ public static class StatusEndpoints
         }).Accepts<SchedulerPatch>("application/merge-patch+json", "application/json");
     }
 }
-
-public sealed record SchedulerPatch(bool? Paused);

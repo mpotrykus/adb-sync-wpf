@@ -9,17 +9,6 @@ using System.Collections.Concurrent;
 
 namespace AdbSync.Server.Api;
 
-public sealed record RunDto(
-    Guid Id, Guid JobId, string JobName, string Status, string Mode, string Trigger, Guid? RequestedBy,
-    DateTimeOffset QueuedAt, DateTimeOffset? StartedAt, DateTimeOffset? FinishedAt, string? ErrorCode, string? Message,
-    int FilesCopied, int FilesDeleted, int ErrorCount, long BytesCopied, double? PullSeconds, double? PushSeconds);
-
-public sealed record RunStepDto(
-    Guid DeviceId, string DeviceName, string Phase, string Status, DateTimeOffset? StartedAt, DateTimeOffset? EndedAt,
-    int FilesCopied, int FilesDeleted, long BytesCopied, int Errors, int Conflicts);
-
-public sealed record RunDetailDto(RunDto Run, IReadOnlyList<RunStepDto> Steps);
-
 /// <summary>
 /// Runs that haven't finished yet (queued or running), which run history doesn't know about, plus the events that
 /// follow a run from queued to finished. Finished runs are read from run history.

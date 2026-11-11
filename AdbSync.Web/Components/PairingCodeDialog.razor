@@ -1,0 +1,44 @@
+@inject ApiClient Api
+
+<MudDialog>
+    <DialogContent>
+        @if (_code is null && _error is null)
+        {
+            <div class="d-flex justify-center pa-6"><MudProgressCircular Indeterminate="true" /></div>
+        }
+        else if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error">@_error</MudAlert>
+        }
+        else
+        {
+            <MudText Typo="Typo.body2" Class="mb-4">Enter this code on the other client's sign-in screen. It works once.</MudText>
+            <MudPaper Outlined="true" Class="pa-4 mb-3 d-flex justify-center">
+                <MudText Typo="Typo.h4" Class="mono" Style="letter-spacing:.12em">@_code!.Code</MudText>
+            </MudPaper>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">Expires @Format.Local(_code!.ExpiresAt)</MudText>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => MudDialog.Close()">Done</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    private PairingCodeResponse? _code;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _code = await Api.PostAsync<PairingCodeResponse>("auth/pairing-codes");
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+    }
+}

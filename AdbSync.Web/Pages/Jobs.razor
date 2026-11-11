@@ -1,0 +1,268 @@
+@page "/"
+@implements IDisposable
+@inject StatusStore Status
+@inject ApiClient Api
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+
+<PageTitle>Jobs · AdbSync</PageTitle>
+
+<div class="d-flex align-center mb-6">
+    <MudText Typo="Typo.h4">Jobs</MudText>
+    <MudSpacer />
+    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Refresh" OnClick="RefreshAsync">Refresh</MudButton>
+</div>
+
+@if (Status.Snapshot is not { } snapshot)
+{
+    <MudGrid>
+        @for (var i = 0; i < 3; i++)
+        {
+            <MudItem xs="12" md="6" lg="4"><MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="220px" /></MudItem>
+        }
+    </MudGrid>
+}
+else if (snapshot.Jobs.Count == 0)
+{
+    <MudPaper Class="pa-8 d-flex flex-column align-center" Outlined="true">
+        <MudIcon Icon="@Icons.Material.Filled.SyncDisabled" Size="Size.Large" Class="mb-2" />
+        <MudText>No jobs yet.</MudText>
+    </MudPaper>
+}
+else
+{
+    <MudGrid>
+        @foreach (var job in snapshot.Jobs)
+        {
+            var busy = job.State != "idle";
+            var config = _jobs.GetValueOrDefault(job.JobId);
+            <MudItem xs="12" md="6" lg="4">
+                <MudCard Elevation="1" Class="job-card">
+                    <MudCardHeader>
+                        <CardHeaderContent>
+                            <MudText Typo="Typo.h6">@job.Name</MudText>
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">@(job.AppPackage ?? "No linked app")</MudText>
+                        </CardHeaderContent>
+                        <CardHeaderActions>
+                            <MudTooltip Text="@(job.Enabled ? "Enabled: runs on its schedule or when a phone changes" : "Disabled: only runs when you start it")">
+                                <MudSwitch T="bool" Value="job.Enabled" ValueChanged="v => SetEnabledAsync(job, v)" Color="Color.Primary"
+                                           Disabled="_pending.Contains(job.JobId)" />
+                            </MudTooltip>
+                        </CardHeaderActions>
+                    </MudCardHeader>
+                    <MudCardContent Class="pt-0">
+                        <div class="d-flex flex-wrap gap-2 mb-4">
+                            @if (busy)
+                            {
+                                <MudChip T="string" Color="Color.Primary" Size="Size.Small" Icon="@Icons.Material.Filled.Sync">
+                                    @(job.State == "queued" ? "Queued" : "Running" + (job.Phase is { } p ? " · " + Format.Words(p) : ""))
+                                </MudChip>
+                            }
+                            else
+                            {
+                                <MudChip T="string" Variant="Variant.Outlined" Size="Size.Small">@(job.Enabled ? "Idle" : "Disabled")</MudChip>
+                            }
+                            @if (job.Availability.ProjectFolder != "ok")
+                            {
+                                <MudTooltip Text="@(job.Availability.Detail ?? "")">
+                                    <MudChip T="string" Color="Color.Error" Size="Size.Small" Icon="@Icons.Material.Filled.FolderOff">Folder unavailable</MudChip>
+                                </MudTooltip>
+                            }
+                            @if (job.PendingConflicts > 0)
+                            {
+                                <MudChip T="string" Color="Color.Warning" Size="Size.Small" Icon="@Icons.Material.Filled.CallSplit">
+                                    @job.PendingConflicts conflict@(job.PendingConflicts == 1 ? "" : "s")
+                                </MudChip>
+                            }
+                            @if (job.Checkpoint is not null)
+                            {
+                                <MudChip T="string" Color="Color.Info" Size="Size.Small" Icon="@Icons.Material.Filled.Bookmark">Resumable</MudChip>
+                            }
+                        </div>
+
+                        <MudSimpleTable Dense="true" Elevation="0" Style="background:transparent">
+                            <tbody>
+                                <tr>
+                                    <td style="width:110px"><MudText Typo="Typo.body2" Class="mud-text-secondary">Last run</MudText></td>
+                                    <td>
+                                        @if (job.LastRun is { } last)
+                                        {
+                                            <MudLink Typo="Typo.body2" OnClick="() => OpenRunAsync(last.RunId)">
+                                                <MudText Typo="Typo.body2" Inline="true" Color="Format.RunColor(last.Status)">@Format.RunLabel(last.Status)</MudText>
+                                                · @Format.Ago(last.FinishedAt)
+                                            </MudLink>
+                                        }
+                                        else
+                                        {
+                                            <MudText Typo="Typo.body2">Never</MudText>
+                                        }
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><MudText Typo="Typo.body2" Class="mud-text-secondary">Devices</MudText></td>
+                                    <td>
+                                        <MudText Typo="Typo.body2">
+                                            @(config is null ? "-" : string.Join(", ", config.Devices.Select(d => _deviceNames.GetValueOrDefault(d.DeviceId, "?"))))
+                                        </MudText>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><MudText Typo="Typo.body2" Class="mud-text-secondary">Trigger</MudText></td>
+                                    <td>
+                                        <MudText Typo="Typo.body2">
+                                            @(config is null ? "-" : ScheduleText(config.Schedule))@(job.NextRunAt is { } next ? " · next " + Format.Ago(next) : "")
+                                        </MudText>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </MudSimpleTable>
+
+                        @if (job.LastRun is { Message: { Length: > 0 } message } && job.LastRun.Status is "failed" or "skipped" or "cancelled")
+                        {
+                            <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-3">@message</MudAlert>
+                        }
+                    </MudCardContent>
+                    <MudCardActions Class="px-4 pb-4">
+                        @if (busy)
+                        {
+                            <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Filled.Stop"
+                                       Disabled="_pending.Contains(job.JobId)" OnClick="() => StopAsync(job)">Stop</MudButton>
+                            @if (job.ActiveRunId is { } active)
+                            {
+                                <MudButton Variant="Variant.Text" Class="ml-2" OnClick="() => OpenRunAsync(active)">Watch</MudButton>
+                            }
+                        }
+                        else
+                        {
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.PlayArrow"
+                                       Disabled="_pending.Contains(job.JobId)" OnClick="() => RunAsync(job, normal: true)">Run</MudButton>
+                            <MudTooltip Text="Compare the phones with the master and report what would change, without copying anything">
+                                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Class="ml-2" StartIcon="@Icons.Material.Filled.Science"
+                                           Disabled="_pending.Contains(job.JobId)" OnClick="() => RunAsync(job, normal: false)">Dry run</MudButton>
+                            </MudTooltip>
+                        }
+                    </MudCardActions>
+                </MudCard>
+            </MudItem>
+        }
+    </MudGrid>
+}
+
+@code {
+    private Dictionary<Guid, JobDto> _jobs = [];
+    private Dictionary<Guid, string> _deviceNames = [];
+    private readonly HashSet<Guid> _pending = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        Status.Changed += OnChanged;
+        Status.Watch();
+        await LoadConfigAsync();
+    }
+
+    private async Task LoadConfigAsync()
+    {
+        try
+        {
+            var jobs = await Api.GetAsync<List<JobDto>>("jobs");
+            var devices = await Api.GetAsync<List<DeviceDto>>("devices");
+            _jobs = jobs.ToDictionary(j => j.Id);
+            _deviceNames = devices.ToDictionary(d => d.Id, d => d.Name);
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException)
+        {
+            if (!ex.IsSignedOut()) Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task RefreshAsync()
+    {
+        await LoadConfigAsync();
+        await Status.RefreshAsync();
+    }
+
+    private static string ScheduleText(ScheduleDto s) => s.Kind switch
+    {
+        "onChange" => "When a phone changes",
+        "interval" => $"Every {TimeSpan.FromSeconds(s.IntervalSeconds ?? 0):g}",
+        "dailyAt" => "Daily at " + string.Join(", ", s.DailyTimes ?? []),
+        "manual" => "Manual only",
+        _ => Format.Words(s.Kind),
+    };
+
+    private async Task SetEnabledAsync(JobStatusDto job, bool enabled)
+    {
+        _pending.Add(job.JobId);
+        try
+        {
+            var updated = await Api.PatchAsync<JobDto>($"jobs/{job.JobId}", new { enabled });
+            _jobs[updated.Id] = updated;
+            Snackbar.Add($"{job.Name} {(enabled ? "enabled" : "disabled")}", Severity.Success);
+            await Status.RefreshAsync();
+        }
+        catch (ApiException ex)
+        {
+            if (!ex.IsSignedOut()) Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _pending.Remove(job.JobId);
+        }
+    }
+
+    private async Task RunAsync(JobStatusDto job, bool normal)
+    {
+        _pending.Add(job.JobId);
+        try
+        {
+            var run = await Api.PostAsync<RunDto>($"jobs/{job.JobId}/runs", new { mode = normal ? "normal" : "dryRun" });
+            await Status.RefreshAsync();
+            _pending.Remove(job.JobId);
+            await OpenRunAsync(run.Id);
+        }
+        catch (ApiException ex)
+        {
+            if (!ex.IsSignedOut()) Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _pending.Remove(job.JobId);
+        }
+    }
+
+    private async Task StopAsync(JobStatusDto job)
+    {
+        _pending.Add(job.JobId);
+        try
+        {
+            await Api.PostAsync($"jobs/{job.JobId}/stop");
+            Snackbar.Add($"Stopping {job.Name} at the next file boundary", Severity.Info);
+            await Status.RefreshAsync();
+        }
+        catch (ApiException ex)
+        {
+            if (!ex.IsSignedOut()) Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _pending.Remove(job.JobId);
+        }
+    }
+
+    private async Task OpenRunAsync(Guid runId)
+    {
+        var parameters = new DialogParameters<RunDialog> { { d => d.RunId, runId }, { d => d.DeviceNames, _deviceNames } };
+        var dialog = await Dialogs.ShowAsync<RunDialog>("Run", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true, CloseButton = true });
+        await dialog.Result;
+        await Status.RefreshAsync();
+    }
+
+    private void OnChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        Status.Changed -= OnChanged;
+        Status.Unwatch();
+    }
+}
