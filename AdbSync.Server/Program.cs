@@ -101,6 +101,7 @@ api.MapEventEndpoints();
 api.MapJobEndpoints();
 api.MapRunEndpoints();
 api.MapDeviceEndpoints();
+api.MapConflictEndpoints();
 
 app.Logger.LogInformation(
     "AdbSync server listening on https://{Address}:{Port} as {Url}, data in {DataDir}, certificate fingerprint {Fingerprint}",

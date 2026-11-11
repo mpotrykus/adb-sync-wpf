@@ -13,4 +13,8 @@
     <ProjectReference Include="..\AdbSync.Engine\AdbSync.Engine.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.7" />
+  </ItemGroup>
+
 </Project>
