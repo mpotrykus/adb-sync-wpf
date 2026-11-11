@@ -110,3 +110,18 @@ body {
     max-height: 258px;
     object-fit: contain;
 }
+
+.qr-box {
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 8px;
+    width: 260px;
+    max-width: 100%;
+    margin: 0 auto;
+}
+
+.qr-box svg {
+    display: block;
+    width: 100%;
+    height: auto;
+}
