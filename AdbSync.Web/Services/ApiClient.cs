@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.WebAssembly.Http;
 
 namespace AdbSync.Web.Services;
 
@@ -95,7 +96,13 @@ public sealed class ApiClient(HttpClient http, Session session, NavigationManage
         using var _ = await SendAsync(HttpMethod.Delete, path, null, null, ct);
     }
 
-    private async Task<HttpResponseMessage> SendAsync(HttpMethod method, string path, object? body, MediaTypeHeaderValue? mediaType, CancellationToken ct)
+    /// <summary>Opens a long-lived response (server-sent events) without waiting for it to end. The caller disposes it.</summary>
+    public Task<HttpResponseMessage> OpenStreamAsync(string path, string? lastEventId, CancellationToken ct) =>
+        SendAsync(HttpMethod.Get, path, null, null, ct, streaming: true, lastEventId: lastEventId);
+
+    private async Task<HttpResponseMessage> SendAsync(
+        HttpMethod method, string path, object? body, MediaTypeHeaderValue? mediaType, CancellationToken ct,
+        bool streaming = false, string? lastEventId = null)
     {
         await session.LoadAsync();
         using var request = new HttpRequestMessage(method, "api/v1/" + path.TrimStart('/'));
@@ -104,7 +111,15 @@ public sealed class ApiClient(HttpClient http, Session session, NavigationManage
         if (body is not null)
             request.Content = JsonContent.Create(body, body.GetType(), mediaType);
 
-        var response = await http.SendAsync(request, ct);
+        if (streaming)
+        {
+            request.SetBrowserResponseStreamingEnabled(true);
+            request.Headers.Accept.ParseAdd("text/event-stream");
+            if (lastEventId is not null)
+                request.Headers.TryAddWithoutValidation("Last-Event-ID", lastEventId);
+        }
+
+        var response = await http.SendAsync(request, streaming ? HttpCompletionOption.ResponseHeadersRead : HttpCompletionOption.ResponseContentRead, ct);
         if (response.IsSuccessStatusCode)
             return response;
 

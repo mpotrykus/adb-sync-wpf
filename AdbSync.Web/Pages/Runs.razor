@@ -1,6 +1,7 @@
 @page "/runs"
 @implements IDisposable
 @inject ApiClient Api
+@inject StatusStore Status
 @inject ISnackbar Snackbar
 @inject IDialogService Dialogs
 
@@ -73,7 +74,6 @@ else
 }
 
 @code {
-    private readonly CancellationTokenSource _cts = new();
     private List<RunDto> _runs = [];
     private List<JobDto> _jobs = [];
     private Dictionary<Guid, string> _deviceNames = [];
@@ -94,7 +94,17 @@ else
             if (!ex.IsSignedOut()) Snackbar.Add(ex.Message, Severity.Error);
         }
         await ReloadAsync();
-        _ = AutoRefreshAsync(_cts.Token);
+        Status.EventReceived += OnEvent;
+    }
+
+    private void OnEvent(string type)
+    {
+        if (type is "run.queued" or "run.started" or "run.finished" && _runs.Count <= 50)
+            InvokeAsync(async () =>
+            {
+                await ReloadAsync();
+                StateHasChanged();
+            });
     }
 
     private string Query(string? cursor) =>
@@ -138,25 +148,6 @@ else
         await ReloadAsync();
     }
 
-    private async Task AutoRefreshAsync(CancellationToken ct)
-    {
-        try
-        {
-            while (true)
-            {
-                await Task.Delay(_runs.Any(r => r.Status is "queued" or "running") ? 3000 : 10000, ct);
-                if (_runs.Count <= 50)
-                {
-                    await ReloadAsync();
-                    await InvokeAsync(StateHasChanged);
-                }
-            }
-        }
-        catch (OperationCanceledException)
-        {
-        }
-    }
-
     private async Task OpenAsync(RunDto run)
     {
         var parameters = new DialogParameters<RunDialog> { { d => d.RunId, run.Id }, { d => d.DeviceNames, _deviceNames } };
@@ -164,9 +155,5 @@ else
             new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true, CloseButton = true });
     }
 
-    public void Dispose()
-    {
-        _cts.Cancel();
-        _cts.Dispose();
-    }
+    public void Dispose() => Status.EventReceived -= OnEvent;
 }

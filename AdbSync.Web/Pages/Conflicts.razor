@@ -1,5 +1,7 @@
 @page "/conflicts"
+@implements IDisposable
 @inject ApiClient Api
+@inject StatusStore Status
 @inject ISnackbar Snackbar
 @inject IDialogService Dialogs
 
@@ -107,7 +109,20 @@ else
             if (!ex.IsSignedOut()) Snackbar.Add(ex.Message, Severity.Error);
         }
         await ReloadAsync();
+        Status.EventReceived += OnEvent;
     }
+
+    private void OnEvent(string type)
+    {
+        if (type is "conflict.added" or "conflict.resolved" && _pending.Count == 0)
+            InvokeAsync(async () =>
+            {
+                await ReloadAsync();
+                StateHasChanged();
+            });
+    }
+
+    public void Dispose() => Status.EventReceived -= OnEvent;
 
     private string JobName(Guid id) => _jobs.FirstOrDefault(j => j.Id == id)?.Name ?? "Unknown job";
     private string DeviceName(Guid id) => _deviceNames.GetValueOrDefault(id, "Unknown device");
