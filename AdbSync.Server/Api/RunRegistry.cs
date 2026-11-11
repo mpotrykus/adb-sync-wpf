@@ -167,7 +167,31 @@ public sealed class RunRegistry : ISyncEventSink, IDisposable
     public void JobCompleted(string jobName, bool pushed) { }
     public void JobFailed(string jobName, Exception exception) { }
     public void JobCancelled(string jobName) { }
-    public void MergeConflictsDetected(string jobName, string deviceName, int conflictCount) { }
+    public void MergeConflictsDetected(string jobName, string deviceName, int conflictCount) =>
+        PublishConflicts(jobName, deviceName, autoResolved: conflictCount, held: 0, totalPending: null);
+
+    public void ConflictsPending(string jobName, string deviceName, int newCount, int totalPending) =>
+        PublishConflicts(jobName, deviceName, autoResolved: 0, held: newCount, totalPending: totalPending);
+
+    /// <summary>Raised after held conflicts are stored, so listeners can announce the new ones.</summary>
+    public event Action<string, string>? ConflictsHeld;
+
+    private async void PublishConflicts(string jobName, string deviceName, int autoResolved, int held, int? totalPending)
+    {
+        if (_active.Values.FirstOrDefault(r => r.JobName == jobName) is not { } run)
+            return;
+        try
+        {
+            var config = await _config.GetAsync();
+            var deviceId = config.Devices.FirstOrDefault(d => string.Equals(d.Name, deviceName, StringComparison.OrdinalIgnoreCase))?.Id;
+            _bus.Publish("run.conflicts", new { runId = run.Id, jobId = run.JobId, deviceId, autoResolved, held, totalPending });
+            if (held > 0)
+                ConflictsHeld?.Invoke(jobName, deviceName);
+        }
+        catch (Exception)
+        {
+        }
+    }
     public void WatchStarted(string jobName, string deviceName, bool liveWatch) { }
     public void WatchDegraded(string jobName, string deviceName, string reason) { }
     public void WatchStopped(string jobName, string deviceName) { }

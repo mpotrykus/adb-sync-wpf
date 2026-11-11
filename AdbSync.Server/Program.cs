@@ -68,6 +68,9 @@ builder.Services.AddSingleton<WatchStateTracker>();
 builder.Services.AddSingleton<JobStateRenamer>();
 builder.Services.AddHostedService<EngineEventSource>();
 builder.Services.AddAdbSyncEngine(paths);
+builder.Services.AddSingleton<LiveRunLogSink>();
+builder.Services.AddSingleton<ILiveRunLogSink>(sp => new PublishingRunLogSink(
+    sp.GetRequiredService<LiveRunLogSink>(), sp.GetRequiredService<EventBus>(), sp.GetRequiredService<RunRegistry>()));
 builder.Services.AddSingleton<ISyncEventSink>(sp => new CompositeSyncEventSink(
 [
     sp.GetRequiredService<JobStatusTracker>(),

@@ -147,7 +147,7 @@ public static class ConflictEndpoints
         }
     }
 
-    private static async Task<ConflictDto> ToDtoAsync(PendingConflict conflict, AppConfig config, IConflictResolver resolver, CancellationToken ct)
+    public static async Task<ConflictDto> ToDtoAsync(PendingConflict conflict, AppConfig config, IConflictResolver resolver, CancellationToken ct)
     {
         var files = await resolver.GetFilesAsync(conflict.Id, ct);
         var previewable = PreviewExtensions.Contains(Path.GetExtension(conflict.RelativePath));
