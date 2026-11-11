@@ -13,6 +13,9 @@ public sealed class DeviceConfig
     /// <summary>Static USB serial fallback; bypasses mDNS discovery entirely.</summary>
     public string? Serial { get; set; }
 
+    /// <summary>Fixed wireless-debugging port, for networks where mDNS can't reach this machine (Docker bridge, VPN).</summary>
+    public int? StaticPort { get; set; }
+
     /// <summary>Last resolved "ip:port" for a WiFi device, persisted so it survives app restarts.</summary>
     public string? CachedHostPort { get; set; }
 

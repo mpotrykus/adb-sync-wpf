@@ -74,6 +74,24 @@ public sealed class AdbDeviceResolver(
             return existing;
         }
 
+        if (device.StaticPort is { } staticPort)
+        {
+            var staticHostPort = $"{device.Ip}:{staticPort}";
+            try
+            {
+                await adbClient.ConnectAsync(device.Ip, staticPort, ct);
+                if (await GetStateAsync(staticHostPort, ct) == DeviceState.Online)
+                {
+                    Cache(device, staticHostPort);
+                    return staticHostPort;
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogDebug(ex, "Device '{Device}': static port {HostPort} didn't connect, trying mDNS", device.Name, staticHostPort);
+            }
+        }
+
         _logger.LogDebug("Device '{Device}': browsing mDNS for {ServiceType} to find {Ip}", device.Name, AdbTlsConnectServiceType, device.Ip);
         var announcements = (await mdns.BrowseAsync(AdbTlsConnectServiceType, MdnsBrowseTimeout, ct)).ToList();
         _logger.LogDebug(
