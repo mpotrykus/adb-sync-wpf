@@ -10,6 +10,18 @@
 <div class="d-flex align-center mb-6">
     <MudText Typo="Typo.h4">Jobs</MudText>
     <MudSpacer />
+    <MudSelect T="string" Value="_sortKey" ValueChanged="SetSortKeyAsync" Label="Sort by" Variant="Variant.Outlined" Margin="Margin.Dense"
+               Style="width:160px" Class="mr-1">
+        <MudSelectItem Value="@("order")">Order</MudSelectItem>
+        <MudSelectItem Value="@("name")">Name</MudSelectItem>
+        <MudSelectItem Value="@("lastRun")">Last run</MudSelectItem>
+        <MudSelectItem Value="@("nextRun")">Next run</MudSelectItem>
+        <MudSelectItem Value="@("status")">Status</MudSelectItem>
+    </MudSelect>
+    <MudTooltip Text="@(_sortDescending ? "Descending" : "Ascending")">
+        <MudIconButton Icon="@(_sortDescending ? Icons.Material.Filled.ArrowDownward : Icons.Material.Filled.ArrowUpward)"
+                       OnClick="ToggleSortDirectionAsync" Class="mr-2" />
+    </MudTooltip>
     <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Refresh" OnClick="RefreshAsync" Class="mr-2">Refresh</MudButton>
     <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="() => EditAsync(null)">New job</MudButton>
 </div>
@@ -33,7 +45,7 @@ else if (snapshot.Jobs.Count == 0)
 else
 {
     <MudGrid>
-        @foreach (var job in snapshot.Jobs)
+        @foreach (var job in Sorted(snapshot.Jobs))
         {
             var busy = job.State != "idle";
             var config = _jobs.GetValueOrDefault(job.JobId);
@@ -162,11 +174,78 @@ else
     private List<DeviceDto> _devices = [];
     private readonly HashSet<Guid> _pending = [];
 
+    private string _sortKey = "order";
+    private bool _sortDescending;
+
     protected override async Task OnInitializedAsync()
     {
         Status.Changed += OnChanged;
+        Status.EventReceived += OnEvent;
         Status.Watch();
         await LoadConfigAsync();
+        await LoadSortAsync();
+    }
+
+    private void OnEvent(string type)
+    {
+        if (type == "preferences.changed")
+            _ = InvokeAsync(async () =>
+            {
+                await LoadSortAsync();
+                StateHasChanged();
+            });
+    }
+
+    private async Task LoadSortAsync()
+    {
+        try
+        {
+            var prefs = await Api.GetAsync<DashboardPreferencesDto>("preferences/dashboard");
+            _sortKey = prefs.SortKey ?? "order";
+            _sortDescending = prefs.Descending;
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException)
+        {
+        }
+    }
+
+    private async Task SaveSortAsync()
+    {
+        try
+        {
+            await Api.PutAsync<DashboardPreferencesDto>("preferences/dashboard", new DashboardPreferencesDto(_sortKey, _sortDescending));
+        }
+        catch (ApiException ex)
+        {
+            if (!ex.IsSignedOut()) Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task SetSortKeyAsync(string key)
+    {
+        _sortKey = key;
+        await SaveSortAsync();
+    }
+
+    private async Task ToggleSortDirectionAsync()
+    {
+        _sortDescending = !_sortDescending;
+        await SaveSortAsync();
+    }
+
+    private IEnumerable<JobStatusDto> Sorted(IReadOnlyList<JobStatusDto> jobs)
+    {
+        IOrderedEnumerable<JobStatusDto> Apply<TKey>(Func<JobStatusDto, TKey> key) =>
+            _sortDescending ? jobs.OrderByDescending(key) : jobs.OrderBy(key);
+
+        return (_sortKey switch
+        {
+            "name" => Apply(j => j.Name.ToLowerInvariant()),
+            "lastRun" => Apply(j => j.LastRun?.FinishedAt ?? DateTimeOffset.MinValue),
+            "nextRun" => Apply(j => j.NextRunAt ?? DateTimeOffset.MaxValue),
+            "status" => Apply(j => j.LastRun?.Status ?? ""),
+            _ => Apply(j => _jobs.TryGetValue(j.JobId, out var config) ? config.Order : int.MaxValue),
+        }).ThenBy(j => j.Name, StringComparer.OrdinalIgnoreCase);
     }
 
     private async Task LoadConfigAsync()
@@ -298,6 +377,7 @@ else
     public void Dispose()
     {
         Status.Changed -= OnChanged;
+        Status.EventReceived -= OnEvent;
         Status.Unwatch();
     }
 }

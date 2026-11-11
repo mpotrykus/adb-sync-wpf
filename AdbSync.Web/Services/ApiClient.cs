@@ -85,6 +85,12 @@ public sealed class ApiClient(HttpClient http, Session session, NavigationManage
         using var _ = await SendAsync(HttpMethod.Post, path, body, null, ct);
     }
 
+    public async Task<T> PutAsync<T>(string path, object body, CancellationToken ct = default)
+    {
+        using var response = await SendAsync(HttpMethod.Put, path, body, null, ct);
+        return (await response.Content.ReadFromJsonAsync<T>(ct))!;
+    }
+
     public async Task<T> PatchAsync<T>(string path, object body, CancellationToken ct = default)
     {
         using var response = await SendAsync(HttpMethod.Patch, path, body, MergePatch, ct);
