@@ -220,9 +220,16 @@ public static class JobEndpoints
         {
             var config = await configService.GetAsync();
             var jobs = config.Jobs.Where(j => jobId is null || j.Id == jobId).ToList();
-            var runs = registry.Active.Where(r => jobId is null || r.JobId == jobId).ToList();
+            var active = registry.Active.Where(r => jobId is null || r.JobId == jobId).ToDictionary(r => r.Id);
+            var runs = new List<RunDto>();
             foreach (var job in jobs)
                 runs.AddRange((await history.ListRunsAsync(job.Name, ct)).Select(r => RunRegistry.FromHistory(r, job.Id)));
+            for (var i = 0; i < runs.Count; i++)
+            {
+                if (active.Remove(runs[i].Id, out var live))
+                    runs[i] = RunRegistry.WithContext(runs[i], live);
+            }
+            runs.AddRange(active.Values);
 
             var ordered = runs.OrderByDescending(r => r.QueuedAt).ThenByDescending(r => r.Id).ToList();
             var start = cursor is not null && int.TryParse(cursor, out var offset) && offset > 0 ? offset : 0;
@@ -235,12 +242,17 @@ public static class JobEndpoints
         {
             var config = await configService.GetAsync();
             var deviceIds = config.Devices.ToDictionary(d => d.Name, d => d.Id, StringComparer.OrdinalIgnoreCase);
-            if (registry.Get(runId) is { } active)
-                return Results.Ok(Detail(active, live.TryGet(active.JobName, out var steps) ? steps : [], deviceIds));
-            if (await history.GetRunAsync(runId, ct) is not { } record)
-                return Problems.NotFound("No run with that id.");
+            var activeRun = registry.Get(runId);
+            var record = await history.GetRunAsync(runId, ct);
+            if (record is null)
+                return activeRun is { } running
+                    ? Results.Ok(Detail(running, live.TryGet(running.JobName, out var steps) ? steps : [], deviceIds))
+                    : Problems.NotFound("No run with that id.");
             var jobIdForRun = config.Jobs.FirstOrDefault(j => j.Name == record.JobName)?.Id ?? Guid.Empty;
-            return Results.Ok(Detail(RunRegistry.FromHistory(record, jobIdForRun), await history.GetRunStepsAsync(runId, ct), deviceIds));
+            var finished = RunRegistry.FromHistory(record, jobIdForRun);
+            if (activeRun is not null)
+                finished = RunRegistry.WithContext(finished, activeRun);
+            return Results.Ok(Detail(finished, await history.GetRunStepsAsync(runId, ct), deviceIds));
         });
 
         api.MapGet("/runs/{runId:guid}/log", async (Guid runId, int? tail, IRunHistoryStore history, RunRegistry registry, ILiveRunLogSink live, CancellationToken ct) =>

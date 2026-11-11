@@ -111,6 +111,13 @@ public sealed class RunRegistry : ISyncEventSink, IDisposable
         record.FilesCopied, record.FilesDeleted, record.ErrorCount, record.BytesCopied,
         record.PullDuration?.TotalSeconds, record.PushDuration?.TotalSeconds);
 
+    /// <summary>
+    /// A finished run's history row is written before the registry drops the run and stamps its mode, trigger and
+    /// requester, so for a moment the row has defaults. This takes those fields from the registry's copy.
+    /// </summary>
+    public static RunDto WithContext(RunDto finished, RunDto active) =>
+        finished with { Mode = active.Mode, Trigger = active.Trigger, RequestedBy = active.RequestedBy, QueuedAt = active.QueuedAt };
+
     public static IReadOnlyList<RunStepDto> ToDtos(IReadOnlyList<RunStepRecord> steps, IReadOnlyDictionary<string, Guid> deviceIds) =>
         steps.Select(s => new RunStepDto(
             deviceIds.GetValueOrDefault(s.DeviceName), s.DeviceName, Contract.SyncPhase(s.Phase), StepStatus(s.Status),

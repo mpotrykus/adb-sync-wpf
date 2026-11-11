@@ -1,0 +1,172 @@
+@page "/runs"
+@implements IDisposable
+@inject ApiClient Api
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+
+<PageTitle>Run history · AdbSync</PageTitle>
+
+<div class="d-flex align-center flex-wrap gap-3 mb-6">
+    <MudText Typo="Typo.h4">Run history</MudText>
+    <MudSpacer />
+    <MudSelect T="Guid?" Value="_jobFilter" ValueChanged="OnJobFilterAsync" Label="Job" Variant="Variant.Outlined" Dense="true"
+               Margin="Margin.Dense" Clearable="true" Style="min-width:200px">
+        @foreach (var job in _jobs)
+        {
+            <MudSelectItem T="Guid?" Value="@((Guid?)job.Id)">@job.Name</MudSelectItem>
+        }
+    </MudSelect>
+    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Refresh" OnClick="ReloadAsync">Refresh</MudButton>
+</div>
+
+@if (_loading)
+{
+    <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="320px" />
+}
+else if (_runs.Count == 0)
+{
+    <MudPaper Class="pa-8 d-flex flex-column align-center" Outlined="true">
+        <MudIcon Icon="@Icons.Material.Filled.History" Size="Size.Large" Class="mb-2" />
+        <MudText>No runs yet.</MudText>
+    </MudPaper>
+}
+else
+{
+    <MudTable Items="_runs" Hover="true" Dense="true" Elevation="1" OnRowClick="@((TableRowClickEventArgs<RunDto> e) => OpenAsync(e.Item!))" T="RunDto" RowStyle="cursor:pointer">
+        <HeaderContent>
+            <MudTh>Started</MudTh>
+            <MudTh>Job</MudTh>
+            <MudTh>Status</MudTh>
+            <MudTh>Trigger</MudTh>
+            <MudTh Style="text-align:right">Copied</MudTh>
+            <MudTh Style="text-align:right">Deleted</MudTh>
+            <MudTh Style="text-align:right">Errors</MudTh>
+            <MudTh Style="text-align:right">Transferred</MudTh>
+            <MudTh>Duration</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd Style="white-space:nowrap">
+                <span title="@Format.Local(context.StartedAt ?? context.QueuedAt)">@Format.Ago(context.StartedAt ?? context.QueuedAt)</span>
+            </MudTd>
+            <MudTd>@context.JobName</MudTd>
+            <MudTd>
+                <MudChip T="string" Size="Size.Small" Color="Format.RunColor(context.Status)">@Format.RunLabel(context.Status)</MudChip>
+                @if (context.Mode != "normal")
+                {
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@Format.Words(context.Mode)</MudChip>
+                }
+            </MudTd>
+            <MudTd>@Format.Words(context.Trigger)</MudTd>
+            <MudTd Style="text-align:right">@context.FilesCopied</MudTd>
+            <MudTd Style="text-align:right">@context.FilesDeleted</MudTd>
+            <MudTd Style="text-align:right">@context.ErrorCount</MudTd>
+            <MudTd Style="text-align:right;white-space:nowrap">@Format.Bytes(context.BytesCopied)</MudTd>
+            <MudTd Style="white-space:nowrap">@Format.Duration(context.StartedAt ?? context.QueuedAt, context.FinishedAt)</MudTd>
+        </RowTemplate>
+    </MudTable>
+    @if (_next is not null)
+    {
+        <div class="d-flex justify-center mt-4">
+            <MudButton Variant="Variant.Outlined" Disabled="_loadingMore" OnClick="LoadMoreAsync">Load more</MudButton>
+        </div>
+    }
+}
+
+@code {
+    private readonly CancellationTokenSource _cts = new();
+    private List<RunDto> _runs = [];
+    private List<JobDto> _jobs = [];
+    private Dictionary<Guid, string> _deviceNames = [];
+    private Guid? _jobFilter;
+    private string? _next;
+    private bool _loading = true;
+    private bool _loadingMore;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _jobs = await Api.GetAsync<List<JobDto>>("jobs");
+            _deviceNames = (await Api.GetAsync<List<DeviceDto>>("devices")).ToDictionary(d => d.Id, d => d.Name);
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException)
+        {
+            if (!ex.IsSignedOut()) Snackbar.Add(ex.Message, Severity.Error);
+        }
+        await ReloadAsync();
+        _ = AutoRefreshAsync(_cts.Token);
+    }
+
+    private string Query(string? cursor) =>
+        "runs?limit=50" + (_jobFilter is { } id ? $"&jobId={id}" : "") + (cursor is null ? "" : $"&cursor={cursor}");
+
+    private async Task ReloadAsync()
+    {
+        try
+        {
+            var page = await Api.GetAsync<RunPageDto>(Query(null));
+            _runs = page.Items.ToList();
+            _next = page.NextCursor;
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException)
+        {
+            if (!ex.IsSignedOut()) Snackbar.Add(ex.Message, Severity.Error);
+        }
+        _loading = false;
+    }
+
+    private async Task LoadMoreAsync()
+    {
+        _loadingMore = true;
+        try
+        {
+            var page = await Api.GetAsync<RunPageDto>(Query(_next));
+            var known = _runs.Select(r => r.Id).ToHashSet();
+            _runs.AddRange(page.Items.Where(r => !known.Contains(r.Id)));
+            _next = page.NextCursor;
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException)
+        {
+            if (!ex.IsSignedOut()) Snackbar.Add(ex.Message, Severity.Error);
+        }
+        _loadingMore = false;
+    }
+
+    private async Task OnJobFilterAsync(Guid? id)
+    {
+        _jobFilter = id;
+        await ReloadAsync();
+    }
+
+    private async Task AutoRefreshAsync(CancellationToken ct)
+    {
+        try
+        {
+            while (true)
+            {
+                await Task.Delay(_runs.Any(r => r.Status is "queued" or "running") ? 3000 : 10000, ct);
+                if (_runs.Count <= 50)
+                {
+                    await ReloadAsync();
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task OpenAsync(RunDto run)
+    {
+        var parameters = new DialogParameters<RunDialog> { { d => d.RunId, run.Id }, { d => d.DeviceNames, _deviceNames } };
+        await Dialogs.ShowAsync<RunDialog>("Run", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true, CloseButton = true });
+    }
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+}
