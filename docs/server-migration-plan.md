@@ -113,6 +113,24 @@ Stage B notes (done 2026-11-11, steps 8-12):
   - On the Pi only the step 9 image was run. Steps 10-12 were tested on WSL x64, not in the arm64 container.
   - The companion app still speaks the legacy API (Phase 3). The web UI doesn't exist yet (Phase 4).
   - None of Stage A or B is in the installed WPF exe.
+  - Pausing the scheduler only stops timed runs, as in the WPF app. On-change watchers still start runs once a device is reachable. `pausedAt` isn't stored and is always `null`.
+
+Step 13 notes (2026-11-11, data migration rehearsal):
+
+- **No import tool needed.** The engine imports the legacy JSON on its first database open, so migrating means copying the PC data folder with a few changes. Only `projectsDirectory` holds a Windows path; job folder overrides would too, but none are set. Manifests, run file lists, pending conflicts and push-safety records hold relative paths only. Old run logs keep their Windows paths as history.
+- **Changes made to the copy:** `projectsDirectory` → `/projects`; `timeZone` set to the PC's zone (`America/Chicago`), since the Pi runs on Europe/London; cached phone ports cleared; `companionBroadcastsEnabled` off until Phase 3, because the broadcast service pushes a server URL to the companion app over adb and would point it away from the PC. Dropped: the legacy companion server token and port, `startAtLogin`, the PC certificate, WPF logs and sort state, a leftover legacy `.sync_checkpoint.json`, and a temp file from an interrupted save.
+- **Pre-imported with the scheduler paused.** The copy is imported once off the Pi, the scheduler paused through the API and the temporary client revoked, so the server starts paused and with no clients, certificate or adb keys from elsewhere.
+- **Project folders** go to `/mnt/usb2/AdbSync Projects` with rsync (from WSL, through Windows' `ssh.exe`), keeping modification times and skipping `.sync_staging`. Times must survive within the merge's 2 s tolerance, or every master file looks changed and the first run pushes everything to the phones. Checked by comparing size and time of every file.
+- **The phones are the gate.** The server's adb key is new and wireless debugging rejects unpaired keys, so until a phone is paired with the server, the server can't read or write it, whatever the scheduler or watchers do.
+
+Cut-over runbook (Phase 5, after the companion app speaks v1 and the web UI MVP exists):
+
+1. PC: pause the scheduler, wait until nothing runs, quit the tray app, turn off start at login, and confirm no `AdbSync` process is left.
+2. Re-stage the data from the stopped PC (`tools/migration/stage_pc_data.py`, then pre-import with the scheduler paused), so the manifests match the masters exactly.
+3. rsync the project folders again with `--delete` (excluding `.adbsync-root`) and compare size and time of every file.
+4. Replace the server's data folder with the new copy and start the container. Pair a client with `docker exec adbsync adbsync-server pair`.
+5. Pair each phone with the server (Wireless debugging → Pair device with pairing code, then `POST /devices/{id}/pair`), dry-run each job and check it reports no changes or only expected ones, then unpause the scheduler.
+6. Rollback: stop the container and start the PC app. The PC's data and project folders are left untouched throughout.
 
 ### Phase 3: Companion app targets the server
 
