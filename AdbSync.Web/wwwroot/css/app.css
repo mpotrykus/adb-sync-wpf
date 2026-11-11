@@ -125,3 +125,49 @@ body {
     width: 100%;
     height: auto;
 }
+
+.exec-row {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    overflow-x: auto;
+}
+
+.exec-step {
+    flex: 1 1 0;
+    min-width: 96px;
+    text-align: center;
+    padding: 8px 6px;
+    border-radius: 8px;
+    border: 1px solid rgba(127, 127, 127, 0.35);
+    color: #7a7f8a;
+}
+
+.exec-link {
+    flex: 0 0 16px;
+    align-self: center;
+    height: 2px;
+    background: rgba(127, 127, 127, 0.4);
+}
+
+.exec-glyph {
+    font-size: 20px;
+    line-height: 24px;
+}
+
+.exec-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: inherit;
+}
+
+.exec-detail {
+    font-size: 11px;
+    opacity: 0.85;
+}
+
+.exec-running { color: #2a9d8f; border-color: #2a9d8f; background: rgba(42, 157, 143, 0.12); }
+.exec-succeeded { color: #2e9d57; border-color: #2e9d57; background: rgba(46, 157, 87, 0.12); }
+.exec-failed { color: #d1453b; border-color: #d1453b; background: rgba(209, 69, 59, 0.12); }
+.exec-waiting, .exec-cancelled { color: #d98e04; border-color: #d98e04; background: rgba(217, 142, 4, 0.12); }
+.exec-pending, .exec-skipped { background: transparent; }

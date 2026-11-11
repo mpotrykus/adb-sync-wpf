@@ -56,28 +56,7 @@
                     }
                     else
                     {
-                        <MudTable Items="detail.Steps" Dense="true" Hover="true" Elevation="0">
-                            <HeaderContent>
-                                <MudTh>Device</MudTh>
-                                <MudTh>Phase</MudTh>
-                                <MudTh>Status</MudTh>
-                                <MudTh Style="text-align:right">Copied</MudTh>
-                                <MudTh Style="text-align:right">Deleted</MudTh>
-                                <MudTh Style="text-align:right">Conflicts</MudTh>
-                                <MudTh Style="text-align:right">Errors</MudTh>
-                                <MudTh>Time</MudTh>
-                            </HeaderContent>
-                            <RowTemplate>
-                                <MudTd>@context.DeviceName</MudTd>
-                                <MudTd>@Format.Words(context.Phase)</MudTd>
-                                <MudTd>@Format.Words(context.Status)</MudTd>
-                                <MudTd Style="text-align:right">@context.FilesCopied</MudTd>
-                                <MudTd Style="text-align:right">@context.FilesDeleted</MudTd>
-                                <MudTd Style="text-align:right">@context.Conflicts</MudTd>
-                                <MudTd Style="text-align:right">@context.Errors</MudTd>
-                                <MudTd>@Format.Duration(context.StartedAt, context.EndedAt)</MudTd>
-                            </RowTemplate>
-                        </MudTable>
+                        <ExecutionGraph Steps="detail.Steps" />
                     }
                 </MudTabPanel>
                 <MudTabPanel Text="@($"Files{(_files is { } f ? $" ({f.Items.Count})" : "")}")">
