@@ -41,6 +41,8 @@ import android.text.TextUtils
 import android.text.format.DateUtils
 import android.text.format.Formatter
 import android.widget.PopupMenu
+import android.widget.FrameLayout
+import android.widget.EditText
 import java.time.OffsetDateTime
 import java.net.HttpURLConnection
 import java.time.Duration
@@ -139,6 +141,7 @@ class MainActivity : Activity() {
                 insets
             }
         })
+        handlePairingIntent(intent)
     }
 
     override fun onResume() {
@@ -538,6 +541,90 @@ class MainActivity : Activity() {
         dialog.show()
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handlePairingIntent(intent)
+    }
+
+    private fun handlePairingIntent(intent: Intent?) {
+        val link = intent?.data?.toString()?.let { PairingLink.parse(it) } ?: return
+        intent.data = null
+        showConnectDialog(link)
+    }
+
+    /** Asks for a pairing link (pasted, or opened from the QR code) and pairs this phone with the server. */
+    private fun showConnectDialog(prefilled: PairingLink?) {
+        val input = EditText(this).apply {
+            hint = "adbsync://pair?url=…"
+            setSingleLine(false)
+            minLines = 2
+            textSize = 13f
+            setTextColor(Ui.TEXT_PRIMARY)
+            setHintTextColor(Ui.TEXT_SECONDARY)
+            if (prefilled != null) setText("adbsync://pair?url=${Uri.encode(prefilled.url)}&code=${Uri.encode(prefilled.code)}&fp=${prefilled.certSha256}")
+        }
+        val holder = FrameLayout(this).apply {
+            setPadding(dp(20), dp(8), dp(20), 0)
+            addView(input)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Connect to server")
+            .setMessage("In the web UI, open the account menu → Pair another client, then scan the QR code with this phone's camera, or paste the pairing link here.")
+            .setView(holder)
+            .setPositiveButton("Connect") { _, _ -> connect(input.text.toString()) }
+            .setNegativeButton("Cancel", null)
+            .create()
+            .styled()
+            .show()
+        if (prefilled != null) connect(input.text.toString())
+    }
+
+    private fun connect(text: String) {
+        val link = PairingLink.parse(text)
+        if (link == null) {
+            Toast.makeText(this, "That isn't an AdbSync pairing link.", Toast.LENGTH_LONG).show()
+            return
+        }
+        val version = runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull()
+        Toast.makeText(this, "Connecting…", Toast.LENGTH_SHORT).show()
+        io.execute {
+            val result = runCatching { Enrollment.pair(link, version) }
+            ui {
+                result.onSuccess { config ->
+                    PcConfig.save(this, config)
+                    chooseDevice(config)
+                }.onFailure {
+                    val message = (it as? EnrollmentException)?.message ?: "Couldn't reach the server: ${it.javaClass.simpleName}"
+                    Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    /** Which of the server's devices is this phone? The server needs to know to reach it and to guard its apps. */
+    private fun chooseDevice(config: PcConfig) {
+        io.execute {
+            val devices = runCatching { PcClient(config).deviceList() }.getOrNull()
+            ui {
+                if (devices.isNullOrEmpty()) {
+                    Toast.makeText(this, "The server has no devices yet. Add this phone in the web UI first, then choose it here.", Toast.LENGTH_LONG).show()
+                    return@ui
+                }
+                AlertDialog.Builder(this)
+                    .setTitle("Which device is this phone?")
+                    .setItems(devices.map { it.name + (it.host?.let { h -> " · $h" } ?: "") }.toTypedArray()) { _, which ->
+                        PcConfig.save(this, config.copy(deviceName = devices[which].name))
+                        Toast.makeText(this, "Connected as ${devices[which].name}", Toast.LENGTH_SHORT).show()
+                    }
+                    .setNegativeButton("Later", null)
+                    .create()
+                    .styled()
+                    .show()
+            }
+        }
+    }
+
     private fun refreshSetup() {
         setupCard.removeAllViews()
         var first = true
@@ -555,6 +642,14 @@ class MainActivity : Activity() {
                 setupCard.addView(button(actionText, ButtonKind.Primary, fill = true, onClick = action))
             }
         }
+
+        val connection = PcConfig.load(this)
+        item(
+            connection?.deviceName != null,
+            "Connected to ${connection?.pcName} as ${connection?.deviceName}",
+            if (connection == null) "Not connected to an AdbSync server" else "Connected to ${connection.pcName}, but this phone isn't chosen yet",
+            if (connection == null) "Connect to server" else "Choose this phone",
+        ) { if (connection == null) showConnectDialog(null) else chooseDevice(connection) }
 
         item(
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED,
