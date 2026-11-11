@@ -2,7 +2,7 @@ using Microsoft.Data.Sqlite;
 
 namespace AdbSync.Core.Services.Persistence;
 
-internal static class Sql
+public static class Sql
 {
     public static async Task<int> ExecuteAsync(
         SqliteConnection connection, SqliteTransaction? transaction, string sql, CancellationToken ct, params (string Name, object? Value)[] parameters)

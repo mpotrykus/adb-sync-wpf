@@ -60,5 +60,18 @@ public static class EngineMigrations
                 RootId TEXT NOT NULL,
                 MasterPath TEXT NOT NULL);
             """),
+        new(4, """
+            CREATE TABLE Clients (
+                Id TEXT PRIMARY KEY,
+                Name TEXT NOT NULL,
+                Kind TEXT NOT NULL,
+                Version TEXT,
+                TokenHash TEXT NOT NULL UNIQUE,
+                CreatedAt TEXT NOT NULL,
+                LastSeenAt TEXT);
+            CREATE TABLE PairingCodes (
+                CodeHash TEXT PRIMARY KEY,
+                ExpiresAt TEXT NOT NULL);
+            """),
     ];
 }

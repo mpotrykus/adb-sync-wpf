@@ -81,6 +81,7 @@ jobs:
           dotnet restore AdbSync.Cli/AdbSync.Cli.csproj
           dotnet restore AdbSync.Engine/AdbSync.Engine.csproj
           dotnet restore AdbSync.Server/AdbSync.Server.csproj
+          dotnet restore AdbSync.Server.Tests/AdbSync.Server.Tests.csproj
           dotnet restore AdbSync.Core.Tests/AdbSync.Core.Tests.csproj
           dotnet restore AdbSync.Core.IntegrationTests/AdbSync.Core.IntegrationTests.csproj
 
@@ -95,6 +96,9 @@ jobs:
 
       - name: Run integration tests
         run: dotnet test AdbSync.Core.IntegrationTests/AdbSync.Core.IntegrationTests.csproj --configuration ${{ matrix.configuration }} --no-restore
+
+      - name: Run server tests
+        run: dotnet test AdbSync.Server.Tests/AdbSync.Server.Tests.csproj --configuration ${{ matrix.configuration }} --no-restore
 
   publish:
     needs: [build-and-test, linux-build-and-test]

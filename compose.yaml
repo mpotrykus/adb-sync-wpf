@@ -15,6 +15,12 @@ services:
     environment:
       TZ: ${TZ:-Etc/UTC}
       ADBSYNC_SERVER_NAME: ${ADBSYNC_SERVER_NAME:-adbsync}
+      # The address clients use, put into pairing links. Defaults to https://<hostname>:47615.
+      ADBSYNC_PUBLIC_URL: ${ADBSYNC_PUBLIC_URL:-}
+      # Optional PEM certificate and key (paths inside the container), for example from `tailscale cert`.
+      # Without them the server uses a self-signed certificate that clients pin by fingerprint.
+      ADBSYNC_TLS_CERT: ${ADBSYNC_TLS_CERT:-}
+      ADBSYNC_TLS_KEY: ${ADBSYNC_TLS_KEY:-}
     volumes:
       # Config, database, logs, certificate and adb keys.
       - ${ADBSYNC_DATA:-./data}:/data

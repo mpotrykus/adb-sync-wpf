@@ -3,6 +3,7 @@ using AdbSync.Core.Services.Config;
 using AdbSync.Core.Services.Persistence;
 using AdbSync.Core.Services.Scheduling;
 using AdbSync.Engine.Services;
+using Microsoft.AspNetCore.Authorization;
 using System.Reflection;
 
 namespace AdbSync.Server;
@@ -23,7 +24,7 @@ public static class SystemEndpoints
                 new Dictionary<string, string>(),
                 ScheduleClock.Zone(config.Settings).Id,
                 []));
-        });
+        }).AllowAnonymous();
 
         api.MapGet("/health", async (EngineDatabase database, AppConfigService configService, CancellationToken ct) =>
         {
@@ -50,7 +51,7 @@ public static class SystemEndpoints
                 : new HealthCheck("degraded", string.Join(" ", unavailable));
 
             return Results.Ok(new Health(unavailable.Count == 0 ? "ok" : "degraded", checks));
-        });
+        }).AllowAnonymous();
     }
 
     private static string ServerVersion =>
