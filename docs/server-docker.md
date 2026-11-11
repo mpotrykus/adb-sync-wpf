@@ -25,7 +25,7 @@ docker compose ps                          # STATUS shows (healthy) once it's up
 | Setting | Default | Purpose |
 |---|---|---|
 | `ADBSYNC_PROJECTS` | required | Host folder mounted at `/projects`. |
-| `ADBSYNC_DATA` | `./data` | Host folder mounted at `/data`: database, logs, certificate, adb keys. |
+| `ADBSYNC_DATA` | `./data` | Host folder mounted at `/data`: database, logs, certificate, adb keys (`adb-home/.android`). |
 | `PUID` / `PGID` | `1000` | User the server runs as, so files on the projects drive belong to that host user. |
 | `TZ` | `Etc/UTC` | Time zone for daily schedules and quiet hours, unless the `timeZone` setting overrides it. |
 | `ADBSYNC_SERVER_NAME` | `adbsync` | Name shown to clients. |
@@ -50,7 +50,7 @@ The server is designed to be reached over Tailscale or WireGuard, or on a truste
 
 - **Host networking.** Wireless adb connects out to a random port on each phone, and mDNS discovery doesn't cross a bridge network.
 - **`init: true` and `stop_grace_period: 90s`.** `docker stop` sends SIGTERM, which cancels running jobs at the next file boundary instead of killing them mid-push.
-- **adb keys in `/data/android`.** A rebuilt container stays the same adb host, so phones don't have to authorise it again.
+- **adb keys in `/data/adb-home/.android`.** The server sets `HOME` to `/data/adb-home` because Debian's adb ignores `ANDROID_USER_HOME`. A rebuilt container stays the same adb host, so phones don't have to authorise it again.
 - **`propagation: rslave` on `/projects`.** A drive mounted after the container started becomes visible without a restart.
 - **The `.adbsync-root` marker.** If the drive behind `ADBSYNC_PROJECTS` isn't mounted, the container sees an empty folder. Jobs refuse to run there ("project folder unavailable") instead of treating it as an empty master.
 

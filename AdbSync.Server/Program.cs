@@ -28,13 +28,14 @@ if (args.Length > 0)
     return 1;
 }
 
-// adb keeps its RSA key in ANDROID_USER_HOME (default ~/.android). Kept in the data volume, the server stays the same
-// adb host across container rebuilds, so phones don't have to authorise it again. Set before adb is first started.
-if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ANDROID_USER_HOME")))
+// Debian's adb 34 ignores ANDROID_USER_HOME, ANDROID_SDK_HOME and ANDROID_PREFS_ROOT and always keeps its RSA key in
+// $HOME/.android, which in a container is lost on every recreate and leaves every phone distrusting the server. Pointing
+// HOME into the data volume keeps the key, so phones only have to authorise this server once. Set before adb first starts.
+if (!OperatingSystem.IsWindows())
 {
-    var adbHome = Path.Combine(paths.Root, "android");
+    var adbHome = Path.Combine(paths.Root, "adb-home");
     Directory.CreateDirectory(adbHome);
-    Environment.SetEnvironmentVariable("ANDROID_USER_HOME", adbHome);
+    Environment.SetEnvironmentVariable("HOME", adbHome);
 }
 
 using var instanceLock = InstanceLock.TryAcquire(paths, "adbsync-server");
