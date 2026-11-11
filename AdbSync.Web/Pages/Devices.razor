@@ -8,7 +8,8 @@
 <div class="d-flex align-center mb-6">
     <MudText Typo="Typo.h4">Devices</MudText>
     <MudSpacer />
-    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Refresh" OnClick="LoadAsync">Refresh</MudButton>
+    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Refresh" OnClick="LoadAsync" Class="mr-2">Refresh</MudButton>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="() => EditAsync(null)">New device</MudButton>
 </div>
 
 @if (_devices is null)
@@ -75,6 +76,10 @@ else
                                    Disabled="_testing.Contains(device.Id)" OnClick="() => TestAsync(device)">
                             @(_testing.Contains(device.Id) ? "Testing…" : "Test connection")
                         </MudButton>
+                        <MudSpacer />
+                        <MudTooltip Text="Edit device">
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" OnClick="() => EditAsync(device)" />
+                        </MudTooltip>
                     </MudCardActions>
                 </MudCard>
             </MudItem>
@@ -126,6 +131,15 @@ else
         {
             _testing.Remove(device.Id);
         }
+    }
+
+    private async Task EditAsync(DeviceDto? device)
+    {
+        var dialog = await Dialogs.ShowAsync<DeviceEditDialog>(device is null ? "New device" : "Edit device",
+            new DialogParameters<DeviceEditDialog> { { d => d.Device, device } },
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        if (await dialog.Result is { Canceled: false })
+            await LoadAsync();
     }
 
     private async Task PairAsync(DeviceDto device)

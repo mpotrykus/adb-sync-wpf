@@ -1,0 +1,198 @@
+@page "/settings"
+@inject ApiClient Api
+@inject ISnackbar Snackbar
+
+<PageTitle>Settings · AdbSync</PageTitle>
+
+<div class="d-flex align-center mb-6">
+    <MudText Typo="Typo.h4">Settings</MudText>
+    <MudSpacer />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(_s is null || _saving)" OnClick="SaveAsync">Save</MudButton>
+</div>
+
+@if (_error is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">@_error</MudAlert>
+}
+
+@if (_s is null)
+{
+    <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="360px" />
+}
+else
+{
+    <MudGrid Spacing="3">
+        <MudItem xs="12" md="6">
+            <MudPaper Class="pa-4" Elevation="1">
+                <MudText Typo="Typo.h6" Class="mb-3">General</MudText>
+                <MudStack Spacing="3">
+                    <MudTextField Value="_s.ProjectsDirectory" Label="Projects directory" Variant="Variant.Outlined" ReadOnly="true"
+                                  HelperText="Changed through a move operation, not here." Class="mono-input" />
+                    <MudTextField @bind-Value="_timeZone" Label="Time zone" Variant="Variant.Outlined"
+                                  HelperText="IANA name, e.g. America/Chicago. Daily schedules and quiet hours use it." />
+                    <MudSwitch T="bool" @bind-Value="_runMissed" Color="Color.Primary" Label="Run missed schedules after a restart" />
+                    <MudSwitch T="bool" @bind-Value="_broadcasts" Color="Color.Primary" Label="Announce the server to the companion app" />
+                </MudStack>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="6">
+            <MudPaper Class="pa-4" Elevation="1">
+                <MudText Typo="Typo.h6" Class="mb-3">Syncing</MudText>
+                <MudStack Spacing="3">
+                    <MudSelect T="string" @bind-Value="_conflictPolicy" Label="When a file changed on two sides" Variant="Variant.Outlined">
+                        <MudSelectItem Value="@("newestWins")">Newest wins</MudSelectItem>
+                        <MudSelectItem Value="@("ask")">Ask me</MudSelectItem>
+                    </MudSelect>
+                    <MudSwitch T="bool" @bind-Value="_backupLosers" Color="Color.Primary" Label="Keep a copy of the losing version" />
+                    <div class="d-flex gap-3">
+                        <MudNumericField T="int" @bind-Value="_maxJobs" Label="Jobs at once" Min="1" Variant="Variant.Outlined" />
+                        <MudNumericField T="int" @bind-Value="_maxPerDevice" Label="Jobs per device" Min="1" Variant="Variant.Outlined" />
+                    </div>
+                    <MudNumericField T="int" @bind-Value="_pushSafety" Label="Push safety minimum (%)" Min="0" Max="100" Variant="Variant.Outlined"
+                                     HelperText="A push that would delete more than this share of a phone's files is held back." />
+                    <div class="d-flex gap-3">
+                        <MudNumericField T="int" @bind-Value="_retryAttempts" Label="Retry attempts" Min="0" Variant="Variant.Outlined" />
+                        <MudNumericField T="int" @bind-Value="_retryBackoff" Label="Backoff (seconds)" Min="0" Variant="Variant.Outlined" />
+                    </div>
+                    <MudNumericField T="int?" @bind-Value="_throttle" Label="Bandwidth limit (KB/s, empty for none)" Min="1" Variant="Variant.Outlined" />
+                </MudStack>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="6">
+            <MudPaper Class="pa-4" Elevation="1">
+                <MudText Typo="Typo.h6" Class="mb-3">Retention</MudText>
+                <MudStack Spacing="3">
+                    <div class="d-flex gap-3">
+                        <MudNumericField T="int" @bind-Value="_logDays" Label="Logs (days)" Min="1" Variant="Variant.Outlined" />
+                        <MudNumericField T="int" @bind-Value="_conflictDays" Label="Conflict copies (days)" Min="1" Variant="Variant.Outlined" />
+                    </div>
+                    <div class="d-flex gap-3">
+                        <MudNumericField T="int" @bind-Value="_checkpointDays" Label="Checkpoints (days)" Min="1" Variant="Variant.Outlined" />
+                        <MudNumericField T="int" @bind-Value="_rollbackKeep" Label="Rollback points kept" Min="0" Variant="Variant.Outlined" />
+                    </div>
+                    <div class="d-flex gap-3">
+                        <MudNumericField T="int" @bind-Value="_historyEntries" Label="Runs kept per job" Min="1" Variant="Variant.Outlined" />
+                        <MudNumericField T="int" @bind-Value="_fileDetailRuns" Label="Runs with file detail" Min="0" Variant="Variant.Outlined" />
+                    </div>
+                </MudStack>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="6">
+            <MudPaper Class="pa-4" Elevation="1">
+                <MudText Typo="Typo.h6" Class="mb-3">Notifications</MudText>
+                <MudStack Spacing="2">
+                    <MudSwitch T="bool" @bind-Value="_showInfo" Color="Color.Primary" Label="Show info notifications" />
+                    <MudSwitch T="bool" @bind-Value="_showErrors" Color="Color.Primary" Label="Show error notifications" />
+                    <MudSwitch T="bool" @bind-Value="_quietEnabled" Color="Color.Primary" Label="Quiet hours" />
+                    @if (_quietEnabled)
+                    {
+                        <div class="d-flex gap-3">
+                            <MudTextField @bind-Value="_quietStart" Label="From (HH:mm)" Variant="Variant.Outlined" />
+                            <MudTextField @bind-Value="_quietEnd" Label="Until (HH:mm)" Variant="Variant.Outlined" />
+                        </div>
+                    }
+                </MudStack>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+}
+
+@code {
+    private SettingsDto? _s;
+    private string _timeZone = "";
+    private bool _runMissed, _broadcasts, _backupLosers, _showInfo, _showErrors, _quietEnabled;
+    private string _conflictPolicy = "newestWins";
+    private string _quietStart = "22:00", _quietEnd = "07:00";
+    private int _maxJobs, _maxPerDevice, _pushSafety, _retryAttempts, _retryBackoff;
+    private int _logDays, _conflictDays, _checkpointDays, _rollbackKeep, _historyEntries, _fileDetailRuns;
+    private int? _throttle;
+    private bool _saving;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            Load(await Api.GetAsync<SettingsDto>("settings"));
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException)
+        {
+            if (!ex.IsSignedOut()) _error = ex.Message;
+        }
+    }
+
+    private void Load(SettingsDto s)
+    {
+        _s = s;
+        _timeZone = s.TimeZone;
+        _runMissed = s.RunMissedSchedules;
+        _broadcasts = s.CompanionBroadcastsEnabled;
+        _conflictPolicy = s.ConflictPolicy;
+        _backupLosers = s.BackupConflictLosers;
+        _maxJobs = s.MaxConcurrentJobs;
+        _maxPerDevice = s.MaxConcurrentPerDevice;
+        _pushSafety = s.PushSafetyMinimumPercent;
+        _retryAttempts = s.RetryMaxAttempts;
+        _retryBackoff = s.RetryBackoffSeconds;
+        _throttle = s.BandwidthThrottleKBps;
+        _logDays = s.LogRetentionDays;
+        _conflictDays = s.ConflictRetentionDays;
+        _checkpointDays = s.CheckpointRetentionDays;
+        _rollbackKeep = s.RollbackPointsToKeep;
+        _historyEntries = s.MaxRunHistoryEntries;
+        _fileDetailRuns = s.FileDetailRunsKept;
+        _showInfo = s.Notifications.ShowInfo;
+        _showErrors = s.Notifications.ShowErrors;
+        _quietEnabled = s.Notifications.QuietHours.Enabled;
+        _quietStart = s.Notifications.QuietHours.Start;
+        _quietEnd = s.Notifications.QuietHours.End;
+    }
+
+    private async Task SaveAsync()
+    {
+        _error = null;
+        _saving = true;
+        try
+        {
+            var saved = await Api.PatchAsync<SettingsDto>("settings", new
+            {
+                timeZone = _timeZone.Trim(),
+                runMissedSchedules = _runMissed,
+                companionBroadcastsEnabled = _broadcasts,
+                conflictPolicy = _conflictPolicy,
+                backupConflictLosers = _backupLosers,
+                maxConcurrentJobs = _maxJobs,
+                maxConcurrentPerDevice = _maxPerDevice,
+                pushSafetyMinimumPercent = _pushSafety,
+                retryMaxAttempts = _retryAttempts,
+                retryBackoffSeconds = _retryBackoff,
+                bandwidthThrottleKBps = _throttle,
+                logRetentionDays = _logDays,
+                conflictRetentionDays = _conflictDays,
+                checkpointRetentionDays = _checkpointDays,
+                rollbackPointsToKeep = _rollbackKeep,
+                maxRunHistoryEntries = _historyEntries,
+                fileDetailRunsKept = _fileDetailRuns,
+                notifications = new
+                {
+                    showInfo = _showInfo,
+                    showErrors = _showErrors,
+                    quietHours = new { enabled = _quietEnabled, start = _quietStart, end = _quietEnd },
+                },
+            });
+            Load(saved);
+            Snackbar.Add("Settings saved", Severity.Success);
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException)
+        {
+            if (!ex.IsSignedOut()) _error = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}
