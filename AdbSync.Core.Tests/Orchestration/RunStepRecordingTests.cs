@@ -20,6 +20,7 @@ public class RunStepRecordingTests : IDisposable
     {
         _appPaths = new AppPaths(Path.Combine(_root, "appdata"));
         _settings = new GlobalSettings { ProjectsDirectory = Path.Combine(_root, "projects"), StaleLockHours = 4 };
+        ProjectFolders.AdoptRoot(_settings.ProjectsDirectory);
     }
 
     public void Dispose()

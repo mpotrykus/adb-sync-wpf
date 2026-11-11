@@ -17,6 +17,7 @@ public partial class JobEditorWindow : Window
     private readonly SyncJobConfig? _originalJob;
     private readonly List<DeviceConfig> _devices;
     private readonly List<string> _otherJobNames;
+    private readonly string _globalProjectsDirectory;
     private readonly IAdbDeviceResolver _deviceResolver;
     private readonly IDeviceChangeWatcher _changeWatcher;
     private readonly IRemoteFileSystemFactory _remoteFileSystemFactory;
@@ -32,6 +33,7 @@ public partial class JobEditorWindow : Window
         _originalJob = job;
         _devices = config.Devices;
         _otherJobNames = config.Jobs.Where(j => j != job).Select(j => j.Name).ToList();
+        _globalProjectsDirectory = config.Settings.ProjectsDirectory;
         _deviceResolver = deviceResolver;
         _changeWatcher = changeWatcher;
         _remoteFileSystemFactory = remoteFileSystemFactory;
@@ -258,6 +260,17 @@ public partial class JobEditorWindow : Window
         }
         if (hasError)
             return;
+
+        var root = projectDirectory.Length > 0 ? projectDirectory : _globalProjectsDirectory;
+        try
+        {
+            ProjectFolders.AdoptRoot(root);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            MessageBox.Show(this, $"Can't use the projects folder '{root}': {ex.Message}", "AdbSync", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
 
         var schedule = BuildSchedule();
         schedule.LastRunAt = _originalJob?.Schedule.LastRunAt;

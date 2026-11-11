@@ -261,6 +261,7 @@ public partial class DashboardWindow : Window
         JobRunOutcome.CompletedNoChanges => "No changes",
         JobRunOutcome.Skipped => "Skipped: already running",
         JobRunOutcome.SkippedAppRunning => "Skipped: app running",
+        JobRunOutcome.SkippedProjectFolderUnavailable => $"Skipped: {record.ErrorMessage}",
         JobRunOutcome.Failed => $"Error: {record.ErrorMessage}",
         JobRunOutcome.DryRunCompleted => "Dry run completed",
         JobRunOutcome.Cancelled => "Stopped",
@@ -650,8 +651,14 @@ public partial class DashboardWindow : Window
         if (job is null)
             return;
 
-        if (ProjectFolders.TryProjectRoot(job.Resolve(config.Settings), job.Name) is not { } projectRoot)
+        var eff = job.Resolve(config.Settings);
+        if (ProjectFolders.TryProjectRoot(eff, job.Name) is not { } projectRoot)
             return;
+        if (ProjectFolders.Unavailable(eff, job.Name) is { } unavailable)
+        {
+            MessageBox.Show(this, unavailable, "AdbSync", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
 
         Directory.CreateDirectory(projectRoot);
         Process.Start(new ProcessStartInfo("explorer.exe", $"\"{projectRoot}\"") { UseShellExecute = true });

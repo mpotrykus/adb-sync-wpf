@@ -171,6 +171,7 @@ public sealed class JobStatusTracker : ISyncEventSink
         JobRunOutcome.DryRunCompleted => ("Dry run completed", false),
         JobRunOutcome.Skipped => ("Skipped", false),
         JobRunOutcome.SkippedAppRunning => ("Skipped: app running", false),
+        JobRunOutcome.SkippedProjectFolderUnavailable => ($"Skipped: {r.ErrorMessage}", false),
         JobRunOutcome.Cancelled => ("Stopped", false),
         JobRunOutcome.Failed => ($"Error: {r.ErrorMessage}", true),
         _ => (r.Outcome.ToString(), false),

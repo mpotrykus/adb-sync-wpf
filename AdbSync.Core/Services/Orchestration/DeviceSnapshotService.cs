@@ -112,7 +112,7 @@ public sealed class DeviceSnapshotService(IAdbDeviceResolver deviceResolver, IAd
     private const string CheckpointsFolderName = "checkpoints";
 
     private static string GetCheckpointsRoot(SyncJobConfig job, EffectiveJobSettings eff) =>
-        Path.Combine(ProjectFolders.ProjectRoot(eff, job.Name), CheckpointsFolderName);
+        Path.Combine(ProjectFolders.RequireAvailable(eff, job.Name), CheckpointsFolderName);
 
     private static void PruneOldSnapshots(string checkpointsRoot, int retentionDays)
     {

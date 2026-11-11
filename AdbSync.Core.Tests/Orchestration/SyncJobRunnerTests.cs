@@ -29,6 +29,7 @@ public class SyncJobRunnerTests : IDisposable
         _projectsDirectory = Path.Combine(_root, "projects");
         _appPaths = new AppPaths(Path.Combine(_root, "appdata"));
         _settings = new GlobalSettings { ProjectsDirectory = _projectsDirectory, StaleLockHours = 4 };
+        ProjectFolders.AdoptRoot(_projectsDirectory);
     }
 
     public void Dispose()
@@ -479,7 +480,7 @@ public class SyncJobRunnerTests : IDisposable
 
         Assert.Equal(JobRunOutcome.Failed, result.Outcome);
         Assert.Contains("can't be used as a job or device name", result.ErrorMessage);
-        Assert.False(Directory.Exists(_projectsDirectory));
+        Assert.Empty(Directory.GetDirectories(_projectsDirectory));
     }
 
     [Fact]
@@ -500,6 +501,82 @@ public class SyncJobRunnerTests : IDisposable
         Assert.Equal(JobRunOutcome.Failed, result.Outcome);
         Assert.Contains("isn't a full path", result.ErrorMessage);
         Assert.False(Directory.Exists(Path.GetFullPath(relativeRoot)));
+    }
+
+    [Fact]
+    public async Task RunAsync_ProjectsRootIsAnEmptyMountPoint_SkipsAsUnavailableWithoutCreatingAnything()
+    {
+        WriteDeviceFile("DeviceA", "photo.jpg", "content");
+        var mountPoint = Path.Combine(_root, "unmounted");
+        Directory.CreateDirectory(mountPoint);
+        var device = new DeviceConfig { Name = "DeviceA", Serial = "DeviceA" };
+        var job = new SyncJobConfig
+        {
+            Name = "JobOne",
+            Devices = [new JobDeviceBinding { DeviceName = "DeviceA", RemotePath = "/sdcard/app" }],
+        };
+        var runner = CreateRunner(new Dictionary<string, string> { ["DeviceA"] = DeviceFolder("DeviceA") });
+
+        var result = await runner.RunAsync(job, 0, [device], new GlobalSettings { ProjectsDirectory = mountPoint }, resumeFrom: null);
+
+        Assert.Equal(JobRunOutcome.SkippedProjectFolderUnavailable, result.Outcome);
+        Assert.Contains(ProjectFolders.MarkerFileName, result.ErrorMessage);
+        Assert.Empty(Directory.EnumerateFileSystemEntries(mountPoint));
+        Assert.Equal("content", File.ReadAllText(Path.Combine(DeviceFolder("DeviceA"), "photo.jpg")));
+    }
+
+    [Fact]
+    public async Task RunAsync_DriveDropsOutDuringThePull_FailsWithoutDeletingFilesFromTheDevices()
+    {
+        WriteDeviceFile("DeviceA", "photo.jpg", "content");
+        List<DeviceConfig> devices =
+        [
+            new() { Name = "DeviceA", Serial = "DeviceA" },
+            new() { Name = "DeviceB", Serial = "DeviceB" },
+        ];
+        var job = new SyncJobConfig
+        {
+            Name = "JobDriveDrop",
+            Devices =
+            [
+                new JobDeviceBinding { DeviceName = "DeviceA", RemotePath = "/sdcard/app" },
+                new JobDeviceBinding { DeviceName = "DeviceB", RemotePath = "/sdcard/app" },
+            ],
+        };
+        var folders = new Dictionary<string, string>
+        {
+            ["DeviceA"] = DeviceFolder("DeviceA"),
+            ["DeviceB"] = DeviceFolder("DeviceB"),
+        };
+        Assert.Equal(JobRunOutcome.Completed, (await CreateRunner(folders).RunAsync(job, 0, devices, _settings, resumeFrom: null)).Outcome);
+
+        var dropping = new DriveDroppingTransferEngine(new FakeAdbTransferEngine(folders), () =>
+        {
+            Directory.Delete(_projectsDirectory, recursive: true);
+            Directory.CreateDirectory(_projectsDirectory);
+        });
+        var result = await CreateRunner(folders, transfer: dropping).RunAsync(job, 0, devices, _settings, resumeFrom: null);
+
+        Assert.Equal(JobRunOutcome.Failed, result.Outcome);
+        Assert.Contains("became unavailable", result.ErrorMessage);
+        Assert.Equal("content", File.ReadAllText(Path.Combine(DeviceFolder("DeviceA"), "photo.jpg")));
+        Assert.Equal("content", File.ReadAllText(Path.Combine(DeviceFolder("DeviceB"), "photo.jpg")));
+    }
+
+    private sealed class DriveDroppingTransferEngine(IAdbTransferEngine inner, Action dropDrive) : IAdbTransferEngine
+    {
+        private int _dropped;
+
+        public async Task<TransferResult> PullMirrorAsync(string serial, string remotePath, string localPath, IExcludeMatcher exclude, TransferPolicy? policy = null, CancellationToken ct = default)
+        {
+            var result = await inner.PullMirrorAsync(serial, remotePath, localPath, exclude, policy, ct);
+            if (Interlocked.Exchange(ref _dropped, 1) == 0)
+                dropDrive();
+            return result;
+        }
+
+        public Task<TransferResult> PushMirrorAsync(string serial, string localPath, string remotePath, IExcludeMatcher exclude, TransferPolicy? policy = null, CancellationToken ct = default) =>
+            inner.PushMirrorAsync(serial, localPath, remotePath, exclude, policy, ct);
     }
 
     [Fact]

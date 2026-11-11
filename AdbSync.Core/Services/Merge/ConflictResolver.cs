@@ -52,6 +52,8 @@ public sealed class ConflictResolver(
             ?? throw new ConflictResolutionException($"Job '{conflict.JobName}' no longer exists.");
         var eff = job.Resolve(config.Settings);
         var projectRoot = ProjectFolders.ProjectRoot(eff, job.Name);
+        if (ProjectFolders.Unavailable(eff, job.Name) is { } unavailable)
+            throw new ConflictResolutionException(unavailable);
         var masterPath = Path.Combine(projectRoot, "master");
 
         await using var @lock = await AcquireAsync(projectRoot, TimeSpan.FromHours(eff.StaleLockHours), ct)

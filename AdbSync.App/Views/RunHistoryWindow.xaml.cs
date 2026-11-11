@@ -152,7 +152,7 @@ public partial class RunHistoryWindow : Window
         }
 
         var succeeded = runs.Count(r => r.Outcome != JobRunOutcome.Failed);
-        var ranRuns = runs.Where(r => r.Outcome is not (JobRunOutcome.Skipped or JobRunOutcome.SkippedAppRunning)).ToList();
+        var ranRuns = runs.Where(r => r.Outcome is not (JobRunOutcome.Skipped or JobRunOutcome.SkippedAppRunning or JobRunOutcome.SkippedProjectFolderUnavailable)).ToList();
         var avgDuration = ranRuns.Count > 0
             ? TimeSpan.FromTicks((long)ranRuns.Average(r => (r.CompletedAt - r.StartedAt).Ticks))
             : (TimeSpan?)null;
@@ -182,7 +182,7 @@ public partial class RunHistoryWindow : Window
     private static readonly JobRunOutcome[] OutcomeDisplayOrder =
     [
         JobRunOutcome.Completed, JobRunOutcome.CompletedNoChanges,
-        JobRunOutcome.Skipped, JobRunOutcome.SkippedAppRunning, JobRunOutcome.Failed,
+        JobRunOutcome.Skipped, JobRunOutcome.SkippedAppRunning, JobRunOutcome.SkippedProjectFolderUnavailable, JobRunOutcome.Failed,
         JobRunOutcome.DryRunCompleted, JobRunOutcome.Cancelled,
     ];
 

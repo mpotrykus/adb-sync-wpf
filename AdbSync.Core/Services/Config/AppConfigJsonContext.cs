@@ -20,4 +20,5 @@ namespace AdbSync.Core.Services.Config;
 [JsonSerializable(typeof(SyncCheckpoint))]
 [JsonSerializable(typeof(PushSafetyHistory))]
 [JsonSerializable(typeof(DashboardUiState))]
+[JsonSerializable(typeof(ProjectsRootMarker))]
 internal partial class AppConfigJsonContext : JsonSerializerContext;

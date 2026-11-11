@@ -27,6 +27,7 @@ public class RollbackPointTests : IDisposable
         _projectsDirectory = Path.Combine(_root, "projects");
         _appPaths = new AppPaths(Path.Combine(_root, "appdata"));
         _settings = new GlobalSettings { ProjectsDirectory = _projectsDirectory, RollbackPointsToKeep = 2 };
+        ProjectFolders.AdoptRoot(_projectsDirectory);
     }
 
     public void Dispose()

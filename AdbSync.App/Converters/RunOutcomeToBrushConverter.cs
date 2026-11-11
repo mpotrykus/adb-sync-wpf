@@ -14,7 +14,7 @@ public static class RunOutcomeDisplay
         {
             JobRunOutcome.Completed => "Brush.Success",
             JobRunOutcome.CompletedNoChanges => "Brush.Accent",
-            JobRunOutcome.Skipped or JobRunOutcome.SkippedAppRunning => "Brush.Warning",
+            JobRunOutcome.Skipped or JobRunOutcome.SkippedAppRunning or JobRunOutcome.SkippedProjectFolderUnavailable => "Brush.Warning",
             JobRunOutcome.Failed => "Brush.Danger",
             JobRunOutcome.DryRunCompleted => "Brush.Accent",
             JobRunOutcome.Cancelled => "Brush.Warning",
@@ -29,6 +29,7 @@ public static class RunOutcomeDisplay
         JobRunOutcome.CompletedNoChanges => "No changes",
         JobRunOutcome.Skipped => "Skipped",
         JobRunOutcome.SkippedAppRunning => "App running",
+        JobRunOutcome.SkippedProjectFolderUnavailable => "Folder unavailable",
         JobRunOutcome.Failed => "Failed",
         JobRunOutcome.DryRunCompleted => "Dry run",
         JobRunOutcome.Cancelled => "Stopped",

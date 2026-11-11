@@ -1,4 +1,5 @@
 using AdbSync.Core.Models.Config;
+using AdbSync.Core.Services.Config;
 using AdbSync.Core.Services.Orchestration;
 using AdbSync.Core.Tests.Orchestration.Fakes;
 
@@ -12,6 +13,7 @@ public class DeviceSnapshotServiceTests : IDisposable
     public DeviceSnapshotServiceTests()
     {
         _projectsDirectory = Path.Combine(_root, "projects");
+        ProjectFolders.AdoptRoot(_projectsDirectory);
     }
 
     public void Dispose()

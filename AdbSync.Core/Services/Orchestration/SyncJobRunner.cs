@@ -77,6 +77,14 @@ public sealed class SyncJobRunner(
             var masterPath = Path.Combine(projectRoot, "master");
             foreach (var binding in job.Devices)
                 ConfigNames.Segment(binding.DeviceName);
+
+            if (ProjectFolders.Unavailable(eff, job.Name) is { } unavailable)
+            {
+                _logger.LogWarning("Job '{Job}' skipped - {Reason}", job.Name, unavailable);
+                events.JobSkipped(job.Name, unavailable);
+                return await FinishAsync(JobRunOutcome.SkippedProjectFolderUnavailable, unavailable);
+            }
+
             if (rollbackPoints is not null && eff.RollbackPointsToKeep > 0 && !eff.DryRun && resumeFrom is null)
                 rollback = new RollbackSession(rollbackPoints, projectRoot, masterPath, eff.RollbackPointsToKeep, _logger);
 
@@ -169,6 +177,7 @@ public sealed class SyncJobRunner(
                 return await FinishAsync(JobRunOutcome.CompletedNoChanges);
             }
 
+            ProjectFolders.EnsureStillAvailable(eff, masterPath);
             if (forcePush)
             {
                 _logger.LogWarning("Job '{Job}' push-safety check bypassed by manual override", job.Name);
@@ -297,6 +306,7 @@ public sealed class SyncJobRunner(
             await bookkeepingGate.WaitAsync(ct);
             try
             {
+                ProjectFolders.EnsureStillAvailable(eff, masterPath);
                 // Bootstrapping scans master, so it must not overlap another device's merge writing into it.
                 var manifest = await manifests.GetOrBootstrapAsync(job.Name, binding.DeviceName, stagingPath, masterPath, ct);
                 if (failedPulls.Count > 0)

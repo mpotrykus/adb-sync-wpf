@@ -99,6 +99,16 @@ public partial class SettingsWindow : Window
             ProjectsDirectoryErrorText.Visibility = Visibility.Visible;
             return;
         }
+        try
+        {
+            ProjectFolders.AdoptRoot(newRoot);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            ProjectsDirectoryErrorText.Text = $"Can't use this folder: {ex.Message}";
+            ProjectsDirectoryErrorText.Visibility = Visibility.Visible;
+            return;
+        }
         var oldRoot = _config.Settings.ProjectsDirectory;
         if (!string.Equals(oldRoot, newRoot, StringComparison.OrdinalIgnoreCase) && !TryMigrateProjects(oldRoot, newRoot))
             return;
