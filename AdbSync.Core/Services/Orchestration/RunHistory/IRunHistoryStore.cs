@@ -23,4 +23,13 @@ public interface IRunHistoryStore
     Task<IReadOnlyList<RunStepRecord>> GetRunStepsAsync(Guid runId, CancellationToken ct = default);
 
     Task<string?> GetRunLogAsync(string jobName, Guid runId, CancellationToken ct = default);
+
+    /// <summary>The run with this id, from any job, or null.</summary>
+    Task<JobRunRecord?> GetRunAsync(Guid runId, CancellationToken ct = default);
+
+    /// <summary>Records how a run was started (API values such as dryRun / schedule), which the runner itself doesn't know.</summary>
+    Task SetRunContextAsync(Guid runId, string mode, string trigger, Guid? requestedBy, CancellationToken ct = default);
+
+    /// <summary>Moves a renamed job's history to its new name, so it stays attached to the job.</summary>
+    Task RenameJobAsync(string oldName, string newName, CancellationToken ct = default);
 }

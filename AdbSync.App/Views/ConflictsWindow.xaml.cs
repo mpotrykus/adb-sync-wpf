@@ -161,7 +161,7 @@ public partial class ConflictsWindow : Window
             {
                 var index = config.Jobs.FindIndex(j => j.Name == job);
                 if (index >= 0)
-                    _ = _jobRunService.RunJobAsync(index);
+                    _ = _jobRunService.RunJobAsync(index, trigger: RunTrigger.ConflictResolved);
             }
 
             if (failures.Count > 0)

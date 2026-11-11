@@ -146,12 +146,45 @@ public sealed class RunHistoryStore : IRunHistoryStore
         await transaction.CommitAsync(ct);
     }
 
+    public async Task<JobRunRecord?> GetRunAsync(Guid runId, CancellationToken ct = default)
+    {
+        await using var connection = await OpenAsync(ct);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT JobName FROM Runs WHERE RunId = @runId;";
+        command.Parameters.AddWithValue("@runId", runId.ToString("N"));
+        if (await command.ExecuteScalarAsync(ct) is not string jobName)
+            return null;
+        return (await ListRunsAsync(jobName, ct)).FirstOrDefault(r => r.RunId == runId);
+    }
+
+    public async Task SetRunContextAsync(Guid runId, string mode, string trigger, Guid? requestedBy, CancellationToken ct = default)
+    {
+        await using var connection = await OpenAsync(ct);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE Runs SET Mode = @mode, Trigger = @trigger, RequestedBy = @requestedBy WHERE RunId = @runId;";
+        command.Parameters.AddWithValue("@mode", mode);
+        command.Parameters.AddWithValue("@trigger", trigger);
+        command.Parameters.AddWithValue("@requestedBy", (object?)requestedBy?.ToString() ?? DBNull.Value);
+        command.Parameters.AddWithValue("@runId", runId.ToString("N"));
+        await command.ExecuteNonQueryAsync(ct);
+    }
+
+    public async Task RenameJobAsync(string oldName, string newName, CancellationToken ct = default)
+    {
+        await using var connection = await OpenAsync(ct);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE Runs SET JobName = @new WHERE JobName = @old;";
+        command.Parameters.AddWithValue("@new", newName);
+        command.Parameters.AddWithValue("@old", oldName);
+        await command.ExecuteNonQueryAsync(ct);
+    }
+
     public async Task<IReadOnlyList<JobRunRecord>> ListRunsAsync(string jobName, CancellationToken ct = default)
     {
         await using var connection = await OpenAsync(ct);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT RunId, JobName, StartedAt, CompletedAt, Outcome, ErrorMessage, FilesCopied, FilesDeleted, ErrorCount, BytesCopied, PullDurationTicks, PushDurationTicks, ErrorCode
+            SELECT RunId, JobName, StartedAt, CompletedAt, Outcome, ErrorMessage, FilesCopied, FilesDeleted, ErrorCount, BytesCopied, PullDurationTicks, PushDurationTicks, ErrorCode, Mode, Trigger, RequestedBy
             FROM Runs WHERE JobName = @jobName ORDER BY StartedAt DESC;
             """;
         command.Parameters.AddWithValue("@jobName", jobName);
@@ -173,7 +206,10 @@ public sealed class RunHistoryStore : IRunHistoryStore
                 reader.GetInt64(9),
                 reader.IsDBNull(10) ? null : TimeSpan.FromTicks(reader.GetInt64(10)),
                 reader.IsDBNull(11) ? null : TimeSpan.FromTicks(reader.GetInt64(11)),
-                reader.IsDBNull(12) ? null : Enum.TryParse<RunErrorCode>(reader.GetString(12), out var code) ? code : RunErrorCode.InternalError));
+                reader.IsDBNull(12) ? null : Enum.TryParse<RunErrorCode>(reader.GetString(12), out var code) ? code : RunErrorCode.InternalError,
+                reader.IsDBNull(13) ? null : reader.GetString(13),
+                reader.IsDBNull(14) ? null : reader.GetString(14),
+                reader.IsDBNull(15) ? null : Guid.Parse(reader.GetString(15))));
         }
         return results;
     }
@@ -266,6 +302,9 @@ public sealed class RunHistoryStore : IRunHistoryStore
         ("PullDurationTicks", "INTEGER NULL"),
         ("PushDurationTicks", "INTEGER NULL"),
         ("ErrorCode", "TEXT NULL"),
+        ("Mode", "TEXT NULL"),
+        ("Trigger", "TEXT NULL"),
+        ("RequestedBy", "TEXT NULL"),
     ];
 
     private async Task EnsureSchemaAsync(SqliteConnection connection, CancellationToken ct)

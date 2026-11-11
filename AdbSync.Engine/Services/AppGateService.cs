@@ -72,7 +72,7 @@ public sealed class AppGateService(
         }
         await configService.SaveAsync();
 
-        var result = await jobRunService.RunJobAsync(index, ct: ct);
+        var result = await jobRunService.RunJobAsync(index, ct: ct, trigger: RunTrigger.CloseAndSync);
         if (result.Outcome == JobRunOutcome.Skipped)
         {
             var deadline = DateTimeOffset.UtcNow + MaxSyncWait;

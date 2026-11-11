@@ -247,7 +247,7 @@ public sealed class ChangeWatchHostedService(
                 else
                     await Task.Delay(RetryDelay(++lostConnections), cts.Token);
 
-                var result = await jobRunService.RunJobAsync(index, ct: cts.Token);
+                var result = await jobRunService.RunJobAsync(index, ct: cts.Token, trigger: RunTrigger.OnChange);
                 if (result.Outcome != JobRunOutcome.SkippedAppRunning)
                     return;
 

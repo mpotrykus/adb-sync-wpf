@@ -32,7 +32,17 @@ public sealed class JobRunService(
 
     private readonly ConcurrentDictionary<int, CancellationTokenSource> _runningJobs = new();
 
-    public async Task<JobRunResult> RunJobAsync(int jobIndex, bool forcePush = false, CancellationToken ct = default, bool dryRun = false)
+    /// <summary>Raised when a run is accepted, with its id, before it waits for a free slot.</summary>
+    public event Action<RunRequest>? RunQueued;
+
+    /// <summary>Raised when an accepted run ends, however it ends.</summary>
+    public event Action<RunRequest, JobRunResult>? RunFinished;
+
+    public bool IsRunning(int jobIndex) => _runningJobs.ContainsKey(jobIndex);
+
+    public async Task<JobRunResult> RunJobAsync(
+        int jobIndex, bool forcePush = false, CancellationToken ct = default, bool dryRun = false,
+        RunTrigger trigger = RunTrigger.Manual, Guid? runId = null, Guid? requestedBy = null)
     {
         var config = await configService.GetAsync();
         var job = config.Jobs[jobIndex];
@@ -45,6 +55,9 @@ public sealed class JobRunService(
             return new JobRunResult(JobRunOutcome.Skipped, null, RunErrorCode.AlreadyRunning);
         }
 
+        var request = new RunRequest(runId ?? Guid.NewGuid(), job.Id, job.Name, trigger, dryRun, forcePush, DateTimeOffset.UtcNow, requestedBy);
+        RunQueued?.Invoke(request);
+        JobRunResult? result = null;
         try
         {
             if (!await globalGate.WaitAsync(0, cts.Token))
@@ -62,7 +75,7 @@ public sealed class JobRunService(
                 }
 
                 var resume = await checkpoints.LoadAsync(job.Name, cts.Token);
-                var result = await runner.RunAsync(job, jobIndex, config.Devices, config.Settings, resume, forcePush, cts.Token, dryRun);
+                result = await runner.RunAsync(job, jobIndex, config.Devices, config.Settings, resume, forcePush, cts.Token, dryRun, request.RunId);
 
                 if (result.Outcome is JobRunOutcome.Completed or JobRunOutcome.CompletedNoChanges)
                     job.Schedule.LastSuccessAt = DateTimeOffset.Now;
@@ -78,11 +91,13 @@ public sealed class JobRunService(
         catch (OperationCanceledException) when (cts.IsCancellationRequested)
         {
             events.JobCancelled(job.Name);
-            return new JobRunResult(JobRunOutcome.Cancelled, null);
+            result = new JobRunResult(JobRunOutcome.Cancelled, null);
+            return result;
         }
         finally
         {
             _runningJobs.TryRemove(new KeyValuePair<int, CancellationTokenSource>(jobIndex, cts));
+            RunFinished?.Invoke(request, result ?? new JobRunResult(JobRunOutcome.Failed, "The run ended unexpectedly.", RunErrorCode.InternalError));
         }
     }
 
@@ -163,7 +178,7 @@ public sealed class JobRunService(
         for (var i = 0; i < config.Jobs.Count; i++)
         {
             if (config.Jobs[i].Enabled)
-                await RunJobAsync(i, ct: ct);
+                await RunJobAsync(i, ct: ct, trigger: RunTrigger.RunAll);
         }
     }
 
@@ -179,7 +194,7 @@ public sealed class JobRunService(
 
             var due = ScheduleCalculator.NextDueUtc(job.Schedule, now, config.Settings.RunMissedSchedules);
             if (due is not null && due <= now)
-                await RunJobAsync(i, ct: ct);
+                await RunJobAsync(i, ct: ct, trigger: RunTrigger.Schedule);
         }
     }
 

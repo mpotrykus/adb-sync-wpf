@@ -1,6 +1,6 @@
 namespace AdbSync.Core.Services.Common;
 
-internal static class DirectoryUtil
+public static class DirectoryUtil
 {
     public static void CopyRecursive(string source, string destination)
     {

@@ -11,7 +11,7 @@ namespace AdbSync.Server.Api;
 
 /// <summary>Assembles the contract's JobStatus from the engine's live tracker, the config and the stored history.</summary>
 public sealed class JobStatusBuilder(
-    JobStatusTracker tracker, IRunHistoryStore history, ICheckpointManager checkpoints, IPendingConflictStore conflicts)
+    JobStatusTracker tracker, IRunHistoryStore history, ICheckpointManager checkpoints, IPendingConflictStore conflicts, RunRegistry runs)
 {
     public async Task<JobStatusDto> BuildAsync(SyncJobConfig job, AppConfig config, CancellationToken ct = default)
     {
@@ -28,7 +28,7 @@ public sealed class JobStatusBuilder(
             job.Name,
             job.Enabled,
             State(live),
-            null,
+            runs.ActiveFor(job.Id)?.Id,
             live.Running ? Contract.SyncPhase(live.Phase) : null,
             live.Devices
                 .Where(d => deviceIds.ContainsKey(d.Device) && Contract.SyncPhase(d.Phase) is not null)

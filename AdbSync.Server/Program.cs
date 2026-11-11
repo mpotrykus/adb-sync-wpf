@@ -61,9 +61,16 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<AuthStore>();
 builder.Services.AddSingleton<EventBus>();
 builder.Services.AddSingleton<JobStatusBuilder>();
+builder.Services.AddSingleton<RunRegistry>();
+builder.Services.AddSingleton<ConfigEditor>();
+builder.Services.AddSingleton<JobStateRenamer>();
 builder.Services.AddHostedService<EngineEventSource>();
 builder.Services.AddAdbSyncEngine(paths);
-builder.Services.AddSingleton<ISyncEventSink>(sp => sp.GetRequiredService<JobStatusTracker>());
+builder.Services.AddSingleton<ISyncEventSink>(sp => new CompositeSyncEventSink(
+[
+    sp.GetRequiredService<JobStatusTracker>(),
+    sp.GetRequiredService<RunRegistry>(),
+]));
 builder.Services.AddSingleton<IHostPowerEvents, NoHostPowerEvents>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<SchedulerHostedService>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ChangeWatchHostedService>());
@@ -80,6 +87,7 @@ builder.Services.AddRateLimiter(limiter =>
 
 var app = builder.Build();
 app.UseRateLimiter();
+app.Services.GetRequiredService<RunRegistry>().Attach(app.Services.GetRequiredService<JobRunService>());
 
 // docker stop sends SIGTERM: stop runs at the next file boundary instead of being killed mid-push when the grace
 // period runs out.
@@ -90,6 +98,9 @@ api.MapSystemEndpoints();
 api.MapAuthEndpoints();
 api.MapStatusEndpoints();
 api.MapEventEndpoints();
+api.MapJobEndpoints();
+api.MapRunEndpoints();
+api.MapDeviceEndpoints();
 
 app.Logger.LogInformation(
     "AdbSync server listening on https://{Address}:{Port} as {Url}, data in {DataDir}, certificate fingerprint {Fingerprint}",
