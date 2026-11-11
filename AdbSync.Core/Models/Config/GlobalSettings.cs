@@ -1,3 +1,5 @@
+using AdbSync.Core.Services.Scheduling;
+
 namespace AdbSync.Core.Models.Config;
 
 public sealed class GlobalSettings
@@ -26,6 +28,8 @@ public sealed class GlobalSettings
     public int MaxConcurrentPerDevice { get; set; } = 4;
 
     /// <summary>When enabled, tray notifications are suppressed during the [Start, End) window (wraps past midnight if Start &gt; End).</summary>
+    /// <summary>IANA time zone (for example America/Chicago) for daily schedules and quiet hours. Empty means the host's.</summary>
+    public string? TimeZone { get; set; }
     public bool QuietHoursEnabled { get; set; }
     public TimeOnly QuietHoursStart { get; set; } = new(22, 0);
     public TimeOnly QuietHoursEnd { get; set; } = new(7, 0);
@@ -86,7 +90,7 @@ public sealed class GlobalSettings
         if (!QuietHoursEnabled)
             return false;
 
-        var now = nowOverride ?? TimeOnly.FromDateTime(DateTime.Now);
+        var now = nowOverride ?? TimeOnly.FromDateTime(ScheduleClock.Now(this).DateTime);
         return QuietHoursStart <= QuietHoursEnd
             ? now >= QuietHoursStart && now < QuietHoursEnd
             : now >= QuietHoursStart || now < QuietHoursEnd;

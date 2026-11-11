@@ -34,7 +34,7 @@ public sealed class DashboardViewModel : ISyncEventSink
     {
         RunOnUi(() =>
         {
-            var now = DateTimeOffset.Now;
+            var now = ScheduleClock.Now(config.Settings);
             var existingByName = Jobs.ToDictionary(j => j.Name);
             var seen = new HashSet<string>();
 

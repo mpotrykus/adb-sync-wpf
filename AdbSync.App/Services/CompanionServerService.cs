@@ -257,7 +257,7 @@ public sealed class CompanionServerService(
         var job = config.Jobs.FirstOrDefault(j => j.Name == s.Name);
         var enabled = job?.Enabled ?? false;
         var nextRun = job is not null && enabled
-            ? ScheduleCalculator.NextDueUtc(job.Schedule, DateTimeOffset.Now, config.Settings.RunMissedSchedules)
+            ? ScheduleCalculator.NextDueUtc(job.Schedule, ScheduleClock.Now(config.Settings), config.Settings.RunMissedSchedules)
             : null;
         checkpoints.TryGetValue(s.Name, out var checkpoint);
         return new CompanionJobDto(

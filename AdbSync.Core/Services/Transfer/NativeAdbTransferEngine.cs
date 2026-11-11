@@ -13,6 +13,7 @@ public sealed class NativeAdbTransferEngine(IRemoteFileSystemFactory remoteFacto
     public async Task<TransferResult> PullMirrorAsync(string serial, string remotePath, string localPath, IExcludeMatcher exclude, TransferPolicy? policy = null, CancellationToken ct = default)
     {
         var remote = remoteFactory.Create(serial, policy);
+        await using var connection = remote as IAsyncDisposable;
         var remoteEntries = await RemoteFileTreeScanner.ScanAsync(remote, remotePath, exclude, ct);
 
         Directory.CreateDirectory(localPath);
@@ -78,6 +79,7 @@ public sealed class NativeAdbTransferEngine(IRemoteFileSystemFactory remoteFacto
     public async Task<TransferResult> PushMirrorAsync(string serial, string localPath, string remotePath, IExcludeMatcher exclude, TransferPolicy? policy = null, CancellationToken ct = default)
     {
         var remote = remoteFactory.Create(serial, policy);
+        await using var connection = remote as IAsyncDisposable;
         await remote.CreateDirectoryAsync(remotePath, ct);
 
         Directory.CreateDirectory(localPath);

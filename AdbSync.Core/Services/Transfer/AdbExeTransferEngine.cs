@@ -8,11 +8,14 @@ namespace AdbSync.Core.Services.Transfer;
 /// exclude filtering, and mirror-delete decisions locally against plain filesystem/text output. A stepping
 /// stone ahead of the native ADB-sync-protocol engine (Phase 6) - see the project plan's risk/phasing section.
 /// </summary>
-public sealed class AdbExeTransferEngine(IAdbProcessRunner adb, IMirrorDiffer differ) : IAdbTransferEngine
+public sealed class AdbExeTransferEngine(IAdbProcessRunner adb, IMirrorDiffer differ, string? tempRoot = null) : IAdbTransferEngine
 {
+    // Whole trees are pulled here first, so it belongs on a disk with room for them, not a small tmpfs /tmp.
+    private readonly string _tempRoot = tempRoot ?? Path.Combine(Path.GetTempPath(), "AdbSync");
+
     public async Task<TransferResult> PullMirrorAsync(string serial, string remotePath, string localPath, IExcludeMatcher exclude, TransferPolicy? policy = null, CancellationToken ct = default)
     {
-        var tempRoot = Path.Combine(Path.GetTempPath(), "AdbSync", $"pull-{Guid.NewGuid():N}");
+        var tempRoot = Path.Combine(_tempRoot, $"pull-{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempRoot);
         try
         {

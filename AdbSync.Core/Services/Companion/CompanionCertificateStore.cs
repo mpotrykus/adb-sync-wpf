@@ -37,9 +37,27 @@ public sealed class CompanionCertificateStore(AppPaths paths)
         using var created = request.CreateSelfSigned(DateTimeOffset.Now.AddDays(-1), DateTimeOffset.Now.AddYears(10));
 
         var pfx = created.Export(X509ContentType.Pfx);
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        File.WriteAllBytes(path, pfx);
+        WritePrivate(path, pfx);
         // Re-import rather than returning `created`: SChannel can't use the ephemeral key a fresh CreateSelfSigned holds.
         return new X509Certificate2(pfx);
+    }
+
+    /// <summary>
+    /// Written to a temporary file and moved into place, so a crash can't leave a truncated key. The PFX has no
+    /// password, so on Linux it's readable by the owner only rather than the default 0644.
+    /// </summary>
+    private static void WritePrivate(string path, byte[] content)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        var temp = $"{path}.tmp-{Guid.NewGuid():N}";
+        var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write };
+        if (!OperatingSystem.IsWindows())
+            options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+        using (var stream = new FileStream(temp, options))
+        {
+            stream.Write(content);
+            stream.Flush(flushToDisk: true);
+        }
+        File.Move(temp, path, overwrite: true);
     }
 }

@@ -137,7 +137,7 @@ SyncJobRunner BuildRunner(bool useNativeTransfer)
     var adbClient = new AdbClient();
     IAdbTransferEngine transfer = useNativeTransfer
         ? new NativeAdbTransferEngine(new AdbRemoteFileSystemFactory(adbClient), new MirrorDiffer())
-        : new AdbExeTransferEngine(new AdbProcessRunner(), new MirrorDiffer());
+        : new AdbExeTransferEngine(new AdbProcessRunner(), new MirrorDiffer(), Path.Combine(paths.Root, "tmp"));
 
     var loggerFactory = LoggerFactory.Create(b => b.AddSerilog(
         AdbSyncLogging.CreateFileLogger(paths, retentionDays: 30, maxBytesPerFile: 5 * 1024 * 1024), dispose: true));

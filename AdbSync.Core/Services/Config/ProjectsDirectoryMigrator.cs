@@ -45,14 +45,30 @@ public static class ProjectsDirectoryMigrator
         {
             var source = Path.Combine(oldRoot, name);
             var target = Path.Combine(newRoot, name);
-            if (Path.GetPathRoot(Path.GetFullPath(source))!.Equals(
-                    Path.GetPathRoot(Path.GetFullPath(target)), StringComparison.OrdinalIgnoreCase))
+            try
             {
                 Directory.Move(source, target);
                 continue;
             }
+            catch (IOException) when (Directory.Exists(source) && !Directory.Exists(target))
+            {
+                // Across drives or mounts a move isn't possible (EXDEV on Linux, where every path shares the root "/").
+            }
 
-            CopyDirectory(source, target);
+            // Copied under a temporary name and renamed once complete, so an interrupted copy never leaves a
+            // half-filled folder under the job's name; the source is only deleted after that.
+            var partial = $"{target}.partial-{Guid.NewGuid():N}";
+            try
+            {
+                CopyDirectory(source, partial);
+                Directory.Move(partial, target);
+            }
+            catch
+            {
+                if (Directory.Exists(partial))
+                    DirectoryUtil.DeleteRecursive(partial);
+                throw;
+            }
             DirectoryUtil.DeleteRecursive(source);
         }
     }

@@ -165,7 +165,7 @@ public sealed class JobRunService(
     public async Task RunDueJobsAsync(CancellationToken ct = default)
     {
         var config = await configService.GetAsync();
-        var now = DateTimeOffset.Now;
+        var now = ScheduleClock.Now(config.Settings);
         for (var i = 0; i < config.Jobs.Count; i++)
         {
             var job = config.Jobs[i];
