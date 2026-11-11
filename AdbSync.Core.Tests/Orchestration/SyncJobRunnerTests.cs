@@ -483,6 +483,26 @@ public class SyncJobRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task RunAsync_RelativeProjectsDirectory_FailsWithoutCreatingItUnderTheWorkingDirectory()
+    {
+        WriteDeviceFile("DeviceA", "photo.jpg", "content");
+        var relativeRoot = $"relative-projects-{Guid.NewGuid():N}";
+        var device = new DeviceConfig { Name = "DeviceA", Serial = "DeviceA" };
+        var job = new SyncJobConfig
+        {
+            Name = "JobOne",
+            Devices = [new JobDeviceBinding { DeviceName = "DeviceA", RemotePath = "/sdcard/app" }],
+        };
+        var runner = CreateRunner(new Dictionary<string, string> { ["DeviceA"] = DeviceFolder("DeviceA") });
+
+        var result = await runner.RunAsync(job, 0, [device], new GlobalSettings { ProjectsDirectory = relativeRoot }, resumeFrom: null);
+
+        Assert.Equal(JobRunOutcome.Failed, result.Outcome);
+        Assert.Contains("isn't a full path", result.ErrorMessage);
+        Assert.False(Directory.Exists(Path.GetFullPath(relativeRoot)));
+    }
+
+    [Fact]
     public async Task RunAsync_FirstRunWithTwoDevices_NeverBootstrapsAManifestWhileAnotherDeviceMergesIntoMaster()
     {
         WriteDeviceFile("DeviceA", "a.txt", "from-a");

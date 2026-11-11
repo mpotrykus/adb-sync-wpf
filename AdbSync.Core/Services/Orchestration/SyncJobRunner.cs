@@ -66,23 +66,19 @@ public sealed class SyncJobRunner(
         if (eff.DryRun)
             resumeFrom = null;
 
-        var projectsDirectory = eff.ProjectsDirectory;
-        var projectRoot = Path.Combine(projectsDirectory, job.Name);
-        var masterPath = Path.Combine(projectRoot, "master");
-        var rollback = rollbackPoints is not null && eff.RollbackPointsToKeep > 0 && !eff.DryRun && resumeFrom is null
-            ? new RollbackSession(rollbackPoints, projectRoot, masterPath, eff.RollbackPointsToKeep, _logger)
-            : null;
+        RollbackSession? rollback = null;
 
         _logger.LogInformation("Starting run for job '{Job}'", job.Name);
         _logger.LogInformation("Using {Engine} engine", transfer.GetType().Name);
 
         try
         {
-            if (string.IsNullOrWhiteSpace(projectsDirectory))
-                throw new InvalidOperationException("Projects directory is not configured - set it in Settings before running a job.");
-            ConfigNames.Segment(job.Name);
+            var projectRoot = ProjectFolders.ProjectRoot(eff, job.Name);
+            var masterPath = Path.Combine(projectRoot, "master");
             foreach (var binding in job.Devices)
                 ConfigNames.Segment(binding.DeviceName);
+            if (rollbackPoints is not null && eff.RollbackPointsToKeep > 0 && !eff.DryRun && resumeFrom is null)
+                rollback = new RollbackSession(rollbackPoints, projectRoot, masterPath, eff.RollbackPointsToKeep, _logger);
 
             Directory.CreateDirectory(masterPath);
 

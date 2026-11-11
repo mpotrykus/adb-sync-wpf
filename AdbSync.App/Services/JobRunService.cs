@@ -1,5 +1,6 @@
 using System.IO;
 using AdbSync.Core.Models.Config;
+using AdbSync.Core.Services.Config;
 using AdbSync.Core.Models.Orchestration;
 using AdbSync.Core.Services.Orchestration;
 using AdbSync.Core.Services.Scheduling;
@@ -132,9 +133,9 @@ public sealed class JobRunService(
     {
         var config = await configService.GetAsync();
         var job = config.Jobs[jobIndex];
-        var projectRoot = Path.Combine(job.Resolve(config.Settings).ProjectsDirectory, job.Name);
+        var projectRoot = ProjectFolders.TryProjectRoot(job.Resolve(config.Settings), job.Name);
         return snapshotService.ListSnapshots(job, config.Settings)
-            .Concat(rollbackPoints.List(projectRoot))
+            .Concat(projectRoot is null ? [] : rollbackPoints.List(projectRoot))
             .OrderByDescending(s => s.CreatedAt)
             .ToList();
     }

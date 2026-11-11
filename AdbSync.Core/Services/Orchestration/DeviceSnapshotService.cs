@@ -45,7 +45,9 @@ public sealed class DeviceSnapshotService(IAdbDeviceResolver deviceResolver, IAd
 
     public IReadOnlyList<SnapshotInfo> ListSnapshots(SyncJobConfig job, GlobalSettings settings)
     {
-        var checkpointsRoot = GetCheckpointsRoot(job, job.Resolve(settings));
+        if (ProjectFolders.TryProjectRoot(job.Resolve(settings), job.Name) is not { } projectRoot)
+            return [];
+        var checkpointsRoot = Path.Combine(projectRoot, CheckpointsFolderName);
         if (!Directory.Exists(checkpointsRoot))
             return [];
 
@@ -107,8 +109,10 @@ public sealed class DeviceSnapshotService(IAdbDeviceResolver deviceResolver, IAd
         return new SnapshotResult(snapshotPath, restoredDevices, totalFilesCopied, totalBytes, errors, totalFilesDeleted, skipped);
     }
 
+    private const string CheckpointsFolderName = "checkpoints";
+
     private static string GetCheckpointsRoot(SyncJobConfig job, EffectiveJobSettings eff) =>
-        Path.Combine(eff.ProjectsDirectory, ConfigNames.Segment(job.Name), "checkpoints");
+        Path.Combine(ProjectFolders.ProjectRoot(eff, job.Name), CheckpointsFolderName);
 
     private static void PruneOldSnapshots(string checkpointsRoot, int retentionDays)
     {

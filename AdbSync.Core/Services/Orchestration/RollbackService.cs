@@ -27,7 +27,7 @@ public sealed class RollbackService(
             throw new InvalidOperationException($"Rollback point '{pointPath}' no longer exists.");
 
         var eff = job.Resolve(settings);
-        var projectRoot = Path.Combine(eff.ProjectsDirectory, ConfigNames.Segment(job.Name));
+        var projectRoot = ProjectFolders.ProjectRoot(eff, job.Name);
         var masterPath = Path.Combine(projectRoot, "master");
         var exclude = new ExcludeMatcher(job.Exclude);
 

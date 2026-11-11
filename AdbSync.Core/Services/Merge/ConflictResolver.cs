@@ -51,7 +51,7 @@ public sealed class ConflictResolver(
         var job = config.Jobs.FirstOrDefault(j => j.Name == conflict.JobName)
             ?? throw new ConflictResolutionException($"Job '{conflict.JobName}' no longer exists.");
         var eff = job.Resolve(config.Settings);
-        var projectRoot = Path.Combine(eff.ProjectsDirectory, ConfigNames.Segment(job.Name));
+        var projectRoot = ProjectFolders.ProjectRoot(eff, job.Name);
         var masterPath = Path.Combine(projectRoot, "master");
 
         await using var @lock = await AcquireAsync(projectRoot, TimeSpan.FromHours(eff.StaleLockHours), ct)
@@ -114,7 +114,9 @@ public sealed class ConflictResolver(
         if (job is null)
             return null;
 
-        var masterFile = Path.Combine(job.Resolve(config.Settings).ProjectsDirectory, ConfigNames.Segment(job.Name), "master", conflict.RelativePath);
+        var masterFile = ProjectFolders.TryProjectRoot(job.Resolve(config.Settings), job.Name) is { } projectRoot
+            ? Path.Combine(projectRoot, "master", conflict.RelativePath)
+            : null;
         return new ConflictFiles(File.Exists(masterFile) ? masterFile : null, pending.GetDeviceCopyPath(conflict));
     }
 

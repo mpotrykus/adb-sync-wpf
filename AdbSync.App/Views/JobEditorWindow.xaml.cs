@@ -231,6 +231,7 @@ public partial class JobEditorWindow : Window
     {
         NameErrorText.Visibility = Visibility.Collapsed;
         DevicesErrorText.Visibility = Visibility.Collapsed;
+        ProjectDirectoryErrorText.Visibility = Visibility.Collapsed;
 
         var hasError = false;
         var name = NameBox.Text.Trim();
@@ -240,6 +241,13 @@ public partial class JobEditorWindow : Window
         {
             NameErrorText.Text = nameProblem;
             NameErrorText.Visibility = Visibility.Visible;
+            hasError = true;
+        }
+        var projectDirectory = ProjectDirectoryBox.Text.Trim();
+        if (projectDirectory.Length > 0 && !Path.IsPathFullyQualified(projectDirectory))
+        {
+            ProjectDirectoryErrorText.Text = "Enter a full path, or leave it empty to use the projects directory from Settings.";
+            ProjectDirectoryErrorText.Visibility = Visibility.Visible;
             hasError = true;
         }
         if (_bindings.Count == 0)
@@ -259,7 +267,7 @@ public partial class JobEditorWindow : Window
         {
             Name = name,
             AppPackage = string.IsNullOrWhiteSpace(AppPackageBox.Text) ? null : AppPackageBox.Text.Trim(),
-            ProjectDirectory = string.IsNullOrWhiteSpace(ProjectDirectoryBox.Text) ? null : ProjectDirectoryBox.Text.Trim(),
+            ProjectDirectory = projectDirectory.Length == 0 ? null : projectDirectory,
             Exclude = ParseExcludePatterns(),
             Devices = _bindings.Select(b => new JobDeviceBinding { DeviceName = b.DeviceName, RemotePath = b.RemotePath }).ToList(),
             Schedule = schedule,

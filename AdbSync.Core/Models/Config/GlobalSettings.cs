@@ -2,10 +2,7 @@ namespace AdbSync.Core.Models.Config;
 
 public sealed class GlobalSettings
 {
-    public static string DefaultProjectsDirectory { get; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "AdbSync Projects");
-
-    public string ProjectsDirectory { get; set; } = DefaultProjectsDirectory;
+    public string ProjectsDirectory { get; set; } = "";
     public bool StartAtLogin { get; set; } = true;
     public bool ShowInfoNotifications { get; set; }
     public bool ShowErrorNotifications { get; set; } = true;

@@ -650,11 +650,9 @@ public partial class DashboardWindow : Window
         if (job is null)
             return;
 
-        var eff = job.Resolve(config.Settings);
-        if (string.IsNullOrWhiteSpace(eff.ProjectsDirectory))
+        if (ProjectFolders.TryProjectRoot(job.Resolve(config.Settings), job.Name) is not { } projectRoot)
             return;
 
-        var projectRoot = Path.Combine(eff.ProjectsDirectory, job.Name);
         Directory.CreateDirectory(projectRoot);
         Process.Start(new ProcessStartInfo("explorer.exe", $"\"{projectRoot}\"") { UseShellExecute = true });
     }
