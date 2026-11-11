@@ -99,6 +99,9 @@ public partial class SettingsWindow : Window
             ProjectsDirectoryErrorText.Visibility = Visibility.Visible;
             return;
         }
+        var oldRoot = _config.Settings.ProjectsDirectory;
+        if (!string.Equals(oldRoot, newRoot, StringComparison.OrdinalIgnoreCase) && !TryMigrateProjects(oldRoot, newRoot))
+            return;
         try
         {
             ProjectFolders.AdoptRoot(newRoot);
@@ -109,9 +112,6 @@ public partial class SettingsWindow : Window
             ProjectsDirectoryErrorText.Visibility = Visibility.Visible;
             return;
         }
-        var oldRoot = _config.Settings.ProjectsDirectory;
-        if (!string.Equals(oldRoot, newRoot, StringComparison.OrdinalIgnoreCase) && !TryMigrateProjects(oldRoot, newRoot))
-            return;
 
         _config.Settings.ProjectsDirectory = newRoot;
         _config.Settings.StartAtLogin = StartAtLoginBox.IsChecked == true;

@@ -59,7 +59,25 @@ public sealed class ManifestStore(EngineDatabase database) : IManifestStore
     public async Task<int> ClearAsync(string jobName, CancellationToken ct = default)
     {
         await using var connection = await database.OpenAsync(ct);
+        await Sql.ExecuteAsync(connection, null, "DELETE FROM ManifestRoots WHERE JobName = @job;", ct, ("@job", jobName));
         return await Sql.ExecuteAsync(connection, null, "DELETE FROM Manifests WHERE JobName = @job;", ct, ("@job", jobName));
+    }
+
+    public async Task<ManifestRoot?> GetRootAsync(string jobName, CancellationToken ct = default)
+    {
+        await using var connection = await database.OpenAsync(ct);
+        var rows = await Sql.QueryAsync(connection, null, "SELECT RootId, MasterPath FROM ManifestRoots WHERE JobName = @job;",
+            r => new ManifestRoot(Guid.Parse(r.GetString(0)), r.GetString(1)), ct, ("@job", jobName));
+        return rows.Count == 0 ? null : rows[0];
+    }
+
+    public async Task SetRootAsync(string jobName, ManifestRoot root, CancellationToken ct = default)
+    {
+        await using var connection = await database.OpenAsync(ct);
+        await Sql.ExecuteAsync(connection, null, """
+            INSERT INTO ManifestRoots (JobName, RootId, MasterPath) VALUES (@job, @rootId, @masterPath)
+            ON CONFLICT (JobName) DO UPDATE SET RootId = excluded.RootId, MasterPath = excluded.MasterPath;
+            """, ct, ("@job", ConfigNames.Segment(jobName)), ("@rootId", root.RootId.ToString()), ("@masterPath", root.MasterPath));
     }
 
     public async Task<bool> AnyEntriesAsync(string jobName, CancellationToken ct = default)

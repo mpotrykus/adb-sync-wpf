@@ -563,6 +563,92 @@ public class SyncJobRunnerTests : IDisposable
         Assert.Equal("content", File.ReadAllText(Path.Combine(DeviceFolder("DeviceB"), "photo.jpg")));
     }
 
+    private (SyncJobConfig Job, List<DeviceConfig> Devices, Dictionary<string, string> Folders) TwoDeviceJob(string name)
+    {
+        WriteDeviceFile("DeviceA", "photo.jpg", "content");
+        var job = new SyncJobConfig
+        {
+            Name = name,
+            Devices =
+            [
+                new JobDeviceBinding { DeviceName = "DeviceA", RemotePath = "/sdcard/app" },
+                new JobDeviceBinding { DeviceName = "DeviceB", RemotePath = "/sdcard/app" },
+            ],
+        };
+        return (job, [new() { Name = "DeviceA", Serial = "DeviceA" }, new() { Name = "DeviceB", Serial = "DeviceB" }],
+            new Dictionary<string, string> { ["DeviceA"] = DeviceFolder("DeviceA"), ["DeviceB"] = DeviceFolder("DeviceB") });
+    }
+
+    private void ReplaceRootMarker(string root)
+    {
+        var marker = Path.Combine(root, ProjectFolders.MarkerFileName);
+        File.SetAttributes(marker, FileAttributes.Normal);
+        File.Delete(marker);
+        ProjectFolders.AdoptRoot(root);
+    }
+
+    [Fact]
+    public async Task RunAsync_ManifestsBuiltAgainstADifferentRoot_IsRefusedWithoutTouchingTheDevices()
+    {
+        var (job, devices, folders) = TwoDeviceJob("JobOtherRoot");
+        Assert.Equal(JobRunOutcome.Completed, (await CreateRunner(folders).RunAsync(job, 0, devices, _settings, resumeFrom: null)).Outcome);
+        ReplaceRootMarker(_projectsDirectory);
+        File.Delete(Path.Combine(_projectsDirectory, job.Name, "master", "photo.jpg"));
+        File.WriteAllText(Path.Combine(_projectsDirectory, job.Name, "master", "other.jpg"), "other");
+
+        var result = await CreateRunner(folders).RunAsync(job, 0, devices, _settings, resumeFrom: null);
+
+        Assert.Equal(JobRunOutcome.SkippedProjectFolderUnavailable, result.Outcome);
+        Assert.Contains("different projects folder", result.ErrorMessage);
+        Assert.Equal("content", File.ReadAllText(Path.Combine(DeviceFolder("DeviceB"), "photo.jpg")));
+        Assert.False(File.Exists(Path.Combine(DeviceFolder("DeviceB"), "other.jpg")));
+    }
+
+    [Fact]
+    public async Task RunAsync_DifferentRootWithEmptyMaster_DiscardsTheManifestsAndResyncsFromTheDevices()
+    {
+        var (job, devices, folders) = TwoDeviceJob("JobOtherRootEmpty");
+        Assert.Equal(JobRunOutcome.Completed, (await CreateRunner(folders).RunAsync(job, 0, devices, _settings, resumeFrom: null)).Outcome);
+        ReplaceRootMarker(_projectsDirectory);
+        Directory.Delete(Path.Combine(_projectsDirectory, job.Name, "master"), recursive: true);
+
+        var result = await CreateRunner(folders).RunAsync(job, 0, devices, _settings, resumeFrom: null);
+
+        Assert.Equal((JobRunOutcome.CompletedNoChanges, (string?)null), (result.Outcome, result.ErrorMessage));
+        Assert.Equal("content", File.ReadAllText(Path.Combine(_projectsDirectory, job.Name, "master", "photo.jpg")));
+        Assert.Equal("content", File.ReadAllText(Path.Combine(DeviceFolder("DeviceB"), "photo.jpg")));
+    }
+
+    [Fact]
+    public async Task RunAsync_SameRootAtANewPath_RunsAndRecordsTheNewMasterPath()
+    {
+        var (job, devices, folders) = TwoDeviceJob("JobMovedRoot");
+        Assert.Equal(JobRunOutcome.Completed, (await CreateRunner(folders).RunAsync(job, 0, devices, _settings, resumeFrom: null)).Outcome);
+        var movedRoot = Path.Combine(_root, "moved-projects");
+        var plan = ProjectsDirectoryMigrator.Plan([job], _projectsDirectory, movedRoot);
+        ProjectsDirectoryMigrator.Move(plan, _projectsDirectory, movedRoot);
+        var movedSettings = new GlobalSettings { ProjectsDirectory = movedRoot, StaleLockHours = 4 };
+
+        var result = await CreateRunner(folders).RunAsync(job, 0, devices, movedSettings, resumeFrom: null);
+
+        Assert.Equal((JobRunOutcome.CompletedNoChanges, (string?)null), (result.Outcome, result.ErrorMessage));
+        var recorded = await new ManifestStore(_appPaths).GetRootAsync(job.Name);
+        Assert.Equal(Path.Combine(movedRoot, job.Name, "master"), recorded!.MasterPath);
+        Assert.Equal(ProjectFolders.ReadRootId(_projectsDirectory), recorded.RootId);
+    }
+
+    [Fact]
+    public async Task RunAsync_ManifestsWithoutARecordedRoot_AreStampedWithTheCurrentRoot()
+    {
+        var (job, devices, folders) = TwoDeviceJob("JobLegacyManifests");
+        await new ManifestStore(_appPaths).SaveAsync(job.Name, "DeviceA", new SyncManifest());
+
+        var result = await CreateRunner(folders).RunAsync(job, 0, devices, _settings, resumeFrom: null);
+
+        Assert.Equal(JobRunOutcome.Completed, result.Outcome);
+        Assert.Equal(ProjectFolders.ReadRootId(_projectsDirectory), (await new ManifestStore(_appPaths).GetRootAsync(job.Name))!.RootId);
+    }
+
     private sealed class DriveDroppingTransferEngine(IAdbTransferEngine inner, Action dropDrive) : IAdbTransferEngine
     {
         private int _dropped;
@@ -661,6 +747,8 @@ public class SyncJobRunnerTests : IDisposable
         public Task<SyncManifest?> TryGetAsync(string jobName, string deviceName, CancellationToken ct = default) => inner.TryGetAsync(jobName, deviceName, ct);
         public Task SaveAsync(string jobName, string deviceName, SyncManifest manifest, CancellationToken ct = default) => inner.SaveAsync(jobName, deviceName, manifest, ct);
         public Task<int> ClearAsync(string jobName, CancellationToken ct = default) => inner.ClearAsync(jobName, ct);
+        public Task<ManifestRoot?> GetRootAsync(string jobName, CancellationToken ct = default) => inner.GetRootAsync(jobName, ct);
+        public Task SetRootAsync(string jobName, ManifestRoot root, CancellationToken ct = default) => inner.SetRootAsync(jobName, root, ct);
         public Task<bool> AnyEntriesAsync(string jobName, CancellationToken ct = default) => inner.AnyEntriesAsync(jobName, ct);
     }
 

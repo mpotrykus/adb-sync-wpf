@@ -86,6 +86,13 @@ public static class ProjectFolders
             throw new ProjectFolderUnavailableException($"Projects folder '{eff.ProjectsDirectory}' became unavailable during the run.");
     }
 
+    /// <summary>The id in an available root's marker.</summary>
+    public static Guid ReadRootId(string root)
+    {
+        using var marker = File.OpenRead(Path.Combine(root, MarkerFileName));
+        return JsonSerializer.Deserialize(marker, AppConfigJsonContext.Default.ProjectsRootMarker)!.RootId;
+    }
+
     /// <summary>Makes <paramref name="root"/> a projects root because the user chose it: creates it and its marker if missing.</summary>
     public static void AdoptRoot(string root)
     {

@@ -54,5 +54,11 @@ public static class EngineMigrations
                 Json TEXT NOT NULL);
             CREATE INDEX PendingConflictsByDevice ON PendingConflicts (JobName, DeviceName);
             """, LegacyStateImporter.ImportAsync),
+        new(3, """
+            CREATE TABLE ManifestRoots (
+                JobName TEXT PRIMARY KEY COLLATE NOCASE,
+                RootId TEXT NOT NULL,
+                MasterPath TEXT NOT NULL);
+            """),
     ];
 }

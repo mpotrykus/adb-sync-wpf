@@ -150,6 +150,20 @@ public sealed class SyncJobRunner(
                     }
                 }
 
+                var currentRoot = new ManifestRoot(ProjectFolders.ReadRootId(eff.ProjectsDirectory), masterPath);
+                var recordedRoot = await manifests.GetRootAsync(job.Name, ct);
+                if (!masterIsEmpty && recordedRoot is not null && recordedRoot.RootId != currentRoot.RootId && await manifests.AnyEntriesAsync(job.Name, ct))
+                {
+                    var reason =
+                        $"This job last synced against a different projects folder ('{recordedRoot.MasterPath}'), so its sync history doesn't match " +
+                        $"'{masterPath}'. If this is now the right folder, empty the job's master folder and the next run re-syncs it from the devices.";
+                    _logger.LogWarning("Job '{Job}' skipped - {Reason}", job.Name, reason);
+                    events.JobSkipped(job.Name, reason);
+                    return await FinishAsync(JobRunOutcome.SkippedProjectFolderUnavailable, reason);
+                }
+                if (!eff.DryRun && recordedRoot != currentRoot)
+                    await manifests.SetRootAsync(job.Name, currentRoot, ct);
+
                 var pullStopwatch = Stopwatch.StartNew();
                 var pullStats = await RunPullPhaseAsync(job, jobIndex, masterPath, serials, exclude, resumeFrom, eff, settings.MaxConcurrentPerDevice, steps, rollback, pendingManifests, unpulled, ct);
                 pullDuration = pullStopwatch.Elapsed;

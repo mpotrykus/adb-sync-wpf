@@ -35,6 +35,12 @@ public static class ProjectsDirectoryMigrator
     public static void Move(ProjectsMigrationPlan plan, string oldRoot, string newRoot)
     {
         Directory.CreateDirectory(newRoot);
+        // The moved jobs' manifests record the old root's id, so the id travels with the data instead of the new
+        // root getting a fresh one that would make those jobs refuse to run.
+        var oldMarker = Path.Combine(oldRoot, ProjectFolders.MarkerFileName);
+        var newMarker = Path.Combine(newRoot, ProjectFolders.MarkerFileName);
+        if (File.Exists(oldMarker) && !File.Exists(newMarker))
+            File.Copy(oldMarker, newMarker);
         foreach (var name in plan.JobFolders)
         {
             var source = Path.Combine(oldRoot, name);
