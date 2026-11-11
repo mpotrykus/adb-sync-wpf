@@ -77,8 +77,10 @@ builder.Services.AddSingleton<ISyncEventSink>(sp => new CompositeSyncEventSink(
     sp.GetRequiredService<JobStatusTracker>(),
     sp.GetRequiredService<RunRegistry>(),
     sp.GetRequiredService<WatchStateTracker>(),
+    sp.GetRequiredService<CompanionBroadcastService>().Sink,
 ]));
 builder.Services.AddSingleton<IHostPowerEvents, NoHostPowerEvents>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<CompanionBroadcastService>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<SchedulerHostedService>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ChangeWatchHostedService>());
 builder.Services.AddProblemDetails();

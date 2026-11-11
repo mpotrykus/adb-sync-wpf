@@ -31,7 +31,7 @@ else
                     <MudTextField @bind-Value="_timeZone" Label="Time zone" Variant="Variant.Outlined"
                                   HelperText="IANA name, e.g. America/Chicago. Daily schedules and quiet hours use it." />
                     <MudSwitch T="bool" @bind-Value="_runMissed" Color="Color.Primary" Label="Run missed schedules after a restart" />
-                    <MudSwitch T="bool" @bind-Value="_broadcasts" Color="Color.Primary" Label="Announce the server to the companion app" />
+                    <MudSwitch T="bool" @bind-Value="_broadcasts" Color="Color.Primary" Label="Send sync progress to the companion app on the phones" />
                 </MudStack>
             </MudPaper>
         </MudItem>
