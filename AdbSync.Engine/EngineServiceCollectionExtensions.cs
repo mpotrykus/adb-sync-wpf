@@ -31,14 +31,14 @@ public static class EngineServiceCollectionExtensions
         services.AddSingleton<IAdbClient>(_ => new AdbClient());
         services.AddSingleton<IAdbServer>(_ => new AdbServer());
         services.AddSingleton<IMdnsBrowser, MdnsBrowser>();
-        services.AddSingleton<IAdbDeviceResolver, AdbDeviceResolver>();
+        services.AddSingleton<IAdbDeviceResolver>(sp => ActivatorUtilities.CreateInstance<AdbDeviceResolver>(sp, AdbExecutable.Resolve()));
         services.AddSingleton<IDeviceChangeWatcher, DeviceChangeWatcher>();
         services.AddSingleton<IAppRunningGuard, AppRunningGuard>();
         services.AddSingleton<IDeviceAppControl, DeviceAppControl>();
         services.AddSingleton<IDevicePackageLister, AdbDevicePackageLister>();
         services.AddSingleton<ISyncLockManager, SyncLockManager>();
         services.AddSingleton<IDeviceAccessGate, DeviceAccessGate>();
-        services.AddSingleton<IAdbProcessRunner>(_ => new AdbProcessRunner());
+        services.AddSingleton<IAdbProcessRunner>(_ => new AdbProcessRunner(AdbExecutable.Resolve()));
         services.AddSingleton<IMirrorDiffer, MirrorDiffer>();
         services.AddSingleton<IRemoteFileSystemFactory, AdbRemoteFileSystemFactory>();
         services.AddSingleton<IAdbTransferEngine, NativeAdbTransferEngine>();
@@ -64,5 +64,18 @@ public static class EngineServiceCollectionExtensions
         services.AddSingleton<SchedulerHostedService>();
         services.AddSingleton<ChangeWatchHostedService>();
         return services;
+    }
+}
+
+/// <summary>Where the adb executable is: ADBSYNC_ADB_PATH, else a known install location, else "adb" from PATH.</summary>
+internal static class AdbExecutable
+{
+    private static readonly string[] KnownLocations = ["/usr/bin/adb", "/usr/local/bin/adb", "/usr/lib/android-sdk/platform-tools/adb"];
+
+    public static string Resolve()
+    {
+        if (Environment.GetEnvironmentVariable("ADBSYNC_ADB_PATH") is { Length: > 0 } configured)
+            return configured;
+        return OperatingSystem.IsWindows() ? "adb" : KnownLocations.FirstOrDefault(File.Exists) ?? "adb";
     }
 }

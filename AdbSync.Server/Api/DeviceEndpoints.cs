@@ -170,7 +170,7 @@ public static class DeviceEndpoints
                 return Results.NoContent();
             }));
 
-        api.MapPost("/devices/{deviceId:guid}/test", async (Guid deviceId, AppConfigService configService, IAdbDeviceResolver resolver, EventBus bus, CancellationToken ct) =>
+        api.MapPost("/devices/{deviceId:guid}/test", async (Guid deviceId, AppConfigService configService, IAdbDeviceResolver resolver, EventBus bus, ILogger<DeviceApiLog> log, CancellationToken ct) =>
         {
             var config = await configService.GetAsync();
             if (config.Devices.FirstOrDefault(d => d.Id == deviceId) is not { } device)
@@ -186,12 +186,14 @@ public static class DeviceEndpoints
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
             {
+                log.LogWarning(ex, "Connection test for device '{Device}' failed", device.Name);
                 return Results.Ok(new ConnectionTestResultDto(false, null, null, "device_unreachable", ex.Message));
             }
         });
 
         api.MapPost("/devices/{deviceId:guid}/pair", async (
-            Guid deviceId, AdbPairRequestDto request, HttpContext http, AppConfigService configService, IAdbDeviceResolver resolver, CancellationToken ct) =>
+            Guid deviceId, AdbPairRequestDto request, HttpContext http, AppConfigService configService, IAdbDeviceResolver resolver,
+            ILogger<DeviceApiLog> log, CancellationToken ct) =>
         {
             if (request.Code is not { Length: 6 } code || !code.All(char.IsAsciiDigit) || request.Port is < 1 or > 65535)
                 return Problems.Validation("Expected the pairing port and the 6-digit code shown on the phone.");
@@ -211,6 +213,7 @@ public static class DeviceEndpoints
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
             {
+                log.LogWarning(ex, "Pairing device '{Device}' at {Host}:{Port} failed", device.Name, host, request.Port);
                 return Problems.Create(StatusCodes.Status502BadGateway, "pairing_failed", "Pairing with the phone failed.", ex.Message);
             }
             await configService.SaveAsync();
@@ -332,3 +335,6 @@ public static class DeviceEndpoints
             type: "https://adbsync.dev/problems/validation_failed",
             extensions: new Dictionary<string, object?> { ["code"] = "validation_failed", ["errors"] = errors });
 }
+
+/// <summary>Category for log lines from the device endpoints.</summary>
+public sealed class DeviceApiLog;
