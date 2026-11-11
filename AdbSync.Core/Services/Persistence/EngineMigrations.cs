@@ -35,5 +35,24 @@ public static class EngineMigrations
                 Id INTEGER PRIMARY KEY CHECK (Id = 1),
                 Paused INTEGER NOT NULL);
             """, AppConfigStore.ImportLegacyJsonAsync),
+        new(2, """
+            CREATE TABLE Manifests (
+                JobName TEXT NOT NULL COLLATE NOCASE,
+                DeviceName TEXT NOT NULL COLLATE NOCASE,
+                Json TEXT NOT NULL,
+                PRIMARY KEY (JobName, DeviceName));
+            CREATE TABLE Checkpoints (
+                JobName TEXT PRIMARY KEY COLLATE NOCASE,
+                Json TEXT NOT NULL);
+            CREATE TABLE PushSafety (
+                JobName TEXT PRIMARY KEY COLLATE NOCASE,
+                Json TEXT NOT NULL);
+            CREATE TABLE PendingConflicts (
+                Id TEXT PRIMARY KEY,
+                JobName TEXT NOT NULL COLLATE NOCASE,
+                DeviceName TEXT NOT NULL COLLATE NOCASE,
+                Json TEXT NOT NULL);
+            CREATE INDEX PendingConflictsByDevice ON PendingConflicts (JobName, DeviceName);
+            """, LegacyStateImporter.ImportAsync),
     ];
 }

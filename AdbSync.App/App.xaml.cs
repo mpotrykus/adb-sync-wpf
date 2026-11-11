@@ -162,11 +162,11 @@ public partial class App : Application
         services.AddSingleton<IRemoteFileSystemFactory, AdbRemoteFileSystemFactory>();
         services.AddSingleton<IAdbTransferEngine, NativeAdbTransferEngine>();
         services.AddSingleton<ITwoWayMergeEngine, TwoWayMergeEngine>();
-        services.AddSingleton<IManifestStore, ManifestStore>();
-        services.AddSingleton<IPendingConflictStore, PendingConflictStore>();
+        services.AddSingleton<IManifestStore>(sp => new ManifestStore(sp.GetRequiredService<EngineDatabase>()));
+        services.AddSingleton<IPendingConflictStore>(sp => new PendingConflictStore(sp.GetRequiredService<EngineDatabase>(), sp.GetRequiredService<AppPaths>()));
         services.AddSingleton<IConflictResolver, ConflictResolver>();
-        services.AddSingleton<IPushSafetyGuard, PushSafetyGuard>();
-        services.AddSingleton<ICheckpointManager, CheckpointManager>();
+        services.AddSingleton<IPushSafetyGuard>(sp => new PushSafetyGuard(sp.GetRequiredService<EngineDatabase>()));
+        services.AddSingleton<ICheckpointManager>(sp => new CheckpointManager(sp.GetRequiredService<EngineDatabase>()));
         services.AddSingleton<IDeviceSnapshotService, DeviceSnapshotService>();
         services.AddSingleton<RollbackPointStore>();
         services.AddSingleton<RollbackService>();

@@ -17,6 +17,7 @@ namespace AdbSync.Core.Services.Config;
 [JsonSerializable(typeof(LegacyProjectsFile))]
 [JsonSerializable(typeof(SyncManifest))]
 [JsonSerializable(typeof(PendingConflictsFile))]
+[JsonSerializable(typeof(PendingConflict))]
 [JsonSerializable(typeof(SyncCheckpoint))]
 [JsonSerializable(typeof(PushSafetyHistory))]
 [JsonSerializable(typeof(DashboardUiState))]

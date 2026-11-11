@@ -143,7 +143,7 @@ public sealed class SyncJobRunner(
                     }
                     else
                     {
-                        var cleared = manifests.Clear(job.Name);
+                        var cleared = await manifests.ClearAsync(job.Name, ct);
                         _logger.LogWarning(
                             "Job '{Job}' master is empty but {Count} manifest(s) record previously synced files - discarded them so the missing master is not treated as deletions",
                             job.Name, cleared);

@@ -660,7 +660,7 @@ public class SyncJobRunnerTests : IDisposable
 
         public Task<SyncManifest?> TryGetAsync(string jobName, string deviceName, CancellationToken ct = default) => inner.TryGetAsync(jobName, deviceName, ct);
         public Task SaveAsync(string jobName, string deviceName, SyncManifest manifest, CancellationToken ct = default) => inner.SaveAsync(jobName, deviceName, manifest, ct);
-        public int Clear(string jobName) => inner.Clear(jobName);
+        public Task<int> ClearAsync(string jobName, CancellationToken ct = default) => inner.ClearAsync(jobName, ct);
         public Task<bool> AnyEntriesAsync(string jobName, CancellationToken ct = default) => inner.AnyEntriesAsync(jobName, ct);
     }
 

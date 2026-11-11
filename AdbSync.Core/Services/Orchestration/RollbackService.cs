@@ -79,7 +79,7 @@ public sealed class RollbackService(
             restoredDevices++;
         }
 
-        manifests.Clear(job.Name);
+        await manifests.ClearAsync(job.Name, ct);
         await pushSafety.ForcePushAsync(job.Name, masterPath, ct);
 
         return new SnapshotResult(pointPath, restoredDevices, filesCopied, bytes, errors, filesDeleted, skipped);

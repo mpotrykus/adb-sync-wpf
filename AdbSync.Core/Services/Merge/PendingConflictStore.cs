@@ -1,49 +1,43 @@
 using AdbSync.Core.Models.Merge;
 using AdbSync.Core.Services.Common;
 using AdbSync.Core.Services.Config;
+using AdbSync.Core.Services.Persistence;
+using Microsoft.Data.Sqlite;
+using System.Text.Json;
 using System.Security.Cryptography;
 using System.Text;
 
 namespace AdbSync.Core.Services.Merge;
 
-public sealed class PendingConflictStore(AppPaths paths) : IPendingConflictStore
+public sealed class PendingConflictStore(EngineDatabase database, AppPaths paths) : IPendingConflictStore
 {
     private static readonly TimeSpan ModifiedTolerance = TimeSpan.FromSeconds(2);
     private readonly SemaphoreSlim _gate = new(1, 1);
+
+    public PendingConflictStore(AppPaths paths) : this(new EngineDatabase(paths), paths) { }
 
     public static string MakeId(string jobName, string deviceName, string relativePath) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{jobName}\n{deviceName}\n{relativePath}")))[..16].ToLowerInvariant();
 
     public async Task<IReadOnlyList<PendingConflict>> ListAsync(string? jobName = null, CancellationToken ct = default)
     {
-        await _gate.WaitAsync(ct);
-        try
-        {
-            var result = new List<PendingConflict>();
-            if (!Directory.Exists(paths.PendingConflictsDir))
-                return result;
-
-            foreach (var jobDir in Directory.GetDirectories(paths.PendingConflictsDir))
-            {
-                if (jobName is not null && !string.Equals(Path.GetFileName(jobDir), jobName, StringComparison.OrdinalIgnoreCase))
-                    continue;
-                foreach (var file in Directory.GetFiles(jobDir, "*.pending.json"))
-                {
-                    var loaded = await JsonFileIo.ReadAsync(file, AppConfigJsonContext.Default.PendingConflictsFile, ct);
-                    if (loaded is not null)
-                        result.AddRange(loaded.Items);
-                }
-            }
-            return result.OrderBy(c => c.JobName, StringComparer.OrdinalIgnoreCase).ThenBy(c => c.RelativePath, StringComparer.Ordinal).ToList();
-        }
-        finally
-        {
-            _gate.Release();
-        }
+        await using var connection = await database.OpenAsync(ct);
+        var rows = jobName is null
+            ? await Sql.QueryAsync(connection, null, "SELECT Json FROM PendingConflicts;", r => r.GetString(0), ct)
+            : await Sql.QueryAsync(connection, null, "SELECT Json FROM PendingConflicts WHERE JobName = @job;", r => r.GetString(0), ct, ("@job", jobName));
+        return rows
+            .Select(json => JsonSerializer.Deserialize(json, AppConfigJsonContext.Default.PendingConflict)!)
+            .OrderBy(c => c.JobName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(c => c.RelativePath, StringComparer.Ordinal)
+            .ToList();
     }
 
-    public async Task<PendingConflict?> GetAsync(string id, CancellationToken ct = default) =>
-        (await ListAsync(null, ct)).FirstOrDefault(c => c.Id == id);
+    public async Task<PendingConflict?> GetAsync(string id, CancellationToken ct = default)
+    {
+        await using var connection = await database.OpenAsync(ct);
+        var rows = await Sql.QueryAsync(connection, null, "SELECT Json FROM PendingConflicts WHERE Id = @id;", r => r.GetString(0), ct, ("@id", id));
+        return rows.Count == 0 ? null : JsonSerializer.Deserialize(rows[0], AppConfigJsonContext.Default.PendingConflict);
+    }
 
     public async Task<int> ReplaceDeviceAsync(
         string jobName, string deviceName, IReadOnlyList<HeldConflict> held, string stagingPath, CancellationToken ct = default)
@@ -51,8 +45,13 @@ public sealed class PendingConflictStore(AppPaths paths) : IPendingConflictStore
         await _gate.WaitAsync(ct);
         try
         {
-            var filePath = GetFilePath(jobName, deviceName);
-            var existing = (await JsonFileIo.ReadAsync(filePath, AppConfigJsonContext.Default.PendingConflictsFile, ct))?.Items ?? [];
+            await using var connection = await database.OpenAsync(ct);
+            await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(ct);
+            var existing = (await Sql.QueryAsync(connection, transaction,
+                    "SELECT Json FROM PendingConflicts WHERE JobName = @job AND DeviceName = @device;", r => r.GetString(0), ct,
+                    ("@job", jobName), ("@device", deviceName)))
+                .Select(json => JsonSerializer.Deserialize(json, AppConfigJsonContext.Default.PendingConflict)!)
+                .ToList();
             var existingById = existing.ToDictionary(c => c.Id, StringComparer.Ordinal);
             var next = new List<PendingConflict>();
             var added = 0;
@@ -95,10 +94,11 @@ public sealed class PendingConflictStore(AppPaths paths) : IPendingConflictStore
             foreach (var gone in existing.Where(c => !keep.Contains(c.Id)))
                 DeleteQuietly(GetCopyPath(gone));
 
-            if (next.Count == 0)
-                DeleteQuietly(filePath);
-            else
-                await JsonFileIo.WriteAtomicAsync(filePath, new PendingConflictsFile { Items = next }, AppConfigJsonContext.Default.PendingConflictsFile, ct);
+            await Sql.ExecuteAsync(connection, transaction,
+                "DELETE FROM PendingConflicts WHERE JobName = @job AND DeviceName = @device;", ct, ("@job", jobName), ("@device", deviceName));
+            foreach (var conflict in next)
+                await InsertAsync(connection, transaction, conflict, ct);
+            await transaction.CommitAsync(ct);
             return added;
         }
         finally
@@ -118,14 +118,9 @@ public sealed class PendingConflictStore(AppPaths paths) : IPendingConflictStore
         await _gate.WaitAsync(ct);
         try
         {
-            var filePath = GetFilePath(conflict.JobName, conflict.DeviceName);
-            var items = (await JsonFileIo.ReadAsync(filePath, AppConfigJsonContext.Default.PendingConflictsFile, ct))?.Items ?? [];
-            items.RemoveAll(c => c.Id == conflict.Id);
+            await using var connection = await database.OpenAsync(ct);
+            await Sql.ExecuteAsync(connection, null, "DELETE FROM PendingConflicts WHERE Id = @id;", ct, ("@id", conflict.Id));
             DeleteQuietly(GetCopyPath(conflict));
-            if (items.Count == 0)
-                DeleteQuietly(filePath);
-            else
-                await JsonFileIo.WriteAtomicAsync(filePath, new PendingConflictsFile { Items = items }, AppConfigJsonContext.Default.PendingConflictsFile, ct);
         }
         finally
         {
@@ -133,8 +128,13 @@ public sealed class PendingConflictStore(AppPaths paths) : IPendingConflictStore
         }
     }
 
-    private string GetFilePath(string jobName, string deviceName) =>
-        Path.Combine(paths.PendingConflictsDir, ConfigNames.Segment(jobName), $"{ConfigNames.Segment(deviceName)}.pending.json");
+    internal static Task InsertAsync(SqliteConnection connection, SqliteTransaction transaction, PendingConflict conflict, CancellationToken ct) =>
+        Sql.ExecuteAsync(connection, transaction, """
+            INSERT INTO PendingConflicts (Id, JobName, DeviceName, Json) VALUES (@id, @job, @device, @json)
+            ON CONFLICT (Id) DO UPDATE SET Json = excluded.Json;
+            """, ct,
+            ("@id", conflict.Id), ("@job", ConfigNames.Segment(conflict.JobName)), ("@device", ConfigNames.Segment(conflict.DeviceName)),
+            ("@json", JsonSerializer.Serialize(conflict, AppConfigJsonContext.Default.PendingConflict)));
 
     private string GetCopyPath(PendingConflict conflict) =>
         Path.Combine(paths.PendingConflictsDir, ConfigNames.Segment(conflict.JobName), ConfigNames.Segment(conflict.DeviceName), $"{conflict.Id}.blob");
