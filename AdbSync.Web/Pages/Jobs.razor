@@ -143,6 +143,9 @@ else
                             </MudTooltip>
                         }
                         <MudSpacer />
+                        <MudTooltip Text="Snapshots and rollback">
+                            <MudIconButton Icon="@Icons.Material.Filled.History" Disabled="busy" OnClick="() => OpenSnapshotsAsync(job)" />
+                        </MudTooltip>
                         <MudTooltip Text="Edit job">
                             <MudIconButton Icon="@Icons.Material.Filled.Edit" Disabled="@(busy || config is null)" OnClick="() => EditAsync(config)" />
                         </MudTooltip>
@@ -274,6 +277,18 @@ else
         var parameters = new DialogParameters<RunDialog> { { d => d.RunId, runId }, { d => d.DeviceNames, _deviceNames } };
         var dialog = await Dialogs.ShowAsync<RunDialog>("Run", parameters,
             new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true, CloseButton = true });
+        await dialog.Result;
+        await Status.RefreshAsync();
+    }
+
+    private async Task OpenSnapshotsAsync(JobStatusDto job)
+    {
+        var parameters = new DialogParameters<SnapshotsDialog>
+        {
+            { d => d.JobId, job.JobId }, { d => d.JobName, job.Name }, { d => d.DeviceNames, _deviceNames },
+        };
+        var dialog = await Dialogs.ShowAsync<SnapshotsDialog>("Snapshots", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true });
         await dialog.Result;
         await Status.RefreshAsync();
     }
