@@ -1,6 +1,7 @@
 @page "/settings"
 @inject ApiClient Api
 @inject ISnackbar Snackbar
+@inject IDialogService Dialogs
 
 <PageTitle>Settings · AdbSync</PageTitle>
 
@@ -26,8 +27,11 @@ else
             <MudPaper Class="pa-4" Elevation="1">
                 <MudText Typo="Typo.h6" Class="mb-3">General</MudText>
                 <MudStack Spacing="3">
-                    <MudTextField Value="_s.ProjectsDirectory" Label="Projects directory" Variant="Variant.Outlined" ReadOnly="true"
-                                  HelperText="Changed through a move operation, not here." Class="mono-input" />
+                    <div class="d-flex align-start gap-2">
+                        <MudTextField Value="_s.ProjectsDirectory" Label="Projects directory" Variant="Variant.Outlined" ReadOnly="true"
+                                      HelperText="Where each job's master copy lives on the server." Class="mono-input" />
+                        <MudButton Variant="Variant.Outlined" Class="mt-2" OnClick="ChangeProjectsDirectoryAsync">Change…</MudButton>
+                    </div>
                     <MudTextField @bind-Value="_timeZone" Label="Time zone" Variant="Variant.Outlined"
                                   HelperText="IANA name, e.g. America/Chicago. Daily schedules and quiet hours use it." />
                     <MudSwitch T="bool" @bind-Value="_runMissed" Color="Color.Primary" Label="Run missed schedules after a restart" />
@@ -149,6 +153,28 @@ else
         _quietEnabled = s.Notifications.QuietHours.Enabled;
         _quietStart = s.Notifications.QuietHours.Start;
         _quietEnd = s.Notifications.QuietHours.End;
+    }
+
+    private async Task ChangeProjectsDirectoryAsync()
+    {
+        Dictionary<Guid, string> names = [];
+        try
+        {
+            names = (await Api.GetAsync<List<JobDto>>("jobs")).ToDictionary(j => j.Id, j => j.Name);
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException)
+        {
+            if (!ex.IsSignedOut()) Snackbar.Add(ex.Message, Severity.Error);
+            return;
+        }
+        var parameters = new DialogParameters<ProjectsDirectoryDialog> { { d => d.Current, _s!.ProjectsDirectory }, { d => d.JobNames, names } };
+        var dialog = await Dialogs.ShowAsync<ProjectsDirectoryDialog>("Change projects directory", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        if (await dialog.Result is { Canceled: false })
+        {
+            Snackbar.Add("Projects directory changed", Severity.Success);
+            Load(await Api.GetAsync<SettingsDto>("settings"));
+        }
     }
 
     private async Task SaveAsync()

@@ -1,0 +1,141 @@
+@inject ApiClient Api
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">Change projects directory</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudStack Spacing="3">
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">Now: <span class="mono">@Current</span></MudText>
+            <MudTextField @bind-Value="_path" Label="New folder on the server" Variant="Variant.Outlined" Class="mono-input"
+                          Disabled="_running" HelperText="A full path, for example /mnt/usb2/AdbSync Projects. Changing the text clears the check below."
+                          TextChanged="OnPathChanged" Immediate="true" />
+            @if (_error is not null)
+            {
+                <MudAlert Severity="Severity.Error" Dense="true">@_error</MudAlert>
+            }
+
+            @if (_plan is { } plan)
+            {
+                @if (!plan.Reachable)
+                {
+                    <MudAlert Severity="Severity.Warning" Dense="true">That folder isn't reachable from the server (is the drive mounted?).</MudAlert>
+                }
+                @foreach (var blocker in plan.Blockers)
+                {
+                    <MudAlert Severity="Severity.Warning" Dense="true">@blocker.Detail</MudAlert>
+                }
+                @if (plan.Moves.Count == 0)
+                {
+                    <MudText Typo="Typo.body2">No project folders need to move.</MudText>
+                }
+                else
+                {
+                    <MudSwitch T="bool" @bind-Value="_moveExisting" Color="Color.Primary" Disabled="_running"
+                               Label="Move the existing project folders there" />
+                    <MudSimpleTable Dense="true" Elevation="0" Style="background:transparent">
+                        <thead><tr><th>Job</th><th>From → to</th><th style="text-align:right">Size</th></tr></thead>
+                        <tbody>
+                            @foreach (var move in plan.Moves)
+                            {
+                                <tr>
+                                    <td>@(JobNames.GetValueOrDefault(move.JobId, "?"))</td>
+                                    <td class="mono" style="font-size:12px;word-break:break-all">@move.From → @move.To@(move.CrossDevice ? " (copied across drives)" : "")</td>
+                                    <td style="text-align:right;white-space:nowrap">@Format.Bytes(move.SizeBytes)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                    @if (!_moveExisting)
+                    {
+                        <MudAlert Severity="Severity.Info" Dense="true">
+                            The folders stay where they are. Jobs will look for their files in the new directory, so move them yourself first or they will see an empty master.
+                        </MudAlert>
+                    }
+                }
+            }
+
+            @if (_running)
+            {
+                <MudProgressLinear Indeterminate="true" />
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">@(_progress ?? "Working…")</MudText>
+            }
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Disabled="_running" OnClick="() => MudDialog.Cancel()">Cancel</MudButton>
+        @if (_plan is null)
+        {
+            <MudButton Color="Color.Primary" Variant="Variant.Filled" Disabled="@(_running || string.IsNullOrWhiteSpace(_path))" OnClick="CheckAsync">Check</MudButton>
+        }
+        else
+        {
+            <MudButton Color="Color.Primary" Variant="Variant.Filled" Disabled="@(_running || !_plan.Reachable || _plan.Blockers.Count > 0)" OnClick="ApplyAsync">
+                @(_plan.Moves.Count > 0 && _moveExisting ? "Move and switch" : "Switch")
+            </MudButton>
+        }
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public string Current { get; set; } = "";
+    [Parameter] public IReadOnlyDictionary<Guid, string> JobNames { get; set; } = new Dictionary<Guid, string>();
+
+    private string _path = "";
+    private ProjectsDirectoryPlanDto? _plan;
+    private bool _moveExisting = true;
+    private bool _running;
+    private string? _progress;
+    private string? _error;
+
+    private void OnPathChanged(string value)
+    {
+        _path = value;
+        _plan = null;
+        _error = null;
+    }
+
+    private async Task CheckAsync()
+    {
+        _error = null;
+        try
+        {
+            _plan = await Api.GetAsync<ProjectsDirectoryPlanDto>($"settings/projects-directory/plan?path={Uri.EscapeDataString(_path.Trim())}");
+            _moveExisting = _plan.Moves.Count > 0;
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException)
+        {
+            if (!ex.IsSignedOut()) _error = ex.Message;
+        }
+    }
+
+    private async Task ApplyAsync()
+    {
+        _error = null;
+        _running = true;
+        _progress = "Starting…";
+        try
+        {
+            var operation = await Api.PostAsync<OperationDto>("settings/projects-directory", new MoveProjectsRequest(_path.Trim(), _moveExisting));
+            while (operation.Status == "running")
+            {
+                await Task.Delay(1000);
+                operation = await Api.GetAsync<OperationDto>($"operations/{operation.Id}");
+                _progress = operation.Progress?.Message ?? _progress;
+                StateHasChanged();
+            }
+            if (operation.Status == "succeeded")
+            {
+                MudDialog.Close(DialogResult.Ok(true));
+                return;
+            }
+            _error = operation.Message ?? "The change failed.";
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException)
+        {
+            if (!ex.IsSignedOut()) _error = ex.Message;
+        }
+        _running = false;
+    }
+}

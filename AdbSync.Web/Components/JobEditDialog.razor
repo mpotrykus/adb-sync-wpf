@@ -53,6 +53,58 @@
 
             <MudTextField @bind-Value="_exclude" Label="Exclude patterns (one per line)" Variant="Variant.Outlined" Lines="3" AutoGrow="true" />
             <MudSwitch T="bool" @bind-Value="_enabled" Color="Color.Primary" Label="Enabled" />
+
+            <MudExpansionPanels Elevation="0" Outlined="true" Class="mt-1">
+                <MudExpansionPanel Text="Advanced" Dense="true">
+                    <MudStack Spacing="3">
+                        <MudTextField @bind-Value="_projectDir" Label="Project folder (optional)" Variant="Variant.Outlined" Class="mono-input"
+                                      HelperText="A full path on the server. Empty uses the projects directory from Settings." />
+                        <MudSwitch T="bool" @bind-Value="_dryRun" Color="Color.Primary" Label="Always a dry run (never writes anything)" />
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                            Overrides: anything left empty uses the global value from Settings.
+                        </MudText>
+                        <MudSelect T="string" @bind-Value="_conflictPolicy" Label="When a file changed on two sides" Variant="Variant.Outlined" Margin="Margin.Dense">
+                            <MudSelectItem Value="@("")">Use the global setting</MudSelectItem>
+                            <MudSelectItem Value="@("newestWins")">Newest wins</MudSelectItem>
+                            <MudSelectItem Value="@("ask")">Ask me</MudSelectItem>
+                        </MudSelect>
+                        <MudSelect T="string" @bind-Value="_backupLosers" Label="Keep a copy of the losing version" Variant="Variant.Outlined" Margin="Margin.Dense">
+                            <MudSelectItem Value="@("")">Use the global setting</MudSelectItem>
+                            <MudSelectItem Value="@("yes")">Yes</MudSelectItem>
+                            <MudSelectItem Value="@("no")">No</MudSelectItem>
+                        </MudSelect>
+                        <div class="d-flex gap-3">
+                            <MudSelect T="string" @bind-Value="_showInfo" Label="Info notifications" Variant="Variant.Outlined" Margin="Margin.Dense">
+                                <MudSelectItem Value="@("")">Global</MudSelectItem>
+                                <MudSelectItem Value="@("yes")">Show</MudSelectItem>
+                                <MudSelectItem Value="@("no")">Hide</MudSelectItem>
+                            </MudSelect>
+                            <MudSelect T="string" @bind-Value="_showErrors" Label="Error notifications" Variant="Variant.Outlined" Margin="Margin.Dense">
+                                <MudSelectItem Value="@("")">Global</MudSelectItem>
+                                <MudSelectItem Value="@("yes")">Show</MudSelectItem>
+                                <MudSelectItem Value="@("no")">Hide</MudSelectItem>
+                            </MudSelect>
+                        </div>
+                        <div class="d-flex gap-3">
+                            <MudNumericField T="int?" @bind-Value="_pushSafety" Label="Push safety minimum (%)" Min="0" Max="100" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                            <MudNumericField T="int?" @bind-Value="_throttle" Label="Bandwidth limit (KB/s)" Min="1" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        </div>
+                        <div class="d-flex gap-3">
+                            <MudNumericField T="int?" @bind-Value="_retryAttempts" Label="Retry attempts" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                            <MudNumericField T="int?" @bind-Value="_retryBackoff" Label="Backoff (seconds)" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        </div>
+                        <div class="d-flex gap-3">
+                            <MudNumericField T="int?" @bind-Value="_retentionDays" Label="Conflict copies (days)" Min="1" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                            <MudNumericField T="int?" @bind-Value="_checkpointDays" Label="Checkpoints (days)" Min="1" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        </div>
+                        <div class="d-flex gap-3">
+                            <MudNumericField T="int?" @bind-Value="_rollbackKeep" Label="Rollback points kept" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                            <MudNumericField T="int?" @bind-Value="_historyEntries" Label="Runs kept" Min="1" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                            <MudNumericField T="int?" @bind-Value="_fileDetailRuns" Label="Runs with file detail" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        </div>
+                    </MudStack>
+                </MudExpansionPanel>
+            </MudExpansionPanels>
         </MudStack>
     </DialogContent>
     <DialogActions>
@@ -86,6 +138,10 @@
     private string _dailyTimes = "";
     private string _exclude = "";
     private bool _enabled = true;
+    private string? _projectDir;
+    private bool _dryRun;
+    private string _conflictPolicy = "", _backupLosers = "", _showInfo = "", _showErrors = "";
+    private int? _pushSafety, _throttle, _retryAttempts, _retryBackoff, _retentionDays, _checkpointDays, _rollbackKeep, _historyEntries, _fileDetailRuns;
     private bool _saving;
     private string? _error;
 
@@ -106,7 +162,32 @@
         _dailyTimes = string.Join(", ", Job.Schedule.DailyTimes ?? []);
         _exclude = string.Join('\n', Job.Exclude);
         _enabled = Job.Enabled;
+        _projectDir = Job.ProjectDirectory;
+        _dryRun = Job.DryRun;
+        var o = Job.Overrides;
+        _conflictPolicy = o.ConflictPolicy ?? "";
+        _backupLosers = FromTri(o.BackupConflictLosers);
+        _showInfo = FromTri(o.ShowInfoNotifications);
+        _showErrors = FromTri(o.ShowErrorNotifications);
+        _pushSafety = o.PushSafetyMinimumPercent;
+        _throttle = o.BandwidthThrottleKBps;
+        _retryAttempts = o.RetryMaxAttempts;
+        _retryBackoff = o.RetryBackoffSeconds;
+        _retentionDays = o.ConflictRetentionDays;
+        _checkpointDays = o.CheckpointRetentionDays;
+        _rollbackKeep = o.RollbackPointsToKeep;
+        _historyEntries = o.MaxRunHistoryEntries;
+        _fileDetailRuns = o.FileDetailRunsKept;
     }
+
+    private static string FromTri(bool? value) => value switch { true => "yes", false => "no", _ => "" };
+
+    private static bool? ToTri(string value) => value switch { "yes" => true, "no" => false, _ => null };
+
+    private JobOverridesDto BuildOverrides() => new(
+        _retentionDays, ToTri(_showInfo), ToTri(_showErrors), _historyEntries, _fileDetailRuns, ToTri(_backupLosers),
+        string.IsNullOrEmpty(_conflictPolicy) ? null : _conflictPolicy, _checkpointDays, _rollbackKeep, _throttle,
+        _retryAttempts, _retryBackoff, _pushSafety);
 
     private ScheduleDto BuildSchedule(ScheduleDto? current) => new(
         _kind,
@@ -125,9 +206,11 @@
                 .Select(d => new JobBindingDto(d.Id, _bindings[d.Id].RemotePath.Trim())).ToList();
             var exclude = _exclude.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
             var package = string.IsNullOrWhiteSpace(_appPackage) ? null : _appPackage.Trim();
+            var projectDir = string.IsNullOrWhiteSpace(_projectDir) ? null : _projectDir.Trim();
+            var overrides = BuildOverrides();
             if (Job is null)
             {
-                await Api.PostAsync<JobDto>("jobs", new JobInputDto(_name.Trim(), null, package, exclude, devices, BuildSchedule(null), _enabled, false, null));
+                await Api.PostAsync<JobDto>("jobs", new JobInputDto(_name.Trim(), projectDir, package, exclude, devices, BuildSchedule(null), _enabled, _dryRun, overrides));
             }
             else
             {
@@ -139,6 +222,9 @@
                     devices,
                     schedule = BuildSchedule(Job.Schedule),
                     enabled = _enabled,
+                    projectDirectory = projectDir,
+                    dryRun = _dryRun,
+                    overrides,
                 });
             }
             MudDialog.Close(DialogResult.Ok(true));

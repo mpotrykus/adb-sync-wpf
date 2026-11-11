@@ -1,5 +1,6 @@
 @implements IDisposable
 @inject ApiClient Api
+@inject StatusStore Status
 
 <MudDialog>
     <TitleContent>
@@ -153,36 +154,61 @@
 
     private bool Live => _detail?.Run.Status is "queued" or "running";
 
-    protected override void OnInitialized() => _ = PollAsync(_cts.Token);
+    private readonly SemaphoreSlim _refreshing = new(1, 1);
+
+    protected override void OnInitialized()
+    {
+        Status.EventReceived += OnEvent;
+        _ = PollAsync(_cts.Token);
+    }
+
+    /// <summary>The server announces step, start, finish and conflict changes; the log has no event, so a slow poll covers it.</summary>
+    private void OnEvent(string type)
+    {
+        if (Live && type is "run.steps" or "run.started" or "run.finished" or "run.conflicts")
+            _ = InvokeAsync(() => RefreshAsync(_cts.Token));
+    }
 
     private async Task PollAsync(CancellationToken ct)
     {
         try
         {
-            while (!ct.IsCancellationRequested)
+            await RefreshAsync(ct);
+            while (Live && !ct.IsCancellationRequested)
             {
-                _detail = await Api.GetAsync<RunDetailDto>($"runs/{RunId}", ct);
-                var live = Live;
-                _files = await Api.GetAsync<RunFilesPageDto>($"runs/{RunId}/files", ct);
-                _log = await Api.GetTextAsync($"runs/{RunId}/log?tail=400", ct);
-                await InvokeAsync(() =>
-                {
-                    StateHasChanged();
-                    // The dialog frame captures TitleContent once; it only re-renders the title when told to.
-                    MudDialog.StateHasChanged();
-                });
-                if (!live)
-                    return;
-                await Task.Delay(1500, ct);
+                await Task.Delay(3000, ct);
+                await RefreshAsync(ct);
             }
         }
         catch (OperationCanceledException)
         {
         }
+    }
+
+    private async Task RefreshAsync(CancellationToken ct)
+    {
+        if (!await _refreshing.WaitAsync(0, ct))
+            return;
+        try
+        {
+            _detail = await Api.GetAsync<RunDetailDto>($"runs/{RunId}", ct);
+            _files = await Api.GetAsync<RunFilesPageDto>($"runs/{RunId}/files", ct);
+            _log = await Api.GetTextAsync($"runs/{RunId}/log?tail=400", ct);
+            await InvokeAsync(() =>
+            {
+                StateHasChanged();
+                // The dialog frame captures TitleContent once; it only re-renders the title when told to.
+                MudDialog.StateHasChanged();
+            });
+        }
         catch (Exception ex) when (ex is ApiException or HttpRequestException)
         {
             _error = ex.Message;
             await InvokeAsync(StateHasChanged);
+        }
+        finally
+        {
+            _refreshing.Release();
         }
     }
 
@@ -194,6 +220,7 @@
 
     public void Dispose()
     {
+        Status.EventReceived -= OnEvent;
         _cts.Cancel();
         _cts.Dispose();
     }
