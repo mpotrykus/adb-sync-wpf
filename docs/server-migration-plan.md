@@ -93,6 +93,27 @@ Stage A notes (done 2026-11-11, steps 1-7):
   - The first run writes `.adbsync-root` into the projects folder.
   - The scheduler pause survives restarts.
 
+Stage B notes (done 2026-11-11, steps 8-12):
+
+- **What was built.**
+  - Step 8: `AdbSync.Engine` (net8.0) holds `JobRunService`, the scheduler, change watchers, `AppGateService`, the companion broadcast and `AppConfigService`. Windows sleep/wake/logoff hooks sit behind `IHostPowerEvents`. The WPF app keeps its legacy `/api/*` companion server, tray, autostart and thumbnails.
+  - Step 9: `AdbSync.Server` (`adbsync-server`) with `AddAdbSyncEngine` shared by both hosts, and a Dockerfile on Ubuntu 24.04 (`aspnet:8.0-noble`) with apt's arm64 adb 34.0.4, because Google's platform-tools zip is x86-64 only. Also `compose.yaml` (host networking, PUID/PGID, `/data` volume, `/projects` bind mount with rslave) and `docs/server-docker.md`. adb keys live in `/data` (`ANDROID_USER_HOME`). SIGTERM cancels runs at the next file boundary. The image was built natively on the Pi (369 MB), reported healthy and wrote files as uid 1000.
+  - Step 10: HTTPS only, with the self-signed certificate (0600, pinned by fingerprint) or PEM files. Per-client tokens and one-time pairing codes are stored as SHA-256 hashes (migration 4). `/auth/pair` is limited to 5 requests a minute per address. `adbsync-server pair` runs next to the server without taking its lock.
+  - Step 11: `EventBus` with a 2,000-event / 15-minute replay buffer. `seq` starts at the server's start time in Unix ms, so a stale `Last-Event-ID` after a restart always gets `resync`. Also `/events` (SSE), `/status` and `/scheduler`, and `client.revoked` closes the client's streams.
+  - Step 12: every contract operation, in six slices: jobs and runs, devices, conflicts with ImageSharp thumbnails, settings/preferences/projects-directory move/operations/server-fs browse, snapshots/app actions/watch/manifests/effective settings, and the remaining run events. Each slice was checked end to end on Linux (WSL) with smoke scripts.
+- **Deviations from the contract or the order.**
+  - **A device can only be renamed while no job uses it.** Sync state is keyed by device name (see Stage A notes), and a rename across all of it isn't implemented. A device a job uses gets `device_in_use`.
+  - **Job rename rewrites run history.** Old runs show the new job name, so the history stays attached to the job (`JobStateRenamer` moves the folder, the name-keyed state and the history rows together, and undoes the move if the config save fails).
+  - Devices get an extra `staticPort` setting for networks where mDNS can't reach the server. The resolver tries it before mDNS.
+  - `close-and-sync` is a 202 + Operation whose result carries the run id, not a request held open for up to 25 minutes.
+  - The v1 endpoints live in `AdbSync.Server`, not `AdbSync.Engine`, so the WPF desktop edition doesn't serve v1. Its companion app keeps using the legacy `/api/*` (see the open item under "WPF desktop edition").
+  - New runs are held during a projects-directory move (`JobRunService.HoldNewRuns`), including on-change runs.
+- **Known gaps.**
+  - No real adb in WSL, so device calls (test, pair, browse, packages, and runs against phones) were only checked failing cleanly. The first real phone run against the server happens in step 13 / Phase 3.
+  - On the Pi only the step 9 image was run. Steps 10-12 were tested on WSL x64, not in the arm64 container.
+  - The companion app still speaks the legacy API (Phase 3). The web UI doesn't exist yet (Phase 4).
+  - None of Stage A or B is in the installed WPF exe.
+
 ### Phase 3: Companion app targets the server
 
 - Point the phone at the server API. This is the first phase that delivers the user's goal (sync with the PC off).
