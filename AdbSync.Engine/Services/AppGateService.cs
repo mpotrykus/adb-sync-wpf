@@ -49,7 +49,7 @@ public sealed class AppGateService(
     /// <summary>Force-stops the linked app on <paramref name="deviceName"/> (or, when null, on every device that
     /// has it running), then runs the job and waits for it to finish. Anything the app hadn't saved is lost.
     /// Returns null if the job doesn't exist or has no linked app.</summary>
-    public async Task<CloseAndSyncResult?> CloseAppAndSyncAsync(string jobName, string? deviceName, CancellationToken ct = default)
+    public async Task<CloseAndSyncResult?> CloseAppAndSyncAsync(string jobName, string? deviceName, CancellationToken ct = default, Guid? runId = null)
     {
         var config = await configService.GetAsync();
         var index = config.Jobs.FindIndex(j => j.Name == jobName);
@@ -72,7 +72,7 @@ public sealed class AppGateService(
         }
         await configService.SaveAsync();
 
-        var result = await jobRunService.RunJobAsync(index, ct: ct, trigger: RunTrigger.CloseAndSync);
+        var result = await jobRunService.RunJobAsync(index, ct: ct, trigger: RunTrigger.CloseAndSync, runId: runId);
         if (result.Outcome == JobRunOutcome.Skipped)
         {
             var deadline = DateTimeOffset.UtcNow + MaxSyncWait;

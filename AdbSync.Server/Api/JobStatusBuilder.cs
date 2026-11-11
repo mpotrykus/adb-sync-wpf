@@ -11,7 +11,7 @@ namespace AdbSync.Server.Api;
 
 /// <summary>Assembles the contract's JobStatus from the engine's live tracker, the config and the stored history.</summary>
 public sealed class JobStatusBuilder(
-    JobStatusTracker tracker, IRunHistoryStore history, ICheckpointManager checkpoints, IPendingConflictStore conflicts, RunRegistry runs)
+    JobStatusTracker tracker, IRunHistoryStore history, ICheckpointManager checkpoints, IPendingConflictStore conflicts, RunRegistry runs, WatchStateTracker watch, Engine.Services.AppGateService gate)
 {
     public async Task<JobStatusDto> BuildAsync(SyncJobConfig job, AppConfig config, CancellationToken ct = default)
     {
@@ -22,6 +22,7 @@ public sealed class JobStatusBuilder(
         var pending = (await conflicts.ListAsync(job.Name, ct)).Count;
         var eff = job.Resolve(config.Settings);
         var unavailable = ProjectFolders.Unavailable(eff, job.Name);
+        var stale = job.AppPackage is null ? [] : await gate.AssessAsync(job.Name);
 
         return new JobStatusDto(
             job.Id,
@@ -43,11 +44,11 @@ public sealed class JobStatusBuilder(
                 $"{checkpoint.Phase} done on {checkpoint.CompletedDevices.Count} of {job.Devices.Count} devices"),
             pending,
             job.AppPackage,
-            [],
+            stale.Where(s => deviceIds.ContainsKey(s.Device)).Select(s => new StaleDeviceDto(deviceIds[s.Device], s.Reason)).ToList(),
             live.BlockedDevice is { } blocked && deviceIds.TryGetValue(blocked, out var blockedId) ? blockedId : null,
             lastRecord?.ErrorCode == RunErrorCode.PushSafetyBlocked,
             new AvailabilityDto(unavailable is null ? "ok" : "unavailable", unavailable),
-            []);
+            watch.For(job, config));
     }
 
     private static string State(Core.Services.Companion.JobStatus live) => live switch

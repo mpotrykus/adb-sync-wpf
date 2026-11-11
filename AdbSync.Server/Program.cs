@@ -64,6 +64,7 @@ builder.Services.AddSingleton<JobStatusBuilder>();
 builder.Services.AddSingleton<RunRegistry>();
 builder.Services.AddSingleton<ConfigEditor>();
 builder.Services.AddSingleton<OperationRegistry>();
+builder.Services.AddSingleton<WatchStateTracker>();
 builder.Services.AddSingleton<JobStateRenamer>();
 builder.Services.AddHostedService<EngineEventSource>();
 builder.Services.AddAdbSyncEngine(paths);
@@ -71,6 +72,7 @@ builder.Services.AddSingleton<ISyncEventSink>(sp => new CompositeSyncEventSink(
 [
     sp.GetRequiredService<JobStatusTracker>(),
     sp.GetRequiredService<RunRegistry>(),
+    sp.GetRequiredService<WatchStateTracker>(),
 ]));
 builder.Services.AddSingleton<IHostPowerEvents, NoHostPowerEvents>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<SchedulerHostedService>());
@@ -104,6 +106,7 @@ api.MapRunEndpoints();
 api.MapDeviceEndpoints();
 api.MapConflictEndpoints();
 api.MapSettingsEndpoints();
+api.MapJobExtraEndpoints();
 
 app.Logger.LogInformation(
     "AdbSync server listening on https://{Address}:{Port} as {Url}, data in {DataDir}, certificate fingerprint {Fingerprint}",

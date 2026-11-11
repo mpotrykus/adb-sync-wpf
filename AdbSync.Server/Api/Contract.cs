@@ -76,7 +76,7 @@ public sealed record JobStatusDto(
     Guid? BlockedByAppOn,
     bool CanForcePush,
     AvailabilityDto Availability,
-    IReadOnlyList<object> Watch);
+    IReadOnlyList<WatchStateDto> Watch);
 
 public sealed record SchedulerStateDto(bool Paused, DateTimeOffset? PausedAt);
 
