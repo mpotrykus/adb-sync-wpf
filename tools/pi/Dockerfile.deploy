@@ -1,0 +1,6 @@
+# Layered onto the base image by tools/deploy-pi.sh: the application files are published on the developer machine for
+# linux-arm64, so the Pi doesn't compile anything. The base image provides the .NET runtime, adb and the entrypoint.
+FROM adbsync-server:base
+RUN rm -rf /app/*
+COPY app/ /app/
+RUN chmod +x /app/adbsync-server
