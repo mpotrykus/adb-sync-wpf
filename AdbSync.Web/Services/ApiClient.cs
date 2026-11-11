@@ -61,6 +61,12 @@ public sealed class ApiClient(HttpClient http, Session session, NavigationManage
         return await response.Content.ReadAsStringAsync(ct);
     }
 
+    public async Task<byte[]> GetBytesAsync(string path, CancellationToken ct = default)
+    {
+        using var response = await SendAsync(HttpMethod.Get, path, null, null, ct);
+        return await response.Content.ReadAsByteArrayAsync(ct);
+    }
+
     public async Task<T> PostAsync<T>(string path, object? body = null, CancellationToken ct = default)
     {
         using var response = await SendAsync(HttpMethod.Post, path, body, null, ct);

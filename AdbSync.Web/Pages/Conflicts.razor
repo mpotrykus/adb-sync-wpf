@@ -1,0 +1,179 @@
+@page "/conflicts"
+@inject ApiClient Api
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+
+<PageTitle>Conflicts · AdbSync</PageTitle>
+
+<div class="d-flex align-center flex-wrap gap-3 mb-6">
+    <MudText Typo="Typo.h4">Conflicts</MudText>
+    <MudSpacer />
+    <MudSelect T="Guid?" Value="_jobFilter" ValueChanged="OnJobFilterAsync" Label="Job" Variant="Variant.Outlined" Dense="true"
+               Margin="Margin.Dense" Clearable="true" Style="min-width:200px">
+        @foreach (var job in _jobs)
+        {
+            <MudSelectItem T="Guid?" Value="@((Guid?)job.Id)">@job.Name</MudSelectItem>
+        }
+    </MudSelect>
+    <MudMenu Label="Resolve all" Variant="Variant.Filled" Color="Color.Primary" Disabled="@(_conflicts.Count == 0 || _busy)" EndIcon="@Icons.Material.Filled.ArrowDropDown">
+        @foreach (var choice in Choices)
+        {
+            <MudMenuItem OnClick="() => ResolveAllAsync(choice.Key)">@choice.Label</MudMenuItem>
+        }
+    </MudMenu>
+    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Refresh" OnClick="ReloadAsync">Refresh</MudButton>
+</div>
+
+@if (_loading)
+{
+    <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="220px" />
+}
+else if (_conflicts.Count == 0)
+{
+    <MudPaper Class="pa-8 d-flex flex-column align-center" Outlined="true">
+        <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Large" Color="Color.Success" Class="mb-2" />
+        <MudText>No conflicts waiting.</MudText>
+    </MudPaper>
+}
+else
+{
+    <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+        These files changed on more than one side. Pick which version wins; the job's next run carries the result to every device.
+    </MudText>
+    <MudStack Spacing="3">
+        @foreach (var c in _conflicts)
+        {
+            var running = _pending.Contains(c.Id);
+            <MudCard Elevation="1" @key="c.Id">
+                <MudCardContent>
+                    <div class="d-flex align-center flex-wrap gap-2 mb-3">
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@JobName(c.JobId)</MudChip>
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Icon="@Icons.Material.Filled.PhoneAndroid">@DeviceName(c.DeviceId)</MudChip>
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">detected @Format.Ago(c.DetectedAt)</MudText>
+                    </div>
+                    <MudText Class="mono" Style="font-size:13px;word-break:break-all" Typo="Typo.body2">@c.Path</MudText>
+                    <MudGrid Spacing="3" Class="mt-2">
+                        <MudItem xs="12" sm="6">
+                            <MudText Typo="Typo.overline">Master (server copy)</MudText>
+                            <ConflictThumb ConflictId="@c.Id" Side="master" HasPreview="c.Master.HasPreview" />
+                            <MudText Typo="Typo.caption">@Describe(c.Master)</MudText>
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudText Typo="Typo.overline">@DeviceName(c.DeviceId)</MudText>
+                            <ConflictThumb ConflictId="@c.Id" Side="device" HasPreview="c.Device.HasPreview" />
+                            <MudText Typo="Typo.caption">@Describe(c.Device)</MudText>
+                        </MudItem>
+                    </MudGrid>
+                </MudCardContent>
+                <MudCardActions Class="px-4 pb-3 flex-wrap gap-2">
+                    @foreach (var choice in Choices)
+                    {
+                        <MudButton Variant="Variant.Outlined" Size="Size.Small" Disabled="running" OnClick="() => ResolveOneAsync(c, choice.Key)">@choice.Label</MudButton>
+                    }
+                </MudCardActions>
+            </MudCard>
+        }
+    </MudStack>
+}
+
+@code {
+    private sealed record Choice(string Key, string Label);
+
+    private static readonly Choice[] Choices =
+    [
+        new("master", "Keep master"),
+        new("device", "Keep phone"),
+        new("both", "Keep both"),
+        new("newest", "Keep newest"),
+    ];
+
+    private List<ConflictDto> _conflicts = [];
+    private List<JobDto> _jobs = [];
+    private Dictionary<Guid, string> _deviceNames = [];
+    private readonly HashSet<string> _pending = [];
+    private Guid? _jobFilter;
+    private bool _loading = true;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _jobs = await Api.GetAsync<List<JobDto>>("jobs");
+            _deviceNames = (await Api.GetAsync<List<DeviceDto>>("devices")).ToDictionary(d => d.Id, d => d.Name);
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException)
+        {
+            if (!ex.IsSignedOut()) Snackbar.Add(ex.Message, Severity.Error);
+        }
+        await ReloadAsync();
+    }
+
+    private string JobName(Guid id) => _jobs.FirstOrDefault(j => j.Id == id)?.Name ?? "Unknown job";
+    private string DeviceName(Guid id) => _deviceNames.GetValueOrDefault(id, "Unknown device");
+
+    private static string Describe(ConflictSideInfoDto side) =>
+        side.Deleted ? "Deleted" : $"{Format.Bytes(side.Size)} · modified {Format.Local(side.ModifiedAt)}";
+
+    private async Task ReloadAsync()
+    {
+        try
+        {
+            _conflicts = await Api.GetAsync<List<ConflictDto>>("conflicts" + (_jobFilter is { } id ? $"?jobId={id}" : ""));
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException)
+        {
+            if (!ex.IsSignedOut()) Snackbar.Add(ex.Message, Severity.Error);
+        }
+        _loading = false;
+    }
+
+    private async Task OnJobFilterAsync(Guid? id)
+    {
+        _jobFilter = id;
+        await ReloadAsync();
+    }
+
+    private async Task ResolveOneAsync(ConflictDto conflict, string choice)
+    {
+        _pending.Add(conflict.Id);
+        try
+        {
+            await Api.PostAsync<ResolveResultDto>($"conflicts/{Uri.EscapeDataString(conflict.Id)}/resolve", new ResolveRequest(choice));
+            Snackbar.Add("Resolved", Severity.Success);
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException)
+        {
+            if (!ex.IsSignedOut()) Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _pending.Remove(conflict.Id);
+        }
+        await ReloadAsync();
+    }
+
+    private async Task ResolveAllAsync(string choice)
+    {
+        var label = Choices.First(c => c.Key == choice).Label.ToLowerInvariant();
+        var scope = _jobFilter is null ? "every pending conflict" : $"every pending conflict for {JobName(_jobFilter.Value)}";
+        var confirmed = await Dialogs.ShowMessageBox("Resolve all",
+            $"Resolve {scope} ({_conflicts.Count}) with \"{label}\"?", yesText: "Resolve", cancelText: "Cancel");
+        if (confirmed != true)
+            return;
+        _busy = true;
+        try
+        {
+            var result = await Api.PostAsync<ResolveResultDto>("conflicts/resolve",
+                new ResolveManyRequest(choice, _jobFilter, _conflicts.Select(c => c.Id).ToList()));
+            Snackbar.Add(result.Failed.Count == 0 ? $"Resolved {result.Resolved}" : $"Resolved {result.Resolved}, {result.Failed.Count} failed: {result.Failed[0].Detail ?? result.Failed[0].Code}",
+                result.Failed.Count == 0 ? Severity.Success : Severity.Warning);
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException)
+        {
+            if (!ex.IsSignedOut()) Snackbar.Add(ex.Message, Severity.Error);
+        }
+        _busy = false;
+        await ReloadAsync();
+    }
+}

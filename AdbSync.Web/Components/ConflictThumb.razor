@@ -1,0 +1,44 @@
+@inject ApiClient Api
+
+<div class="thumb-box">
+    @if (!HasPreview)
+    {
+        <MudIcon Icon="@Icons.Material.Filled.InsertDriveFile" Size="Size.Large" Class="mud-text-secondary" />
+    }
+    else if (_src is not null)
+    {
+        <img src="@_src" alt="@Side version" />
+    }
+    else if (_failed)
+    {
+        <MudIcon Icon="@Icons.Material.Filled.BrokenImage" Size="Size.Large" Class="mud-text-secondary" />
+    }
+    else
+    {
+        <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string ConflictId { get; set; } = "";
+    [Parameter, EditorRequired] public string Side { get; set; } = "master";
+    [Parameter] public bool HasPreview { get; set; }
+
+    private string? _src;
+    private bool _failed;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!HasPreview)
+            return;
+        try
+        {
+            var bytes = await Api.GetBytesAsync($"conflicts/{Uri.EscapeDataString(ConflictId)}/thumbnail?side={Side}&maxSize=360");
+            _src = "data:image/jpeg;base64," + Convert.ToBase64String(bytes);
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException)
+        {
+            _failed = true;
+        }
+    }
+}

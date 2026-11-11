@@ -92,3 +92,21 @@ body {
 .code-input input {
     letter-spacing: 0.25em;
 }
+
+.thumb-box {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 120px;
+    max-height: 260px;
+    border-radius: 8px;
+    border: 1px solid var(--mud-palette-lines-default);
+    overflow: hidden;
+    margin: 4px 0 6px;
+}
+
+.thumb-box img {
+    max-width: 100%;
+    max-height: 258px;
+    object-fit: contain;
+}
