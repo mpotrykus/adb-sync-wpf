@@ -11,7 +11,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading.Channels;
 
-namespace AdbSync.App.Services;
+namespace AdbSync.Engine.Services;
 
 /// <summary>Delivers <see cref="CompanionEventSink"/> events to the companion app on each of the job's devices
 /// that adb already has online, and periodically tells those devices how to reach the companion server. Never

@@ -6,10 +6,9 @@ using AdbSync.Core.Services.Transfer;
 using AdvancedSharpAdbClient;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Win32;
 using System.Collections.Concurrent;
 
-namespace AdbSync.App.Services;
+namespace AdbSync.Engine.Services;
 
 public sealed class ChangeWatchHostedService(
     AppConfigService configService,
@@ -19,6 +18,7 @@ public sealed class ChangeWatchHostedService(
     IAdbServer adbServer,
     ISyncEventSink events,
     JobRunService jobRunService,
+    IHostPowerEvents powerEvents,
     ILogger<ChangeWatchHostedService> logger) : BackgroundService
 {
     private readonly Dictionary<string, ActiveWatch> _active = [];
@@ -29,8 +29,9 @@ public sealed class ChangeWatchHostedService(
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         configService.ConfigChanged += OnConfigChanged;
-        SystemEvents.PowerModeChanged += OnPowerModeChanged;
-        SystemEvents.SessionEnding += OnSessionEnding;
+        powerEvents.Suspending += OnSuspending;
+        powerEvents.Resumed += OnResumed;
+        powerEvents.SessionEnding += OnSessionEnding;
         await ReconcileAsync(stoppingToken);
 
         try
@@ -45,8 +46,9 @@ public sealed class ChangeWatchHostedService(
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
         configService.ConfigChanged -= OnConfigChanged;
-        SystemEvents.PowerModeChanged -= OnPowerModeChanged;
-        SystemEvents.SessionEnding -= OnSessionEnding;
+        powerEvents.Suspending -= OnSuspending;
+        powerEvents.Resumed -= OnResumed;
+        powerEvents.SessionEnding -= OnSessionEnding;
         await base.StopAsync(cancellationToken);
 
         await TeardownActiveAsync(cancellationToken);
@@ -69,33 +71,30 @@ public sealed class ChangeWatchHostedService(
     /// connection open across a suspend can leave the network adapter unable to enter its low-power state in
     /// time, crashing the machine. Tear everything down right before suspend and rebuild the watches from config
     /// on resume, so nothing is ever asked to survive the transition. Runs synchronously (blocking the
-    /// SystemEvents callback thread, not the UI thread) so the OS doesn't proceed with the suspend before the
+    /// power-notification thread, not the UI thread) so the OS doesn't proceed with the suspend before the
     /// connections actually close.
     /// </summary>
-    private void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e)
+    private void OnSuspending(object? sender, EventArgs e)
     {
-        switch (e.Mode)
-        {
-            case PowerModes.Suspend:
-                logger.LogInformation("System is suspending; stopping {Count} active change watch(es)", _active.Count);
-                RunBlocking(() => TeardownActiveAsync(CancellationToken.None), "suspend");
-                break;
-            case PowerModes.Resume:
-                logger.LogInformation("System resumed; restarting change watchers");
-                RunBlocking(() => ReconcileAsync(CancellationToken.None), "resume");
-                break;
-        }
+        logger.LogInformation("System is suspending; stopping {Count} active change watch(es)", _active.Count);
+        RunBlocking(() => TeardownActiveAsync(CancellationToken.None), "suspend");
+    }
+
+    private void OnResumed(object? sender, EventArgs e)
+    {
+        logger.LogInformation("System resumed; restarting change watchers");
+        RunBlocking(() => ReconcileAsync(CancellationToken.None), "resume");
     }
 
     /// <summary>
-    /// Same reasoning as <see cref="OnPowerModeChanged"/>, but for a Windows shutdown/restart/logoff instead of a
+    /// Same reasoning as <see cref="OnSuspending"/>, but for a Windows shutdown/restart/logoff instead of a
     /// suspend - unlike suspend, WPF does not translate this broadcast into a graceful <c>OnExit</c> for a
     /// tray-resident app with no visible window, so without this the process would simply be killed with its adb
     /// connections still open.
     /// </summary>
-    private void OnSessionEnding(object sender, SessionEndingEventArgs e)
+    private void OnSessionEnding(object? sender, string reason)
     {
-        logger.LogInformation("System session ending ({Reason}); stopping {Count} active change watch(es)", e.Reason, _active.Count);
+        logger.LogInformation("System session ending ({Reason}); stopping {Count} active change watch(es)", reason, _active.Count);
         RunBlocking(() => TeardownActiveAsync(CancellationToken.None), "session ending");
     }
 

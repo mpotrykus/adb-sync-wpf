@@ -1,4 +1,5 @@
 using AdbSync.App.Services;
+using AdbSync.Engine.Services;
 using AdbSync.App.Tray;
 using AdbSync.App.ViewModels;
 using AdbSync.App.Views;
@@ -189,6 +190,7 @@ public partial class App : Application
         services.AddSingleton<JobRunService>();
         services.AddSingleton<AppGateService>();
 
+        services.AddSingleton<IHostPowerEvents, WindowsPowerEvents>();
         services.AddSingleton<SchedulerHostedService>();
         services.AddHostedService(sp => sp.GetRequiredService<SchedulerHostedService>());
 

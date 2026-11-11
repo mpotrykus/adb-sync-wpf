@@ -6,7 +6,7 @@ using AdbSync.Core.Services.Orchestration;
 using AdbSync.Core.Services.Scheduling;
 using System.Collections.Concurrent;
 
-namespace AdbSync.App.Services;
+namespace AdbSync.Engine.Services;
 
 /// <summary>
 /// The one place that actually invokes <see cref="SyncJobRunner"/>, shared by the scheduler and manual

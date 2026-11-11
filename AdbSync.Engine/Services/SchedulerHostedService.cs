@@ -2,7 +2,7 @@ using AdbSync.Core.Services.Persistence;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-namespace AdbSync.App.Services;
+namespace AdbSync.Engine.Services;
 
 /// <summary>One ticking timer for every job, rather than one timer per job - simpler, no per-job timer-drift/disposal bugs.</summary>
 public sealed class SchedulerHostedService(

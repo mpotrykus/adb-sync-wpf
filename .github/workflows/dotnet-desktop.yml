@@ -79,11 +79,14 @@ jobs:
       - name: Restore
         run: |
           dotnet restore AdbSync.Cli/AdbSync.Cli.csproj
+          dotnet restore AdbSync.Engine/AdbSync.Engine.csproj
           dotnet restore AdbSync.Core.Tests/AdbSync.Core.Tests.csproj
           dotnet restore AdbSync.Core.IntegrationTests/AdbSync.Core.IntegrationTests.csproj
 
       - name: Build
-        run: dotnet build AdbSync.Cli/AdbSync.Cli.csproj --configuration ${{ matrix.configuration }} --no-restore
+        run: |
+          dotnet build AdbSync.Cli/AdbSync.Cli.csproj --configuration ${{ matrix.configuration }} --no-restore
+          dotnet build AdbSync.Engine/AdbSync.Engine.csproj --configuration ${{ matrix.configuration }} --no-restore
 
       - name: Run unit tests
         run: dotnet test AdbSync.Core.Tests/AdbSync.Core.Tests.csproj --configuration ${{ matrix.configuration }} --no-restore

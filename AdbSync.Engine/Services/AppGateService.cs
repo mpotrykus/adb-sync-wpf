@@ -3,7 +3,7 @@ using AdbSync.Core.Services.Companion;
 using AdbSync.Core.Services.Devices;
 using Microsoft.Extensions.Logging;
 
-namespace AdbSync.App.Services;
+namespace AdbSync.Engine.Services;
 
 public sealed record CloseAndSyncResult(string Result, bool Failed, bool StillOutOfSync, string? Reason);
 

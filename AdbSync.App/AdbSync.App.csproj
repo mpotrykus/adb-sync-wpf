@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\AdbSync.Core\AdbSync.Core.csproj" />
+    <ProjectReference Include="..\AdbSync.Engine\AdbSync.Engine.csproj" />
   </ItemGroup>
 
   <ItemGroup>

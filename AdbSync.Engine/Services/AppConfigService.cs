@@ -1,7 +1,7 @@
 using AdbSync.Core.Models.Config;
 using AdbSync.Core.Services.Config;
 
-namespace AdbSync.App.Services;
+namespace AdbSync.Engine.Services;
 
 public sealed class AppConfigService(IAppConfigStore store)
 {
