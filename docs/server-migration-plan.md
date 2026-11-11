@@ -143,7 +143,16 @@ Cut-over runbook (Phase 5, after the companion app speaks v1 and the web UI MVP 
 - Consumes the same API, served by the server.
 - MVP before the cut-over: status, run and stop, run history with logs and steps, conflicts, and job, device and settings editing.
 - Then the rest of the dashboard: execution graph, snapshots and rollback, projects-directory move, device browse and packages.
-- Stack still to decide: Blazor WebAssembly (C#, shares DTOs with the server) or React/TypeScript.
+- Stack (decided 2026-11-11): **Blazor WebAssembly + MudBlazor 8**, in `AdbSync.Web`, served by `adbsync-server` from the same origin. The API records live in `AdbSync.Contracts`, shared by server and UI.
+
+Slice 1 (2026-11-11), pulled ahead of Phase 3 so the cut-over could be finished from a browser:
+
+- Sign-in with a pairing code, token in localStorage, sign out revokes the token, "pair another client" shows a code.
+- Jobs: state, enable switch, last run, availability, conflicts, checkpoint; run, dry run, stop. The run dialog follows a live run (steps, files, log).
+- Devices: test connection, and pairing with the phone's wireless-debugging code (the pairing port is found over mDNS).
+- Scheduler pause and dark mode in the app bar. Status is polled; SSE is a later slice.
+- Gotcha: the server's reference to `AdbSync.Web` uses `GlobalPropertiesToRemove="RuntimeIdentifier;SelfContained"`, otherwise `publish -a arm64` makes the UI build for linux-arm64 and fails with WASM0005.
+- Still missing for the MVP: run history list, conflicts, and job/device/settings editing.
 
 ### Phase 5: Cut-over
 
