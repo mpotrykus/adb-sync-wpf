@@ -326,7 +326,7 @@ public sealed class AppIconService(IAdbClient adb, IRemoteFileSystemFactory file
     }
 
     /// <summary>The marker carries a version so a smarter extractor isn't held back by "none" results an older one wrote.</summary>
-    private const string MissMarker = "v2 ";
+    private const string MissMarker = "v3 ";
 
     public bool IsKnownMissing(string package)
     {
