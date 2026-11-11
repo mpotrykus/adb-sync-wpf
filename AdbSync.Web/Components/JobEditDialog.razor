@@ -1,0 +1,178 @@
+@inject ApiClient Api
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">@(Job is null ? "New job" : "Edit " + Job.Name)</MudText>
+    </TitleContent>
+    <DialogContent>
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@_error</MudAlert>
+        }
+        <MudStack Spacing="3">
+            <MudTextField @bind-Value="_name" Label="Name" Variant="Variant.Outlined" Required="true"
+                          HelperText="@(Job is null ? "Also the project folder's name." : "Renaming moves the project folder.")" />
+            <MudTextField @bind-Value="_appPackage" Label="Android app package (optional)" Variant="Variant.Outlined"
+                          HelperText="Lets the job skip while the app is open, e.g. com.stephaneginier.nomad" />
+
+            <MudText Typo="Typo.subtitle2">Devices</MudText>
+            @if (Devices.Count == 0)
+            {
+                <MudAlert Severity="Severity.Info" Dense="true">Pair a device first.</MudAlert>
+            }
+            @foreach (var device in Devices)
+            {
+                var binding = _bindings[device.Id];
+                <div class="d-flex align-center gap-3">
+                    <MudCheckBox T="bool" @bind-Value="binding.Selected" Label="@device.Name" Style="min-width:160px" />
+                    <MudTextField @bind-Value="binding.RemotePath" Label="Folder on the phone" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                  Disabled="!binding.Selected" Class="mono-input" />
+                </div>
+            }
+
+            <MudSelect T="string" @bind-Value="_kind" Label="Runs" Variant="Variant.Outlined">
+                <MudSelectItem Value="@("onChange")">When a phone changes</MudSelectItem>
+                <MudSelectItem Value="@("interval")">On an interval</MudSelectItem>
+                <MudSelectItem Value="@("dailyAt")">Daily at set times</MudSelectItem>
+                <MudSelectItem Value="@("manual")">Only when I start it</MudSelectItem>
+            </MudSelect>
+            @if (_kind == "interval")
+            {
+                <MudNumericField T="int" @bind-Value="_intervalMinutes" Label="Every (minutes)" Min="1" Variant="Variant.Outlined" />
+            }
+            @if (_kind == "dailyAt")
+            {
+                <MudTextField @bind-Value="_dailyTimes" Label="Times (HH:mm, comma separated)" Variant="Variant.Outlined" Placeholder="03:00, 15:30" />
+            }
+            @if (_kind == "onChange")
+            {
+                <MudNumericField T="int" @bind-Value="_debounceSeconds" Label="Wait after the last change (seconds)" Min="0" Variant="Variant.Outlined" />
+            }
+
+            <MudTextField @bind-Value="_exclude" Label="Exclude patterns (one per line)" Variant="Variant.Outlined" Lines="3" AutoGrow="true" />
+            <MudSwitch T="bool" @bind-Value="_enabled" Color="Color.Primary" Label="Enabled" />
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        @if (Job is not null)
+        {
+            <MudButton Color="Color.Error" Disabled="_saving" OnClick="DeleteAsync">Delete</MudButton>
+            <MudSpacer />
+        }
+        <MudButton Disabled="_saving" OnClick="() => MudDialog.Cancel()">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" Disabled="_saving" OnClick="SaveAsync">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private sealed class Binding
+    {
+        public bool Selected { get; set; }
+        public string RemotePath { get; set; } = "";
+    }
+
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public JobDto? Job { get; set; }
+    [Parameter] public IReadOnlyList<DeviceDto> Devices { get; set; } = [];
+
+    private readonly Dictionary<Guid, Binding> _bindings = [];
+    private string _name = "";
+    private string? _appPackage;
+    private string _kind = "onChange";
+    private int _intervalMinutes = 240;
+    private int _debounceSeconds = 10;
+    private string _dailyTimes = "";
+    private string _exclude = "";
+    private bool _enabled = true;
+    private bool _saving;
+    private string? _error;
+
+    protected override void OnInitialized()
+    {
+        foreach (var device in Devices)
+        {
+            var existing = Job?.Devices.FirstOrDefault(b => b.DeviceId == device.Id);
+            _bindings[device.Id] = new Binding { Selected = existing is not null, RemotePath = existing?.RemotePath ?? "" };
+        }
+        if (Job is null)
+            return;
+        _name = Job.Name;
+        _appPackage = Job.AppPackage;
+        _kind = Job.Schedule.Kind;
+        _intervalMinutes = Math.Max(1, (Job.Schedule.IntervalSeconds ?? 14400) / 60);
+        _debounceSeconds = Job.Schedule.DebounceSeconds ?? 10;
+        _dailyTimes = string.Join(", ", Job.Schedule.DailyTimes ?? []);
+        _exclude = string.Join('\n', Job.Exclude);
+        _enabled = Job.Enabled;
+    }
+
+    private ScheduleDto BuildSchedule(ScheduleDto? current) => new(
+        _kind,
+        _kind == "interval" ? _intervalMinutes * 60 : current?.IntervalSeconds,
+        _kind == "dailyAt" ? _dailyTimes.Split([',', ' ', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) : current?.DailyTimes,
+        _kind == "onChange" ? _debounceSeconds : current?.DebounceSeconds,
+        current?.RescanSeconds);
+
+    private async Task SaveAsync()
+    {
+        _error = null;
+        _saving = true;
+        try
+        {
+            var devices = Devices.Where(d => _bindings[d.Id].Selected)
+                .Select(d => new JobBindingDto(d.Id, _bindings[d.Id].RemotePath.Trim())).ToList();
+            var exclude = _exclude.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+            var package = string.IsNullOrWhiteSpace(_appPackage) ? null : _appPackage.Trim();
+            if (Job is null)
+            {
+                await Api.PostAsync<JobDto>("jobs", new JobInputDto(_name.Trim(), null, package, exclude, devices, BuildSchedule(null), _enabled, false, null));
+            }
+            else
+            {
+                await Api.PatchAsync<JobDto>($"jobs/{Job.Id}", new
+                {
+                    name = _name.Trim(),
+                    appPackage = package,
+                    exclude,
+                    devices,
+                    schedule = BuildSchedule(Job.Schedule),
+                    enabled = _enabled,
+                });
+            }
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException)
+        {
+            if (!ex.IsSignedOut()) _error = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        var confirmed = await Dialogs.ShowMessageBox("Delete job",
+            $"Delete \"{Job!.Name}\"? Its saved state and history go away. The project folder and its files stay on disk.",
+            yesText: "Delete", cancelText: "Cancel");
+        if (confirmed != true)
+            return;
+        _saving = true;
+        try
+        {
+            await Api.DeleteAsync($"jobs/{Job.Id}");
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException)
+        {
+            if (!ex.IsSignedOut()) _error = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

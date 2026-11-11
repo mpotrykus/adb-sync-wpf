@@ -30,6 +30,12 @@ public sealed class ApiException(HttpStatusCode status, string code, string mess
                 (_, { } b) => b,
                 _ => message,
             };
+            if (root.TryGetProperty("errors", out var errors) && errors.ValueKind == JsonValueKind.Object)
+            {
+                var fields = errors.EnumerateObject()
+                    .SelectMany(p => p.Value.EnumerateArray().Select(m => $"{p.Name.TrimStart('/')}: {m.GetString()}"));
+                message += " " + string.Join(" ", fields);
+            }
         }
         catch (JsonException)
         {
