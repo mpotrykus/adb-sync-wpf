@@ -15,6 +15,8 @@
             <MudTextField @bind-Value="_name" Label="Name" Variant="Variant.Outlined" Required="true"
                           HelperText="@(Job is null ? "Also the project folder's name." : "Renaming moves the project folder.")" />
             <MudTextField @bind-Value="_appPackage" Label="Android app package (optional)" Variant="Variant.Outlined"
+                          Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.Apps" AdornmentAriaLabel="Pick an installed app"
+                          OnAdornmentClick="PickPackageAsync"
                           HelperText="Lets the job skip while the app is open, e.g. com.stephaneginier.nomad" />
 
             <MudText Typo="Typo.subtitle2">Devices</MudText>
@@ -28,6 +30,8 @@
                 <div class="d-flex align-center gap-3">
                     <MudCheckBox T="bool" @bind-Value="binding.Selected" Label="@device.Name" Style="min-width:160px" />
                     <MudTextField @bind-Value="binding.RemotePath" Label="Folder on the phone" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                  Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.FolderOpen" AdornmentAriaLabel="Browse the phone"
+                                  OnAdornmentClick="() => PickFolderAsync(device, binding)"
                                   Disabled="!binding.Selected" Class="mono-input" />
                 </div>
             }
@@ -143,6 +147,35 @@
     private string _conflictPolicy = "", _backupLosers = "", _showInfo = "", _showErrors = "";
     private int? _pushSafety, _throttle, _retryAttempts, _retryBackoff, _retentionDays, _checkpointDays, _rollbackKeep, _historyEntries, _fileDetailRuns;
     private bool _saving;
+
+    private async Task PickFolderAsync(DeviceDto device, Binding binding)
+    {
+        var parameters = new DialogParameters<DeviceFolderPickerDialog>
+        {
+            { d => d.DeviceId, device.Id }, { d => d.DeviceName, device.Name }, { d => d.StartPath, binding.RemotePath },
+        };
+        var dialog = await Dialogs.ShowAsync<DeviceFolderPickerDialog>("Choose a folder", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: string path })
+            binding.RemotePath = path;
+    }
+
+    private async Task PickPackageAsync()
+    {
+        var device = Devices.FirstOrDefault(d => _bindings[d.Id].Selected) ?? Devices.FirstOrDefault();
+        if (device is null)
+        {
+            Snackbar.Add("Pair a device first.", Severity.Info);
+            return;
+        }
+        var parameters = new DialogParameters<PackagePickerDialog> { { d => d.DeviceId, device.Id }, { d => d.DeviceName, device.Name } };
+        var dialog = await Dialogs.ShowAsync<PackagePickerDialog>("Pick an app", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: string package })
+            _appPackage = package;
+    }
     private string? _error;
 
     protected override void OnInitialized()

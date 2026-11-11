@@ -1,0 +1,67 @@
+@inject ApiClient Api
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">Apps installed on @DeviceName</MudText>
+    </TitleContent>
+    <DialogContent>
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-2">@_error</MudAlert>
+        }
+        @if (_packages is null && _error is null)
+        {
+            <MudProgressLinear Indeterminate="true" />
+        }
+        else if (_packages is not null)
+        {
+            <MudTextField @bind-Value="_filter" Immediate="true" Placeholder="Filter" Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Class="mb-2" />
+            <div style="height:340px;overflow:auto">
+                <MudList T="string" Dense="true">
+                    @foreach (var package in Filtered)
+                    {
+                        <MudListItem OnClick="() => MudDialog.Close(DialogResult.Ok(package))">
+                            <span class="mono" style="font-size:13px">@package</span>
+                        </MudListItem>
+                    }
+                </MudList>
+                @if (!Filtered.Any())
+                {
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary pa-2">No matching packages.</MudText>
+                }
+            </div>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => MudDialog.Cancel()">Cancel</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public Guid DeviceId { get; set; }
+    [Parameter] public string DeviceName { get; set; } = "";
+
+    private List<string>? _packages;
+    private string _filter = "";
+    private string? _error;
+
+    private IEnumerable<string> Filtered =>
+        string.IsNullOrWhiteSpace(_filter)
+            ? _packages ?? []
+            : (_packages ?? []).Where(p => p.Contains(_filter.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var list = await Api.GetAsync<List<string>>($"devices/{DeviceId}/packages");
+            _packages = list.OrderBy(p => p, StringComparer.OrdinalIgnoreCase).ToList();
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException)
+        {
+            if (!ex.IsSignedOut()) _error = ex.Message;
+        }
+    }
+}
