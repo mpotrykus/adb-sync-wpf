@@ -287,7 +287,6 @@ public sealed class SyncJobRunner(
                 ? Directory.EnumerateFiles(stagingPath, "*", SearchOption.AllDirectories).Count()
                 : 0;
 
-            var manifest = await manifests.GetOrBootstrapAsync(job.Name, binding.DeviceName, stagingPath, masterPath, ct);
             var mergeOptions = new MergeOptions(
                 BackupConflictLosers: eff.BackupConflictLosers,
                 ConflictBackupDir: GetConflictBackupDir(projectRoot, binding.DeviceName),
@@ -298,6 +297,8 @@ public sealed class SyncJobRunner(
             await bookkeepingGate.WaitAsync(ct);
             try
             {
+                // Bootstrapping scans master, so it must not overlap another device's merge writing into it.
+                var manifest = await manifests.GetOrBootstrapAsync(job.Name, binding.DeviceName, stagingPath, masterPath, ct);
                 if (failedPulls.Count > 0)
                     unpulled[binding.DeviceName] = failedPulls.ToList();
                 else

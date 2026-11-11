@@ -452,13 +452,98 @@ public class SyncJobRunnerTests : IDisposable
 
         var result = await runner.RunAsync(job, 0, devices, _settings, resumeFrom: null);
 
-        Assert.Equal(JobRunOutcome.Completed, result.Outcome);
+        Assert.Equal((JobRunOutcome.Completed, (string?)null), (result.Outcome, result.ErrorMessage));
         Assert.Equal("content", File.ReadAllText(Path.Combine(DeviceFolder("DeviceB"), "photo.jpg")));
         Assert.Equal("content", File.ReadAllText(Path.Combine(DeviceFolder("DeviceC"), "photo.jpg")));
 
         var runs = await historyStore.ListRunsAsync(job.Name);
         var record = Assert.Single(runs);
         Assert.Equal(1, record.FilesCopied);
+    }
+
+    [Fact]
+    public async Task RunAsync_FirstRunWithTwoDevices_NeverBootstrapsAManifestWhileAnotherDeviceMergesIntoMaster()
+    {
+        WriteDeviceFile("DeviceA", "a.txt", "from-a");
+        WriteDeviceFile("DeviceB", "b.txt", "from-b");
+        List<DeviceConfig> devices =
+        [
+            new() { Name = "DeviceA", Serial = "DeviceA" },
+            new() { Name = "DeviceB", Serial = "DeviceB" },
+        ];
+        var job = new SyncJobConfig
+        {
+            Name = "JobBootstrapDuringMerge",
+            Devices =
+            [
+                new JobDeviceBinding { DeviceName = "DeviceA", RemotePath = "/sdcard/app" },
+                new JobDeviceBinding { DeviceName = "DeviceB", RemotePath = "/sdcard/app" },
+            ],
+        };
+        var merge = new SlowMergeEngine(new TwoWayMergeEngine());
+        var manifests = new MergeObservingManifestStore(new ManifestStore(_appPaths), merge);
+        var runner = new SyncJobRunner(
+            new FakeDeviceResolver(),
+            new FakeAppRunningGuard(),
+            new SyncLockManager(),
+            new FakeAdbTransferEngine(new Dictionary<string, string>
+            {
+                ["DeviceA"] = DeviceFolder("DeviceA"),
+                ["DeviceB"] = DeviceFolder("DeviceB"),
+            }),
+            merge,
+            manifests,
+            new PushSafetyGuard(_appPaths),
+            new CheckpointManager(_appPaths),
+            NullSyncEventSink.Instance,
+            new RunHistoryStore(_appPaths));
+
+        var result = await runner.RunAsync(job, 0, devices, _settings, resumeFrom: null);
+
+        Assert.Equal((JobRunOutcome.Completed, (string?)null), (result.Outcome, result.ErrorMessage));
+        Assert.Equal(2, manifests.Bootstraps);
+        Assert.Equal(0, manifests.BootstrapsDuringMerge);
+    }
+
+    private sealed class SlowMergeEngine(ITwoWayMergeEngine inner) : ITwoWayMergeEngine
+    {
+        private int _active;
+        public bool Merging => Volatile.Read(ref _active) > 0;
+
+        public async Task<MergeResult> MergeAsync(string stagingPath, string masterPath, SyncManifest manifest, MergeOptions options, CancellationToken ct = default)
+        {
+            Interlocked.Increment(ref _active);
+            try
+            {
+                await Task.Delay(300, ct);
+                return await inner.MergeAsync(stagingPath, masterPath, manifest, options, ct);
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _active);
+            }
+        }
+    }
+
+    private sealed class MergeObservingManifestStore(IManifestStore inner, SlowMergeEngine merge) : IManifestStore
+    {
+        private int _bootstraps;
+        private int _bootstrapsDuringMerge;
+        public int Bootstraps => _bootstraps;
+        public int BootstrapsDuringMerge => _bootstrapsDuringMerge;
+
+        public Task<SyncManifest> GetOrBootstrapAsync(string jobName, string deviceName, string stagingPath, string masterPath, CancellationToken ct = default)
+        {
+            Interlocked.Increment(ref _bootstraps);
+            if (merge.Merging)
+                Interlocked.Increment(ref _bootstrapsDuringMerge);
+            return inner.GetOrBootstrapAsync(jobName, deviceName, stagingPath, masterPath, ct);
+        }
+
+        public Task<SyncManifest?> TryGetAsync(string jobName, string deviceName, CancellationToken ct = default) => inner.TryGetAsync(jobName, deviceName, ct);
+        public Task SaveAsync(string jobName, string deviceName, SyncManifest manifest, CancellationToken ct = default) => inner.SaveAsync(jobName, deviceName, manifest, ct);
+        public int Clear(string jobName) => inner.Clear(jobName);
+        public Task<bool> AnyEntriesAsync(string jobName, CancellationToken ct = default) => inner.AnyEntriesAsync(jobName, ct);
     }
 
     [Fact]
