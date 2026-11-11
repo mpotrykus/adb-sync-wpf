@@ -77,6 +77,22 @@ Stage B, the server:
 
 The installed WPF exe is only updated from this branch at checkpoints the user chooses.
 
+Stage A notes (done 2026-11-11, steps 1-7):
+
+- **Deviations from the order above.**
+  - Manifests, checkpoints, push-safety and pending conflicts are keyed by job and device *name* (case-insensitive), not id. Callers such as the runner tests work with unsaved jobs whose ids are all empty. With everything in one database, a job rename updates these rows in the same transaction as the config change.
+  - No configurable adb path: AdvancedSharpAdbClient starts `adb` from `PATH` on Linux (checked), so the image only needs platform-tools on `PATH`.
+  - `staleLockHours` is gone from the contract: the project lock is now an exclusive open file that the OS releases on exit, so there's nothing to time out.
+- **Moved to Stage B.**
+  - `ANDROID_USER_HOME` (persisting adb keys) belongs to the server host only. The WPF app keeps `~/.android` so phones stay authorised.
+  - SIGTERM cancelling runs (A18): the engines already stop at file boundaries; the host has to wire `ApplicationStopping` into run cancellation.
+  - The in-memory models still carry runtime fields (`LastRunAt`, `CachedHostPort`). The database keeps them separate; the models split when the engine library is extracted.
+- **Behaviour changes in the WPF app** once a build from this branch is installed:
+  - The `adbsync` CLI exits with code 2 while the app is running (single writer).
+  - Config and state move into `adbsync.db`; the JSON files move to `json-backup/`. Going back to `wpf-v1` means restoring them from there by hand.
+  - The first run writes `.adbsync-root` into the projects folder.
+  - The scheduler pause survives restarts.
+
 ### Phase 3: Companion app targets the server
 
 - Point the phone at the server API. This is the first phase that delivers the user's goal (sync with the PC off).
