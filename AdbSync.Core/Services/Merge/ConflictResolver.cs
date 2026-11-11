@@ -56,7 +56,7 @@ public sealed class ConflictResolver(
             throw new ConflictResolutionException(unavailable);
         var masterPath = Path.Combine(projectRoot, "master");
 
-        await using var @lock = await AcquireAsync(projectRoot, TimeSpan.FromHours(eff.StaleLockHours), ct)
+        await using var @lock = await AcquireAsync(projectRoot, ct)
             ?? throw new ConflictResolutionException($"'{job.Name}' is syncing right now - try again in a moment.");
 
         var masterFile = Path.Combine(masterPath, conflict.RelativePath);
@@ -122,12 +122,12 @@ public sealed class ConflictResolver(
         return new ConflictFiles(File.Exists(masterFile) ? masterFile : null, pending.GetDeviceCopyPath(conflict));
     }
 
-    private async Task<IAsyncDisposable?> AcquireAsync(string projectRoot, TimeSpan staleAfter, CancellationToken ct)
+    private async Task<IAsyncDisposable?> AcquireAsync(string projectRoot, CancellationToken ct)
     {
         var deadline = DateTime.UtcNow + LockWait;
         while (true)
         {
-            var handle = await lockManager.TryAcquireAsync(projectRoot, staleAfter, ct);
+            var handle = await lockManager.TryAcquireAsync(projectRoot, ct);
             if (handle is not null || DateTime.UtcNow >= deadline)
                 return handle;
             await Task.Delay(TimeSpan.FromMilliseconds(500), ct);

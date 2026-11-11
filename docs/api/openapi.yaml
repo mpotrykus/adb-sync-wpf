@@ -1378,7 +1378,6 @@ components:
       type: object
       description: Per-job overrides. `null` means use the global setting.
       properties:
-        staleLockHours: { type: [integer, "null"], minimum: 1 }
         conflictRetentionDays: { type: [integer, "null"], minimum: 0 }
         showInfoNotifications: { type: [boolean, "null"] }
         showErrorNotifications: { type: [boolean, "null"] }
@@ -1440,7 +1439,6 @@ components:
       required: [projectsDirectory, conflictPolicy, rollbackPointsToKeep, pushSafetyMinimumPercent, dryRun]
       properties:
         projectsDirectory: { type: string }
-        staleLockHours: { type: integer }
         conflictRetentionDays: { type: integer }
         showInfoNotifications: { type: boolean }
         showErrorNotifications: { type: boolean }
@@ -1786,7 +1784,6 @@ components:
       properties:
         projectsDirectory: { type: string, readOnly: true }
         timeZone: { type: string, description: IANA zone, for example `America/Chicago`. }
-        staleLockHours: { type: integer, minimum: 1 }
         logRetentionDays: { type: integer, minimum: 1 }
         conflictRetentionDays: { type: integer, minimum: 0 }
         perLogFileMaxBytes: { type: integer, format: int64 }

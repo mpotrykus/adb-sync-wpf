@@ -6,7 +6,6 @@ public class SyncLockManagerTests : IDisposable
 {
     private readonly string _projectRoot = Path.Combine(Path.GetTempPath(), "AdbSync.Tests", Guid.NewGuid().ToString("N"));
     private readonly SyncLockManager _manager = new();
-    private static readonly TimeSpan StaleAfter = TimeSpan.FromHours(4);
 
     public void Dispose()
     {
@@ -14,98 +13,71 @@ public class SyncLockManagerTests : IDisposable
             Directory.Delete(_projectRoot, recursive: true);
     }
 
-    [Fact]
-    public async Task TryAcquireAsync_NoExistingLock_AcquiresAndWritesLockFile()
-    {
-        var handle = await _manager.TryAcquireAsync(_projectRoot, StaleAfter);
+    private string StagingRoot => SyncLockManager.GetStagingRoot(_projectRoot);
+    private string LockPath => SyncLockManager.GetLockPath(_projectRoot);
 
-        Assert.NotNull(handle);
-        var lockPath = SyncLockManager.GetLockPath(_projectRoot);
-        Assert.True(File.Exists(lockPath));
-        Assert.Contains($"pid={Environment.ProcessId}", await File.ReadAllTextAsync(lockPath));
+    [Fact]
+    public async Task TryAcquireAsync_WhileHeld_ReturnsNull()
+    {
+        await using var held = await _manager.TryAcquireAsync(_projectRoot);
+        Assert.NotNull(held);
+
+        Assert.Null(await _manager.TryAcquireAsync(_projectRoot));
     }
 
     [Fact]
-    public async Task TryAcquireAsync_LiveProcessHoldsFreshLock_ReturnsNull()
+    public async Task TryAcquireAsync_AfterRelease_CanBeReacquired()
     {
-        var lockPath = SyncLockManager.GetLockPath(_projectRoot);
-        Directory.CreateDirectory(Path.GetDirectoryName(lockPath)!);
-        await File.WriteAllTextAsync(lockPath, $"pid={Environment.ProcessId}\nstart={DateTimeOffset.UtcNow:o}");
-
-        var handle = await _manager.TryAcquireAsync(_projectRoot, StaleAfter);
-
-        Assert.Null(handle);
-    }
-
-    [Fact]
-    public async Task TryAcquireAsync_DeadPid_Reclaims()
-    {
-        var lockPath = SyncLockManager.GetLockPath(_projectRoot);
-        Directory.CreateDirectory(Path.GetDirectoryName(lockPath)!);
-        await File.WriteAllTextAsync(lockPath, $"pid=999999\nstart={DateTimeOffset.UtcNow:o}");
-
-        var handle = await _manager.TryAcquireAsync(_projectRoot, StaleAfter);
-
-        Assert.NotNull(handle);
-        Assert.Contains($"pid={Environment.ProcessId}", await File.ReadAllTextAsync(lockPath));
-    }
-
-    [Fact]
-    public async Task TryAcquireAsync_LiveProcessButLockOlderThanStaleAfter_Reclaims()
-    {
-        var lockPath = SyncLockManager.GetLockPath(_projectRoot);
-        Directory.CreateDirectory(Path.GetDirectoryName(lockPath)!);
-        await File.WriteAllTextAsync(lockPath, $"pid={Environment.ProcessId}\nstart={DateTimeOffset.UtcNow.AddHours(-5):o}");
-
-        var handle = await _manager.TryAcquireAsync(_projectRoot, StaleAfter);
-
-        Assert.NotNull(handle);
-    }
-
-    [Fact]
-    public async Task TryAcquireAsync_CorruptLockContent_Reclaims()
-    {
-        var lockPath = SyncLockManager.GetLockPath(_projectRoot);
-        Directory.CreateDirectory(Path.GetDirectoryName(lockPath)!);
-        await File.WriteAllTextAsync(lockPath, "not a valid lock file");
-
-        var handle = await _manager.TryAcquireAsync(_projectRoot, StaleAfter);
-
-        Assert.NotNull(handle);
-    }
-
-    [Fact]
-    public async Task TryAcquireAsync_StaleReclaim_WipesExistingStagingContent()
-    {
-        var stagingRoot = SyncLockManager.GetStagingRoot(_projectRoot);
-        var leftoverFile = Path.Combine(stagingRoot, "DeviceA", "partial.txt");
-        Directory.CreateDirectory(Path.GetDirectoryName(leftoverFile)!);
-        File.WriteAllText(leftoverFile, "partial pull from a crashed run");
-        await File.WriteAllTextAsync(SyncLockManager.GetLockPath(_projectRoot), $"pid=999999\nstart={DateTimeOffset.UtcNow:o}");
-
-        await _manager.TryAcquireAsync(_projectRoot, StaleAfter);
-
-        Assert.False(File.Exists(leftoverFile));
-    }
-
-    [Fact]
-    public async Task DisposeAsync_DeletesLockFile()
-    {
-        var handle = await _manager.TryAcquireAsync(_projectRoot, StaleAfter);
-
-        await handle!.DisposeAsync();
-
-        Assert.False(File.Exists(SyncLockManager.GetLockPath(_projectRoot)));
-    }
-
-    [Fact]
-    public async Task TryAcquireAsync_AfterDispose_CanBeReacquired()
-    {
-        var first = await _manager.TryAcquireAsync(_projectRoot, StaleAfter);
+        var first = await _manager.TryAcquireAsync(_projectRoot);
         await first!.DisposeAsync();
 
-        var second = await _manager.TryAcquireAsync(_projectRoot, StaleAfter);
-
+        await using var second = await _manager.TryAcquireAsync(_projectRoot);
         Assert.NotNull(second);
+    }
+
+    [Fact]
+    public async Task TryAcquireAsync_LockFileLeftByADeadRun_IsReclaimedImmediately()
+    {
+        Directory.CreateDirectory(StagingRoot);
+        File.WriteAllText(LockPath, $"pid=1\nstart={DateTimeOffset.UtcNow:o}");
+
+        await using var handle = await _manager.TryAcquireAsync(_projectRoot);
+
+        Assert.NotNull(handle);
+    }
+
+    [Fact]
+    public async Task TryAcquireAsync_ClearsLeftoverStagingButKeepsTheLockFile()
+    {
+        var leftover = Path.Combine(StagingRoot, "DeviceA", "half-pulled.bin");
+        Directory.CreateDirectory(Path.GetDirectoryName(leftover)!);
+        File.WriteAllText(leftover, "partial");
+
+        await using var handle = await _manager.TryAcquireAsync(_projectRoot);
+
+        Assert.False(Directory.Exists(Path.Combine(StagingRoot, "DeviceA")));
+        Assert.True(File.Exists(LockPath));
+    }
+
+    [Fact]
+    public async Task TryAcquireAsync_ReadOnlyLeftoverLock_IsReclaimed()
+    {
+        Directory.CreateDirectory(StagingRoot);
+        File.WriteAllText(LockPath, "");
+        File.SetAttributes(LockPath, FileAttributes.ReadOnly);
+
+        await using var handle = await _manager.TryAcquireAsync(_projectRoot);
+
+        Assert.NotNull(handle);
+    }
+
+    [Fact]
+    public async Task TryAcquireAsync_ManyConcurrentAcquirers_ExactlyOneWins()
+    {
+        var attempts = await Task.WhenAll(Enumerable.Range(0, 16).Select(_ => Task.Run(() => _manager.TryAcquireAsync(_projectRoot))));
+
+        var winners = attempts.Where(h => h is not null).ToList();
+        Assert.Single(winners);
+        await winners[0]!.DisposeAsync();
     }
 }

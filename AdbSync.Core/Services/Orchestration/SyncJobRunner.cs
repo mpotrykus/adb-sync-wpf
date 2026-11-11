@@ -90,7 +90,7 @@ public sealed class SyncJobRunner(
 
             Directory.CreateDirectory(masterPath);
 
-            await using var @lock = await lockManager.TryAcquireAsync(projectRoot, TimeSpan.FromHours(eff.StaleLockHours), ct);
+            await using var @lock = await lockManager.TryAcquireAsync(projectRoot, ct);
             if (@lock is null)
             {
                 _logger.LogInformation("Job '{Job}' skipped - already running", job.Name);

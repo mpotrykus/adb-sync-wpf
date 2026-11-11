@@ -552,8 +552,8 @@ public class SyncJobRunnerTests : IDisposable
 
         var dropping = new DriveDroppingTransferEngine(new FakeAdbTransferEngine(folders), () =>
         {
-            Directory.Delete(_projectsDirectory, recursive: true);
-            Directory.CreateDirectory(_projectsDirectory);
+            File.Delete(Path.Combine(_projectsDirectory, ProjectFolders.MarkerFileName));
+            Directory.Delete(Path.Combine(_projectsDirectory, job.Name, "master"), recursive: true);
         });
         var result = await CreateRunner(folders, transfer: dropping).RunAsync(job, 0, devices, _settings, resumeFrom: null);
 
@@ -809,7 +809,7 @@ public class SyncJobRunnerTests : IDisposable
     }
 
     [Fact]
-    public async Task RunAsync_LockAlreadyHeldByLiveProcess_ReturnsSkipped()
+    public async Task RunAsync_LockAlreadyHeldByAnotherRun_ReturnsSkipped()
     {
         var device = new DeviceConfig { Name = "DeviceA", Serial = "DeviceA" };
         var job = new SyncJobConfig
@@ -817,10 +817,7 @@ public class SyncJobRunnerTests : IDisposable
             Name = "JobFive",
             Devices = [new JobDeviceBinding { DeviceName = "DeviceA", RemotePath = "/sdcard/app" }],
         };
-        var projectRoot = Path.Combine(_projectsDirectory, "JobFive");
-        var lockPath = SyncLockManager.GetLockPath(projectRoot);
-        Directory.CreateDirectory(Path.GetDirectoryName(lockPath)!);
-        File.WriteAllText(lockPath, $"pid={Environment.ProcessId}\nstart={DateTimeOffset.UtcNow:o}");
+        await using var held = await new SyncLockManager().TryAcquireAsync(Path.Combine(_projectsDirectory, "JobFive"));
 
         var runner = CreateRunner(new Dictionary<string, string> { ["DeviceA"] = DeviceFolder("DeviceA") });
         var result = await runner.RunAsync(job, 0, [device], _settings, resumeFrom: null);

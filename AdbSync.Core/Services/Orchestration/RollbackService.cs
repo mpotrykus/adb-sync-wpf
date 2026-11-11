@@ -31,7 +31,7 @@ public sealed class RollbackService(
         var masterPath = Path.Combine(projectRoot, "master");
         var exclude = new ExcludeMatcher(job.Exclude);
 
-        await using var @lock = await lockManager.TryAcquireAsync(projectRoot, TimeSpan.FromHours(eff.StaleLockHours), ct)
+        await using var @lock = await lockManager.TryAcquireAsync(projectRoot, ct)
             ?? throw new InvalidOperationException($"Job '{job.Name}' is running - wait for it to finish before restoring.");
 
         var capturedDevices = Path.Combine(pointPath, RollbackPointStore.DevicesFolderName);
