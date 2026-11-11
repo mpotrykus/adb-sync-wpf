@@ -667,6 +667,43 @@ public class SyncJobRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task RestoringAnOlderSnapshotOntoOneDevice_NextSyncDoesNotDeleteNewerFilesAnywhere()
+    {
+        var (job, devices, folders) = TwoDeviceJob("JobSnapshotRestore");
+        var runner = CreateRunner(folders);
+        Assert.Equal(JobRunOutcome.Completed, (await runner.RunAsync(job, 0, devices, _settings, resumeFrom: null)).Outcome);
+        var snapshots = new DeviceSnapshotService(
+            new FakeDeviceResolver(), new FakeAdbTransferEngine(folders), new SyncLockManager(), new ManifestStore(_appPaths));
+        var snapshot = await snapshots.CreateSnapshotAsync(job, devices, _settings);
+
+        WriteDeviceFile("DeviceA", "newer.jpg", "newer");
+        Assert.Equal(JobRunOutcome.Completed, (await runner.RunAsync(job, 0, devices, _settings, resumeFrom: null)).Outcome);
+        Assert.True(File.Exists(Path.Combine(DeviceFolder("DeviceB"), "newer.jpg")));
+
+        await snapshots.RestoreSnapshotAsync(job, devices, _settings, snapshot.SnapshotPath);
+        Assert.False(File.Exists(Path.Combine(DeviceFolder("DeviceA"), "newer.jpg")));
+
+        var result = await runner.RunAsync(job, 0, devices, _settings, resumeFrom: null);
+
+        Assert.Null(result.ErrorMessage);
+        Assert.True(File.Exists(Path.Combine(_projectsDirectory, job.Name, "master", "newer.jpg")));
+        Assert.True(File.Exists(Path.Combine(DeviceFolder("DeviceB"), "newer.jpg")));
+    }
+
+    [Fact]
+    public async Task SnapshotRestore_WhileTheJobIsRunning_IsRefused()
+    {
+        var (job, devices, folders) = TwoDeviceJob("JobSnapshotBusy");
+        Assert.Equal(JobRunOutcome.Completed, (await CreateRunner(folders).RunAsync(job, 0, devices, _settings, resumeFrom: null)).Outcome);
+        var snapshots = new DeviceSnapshotService(
+            new FakeDeviceResolver(), new FakeAdbTransferEngine(folders), new SyncLockManager(), new ManifestStore(_appPaths));
+        var snapshot = await snapshots.CreateSnapshotAsync(job, devices, _settings);
+        await using var held = await new SyncLockManager().TryAcquireAsync(Path.Combine(_projectsDirectory, job.Name));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => snapshots.RestoreSnapshotAsync(job, devices, _settings, snapshot.SnapshotPath));
+    }
+
+    [Fact]
     public async Task RunAsync_SuppliedRunIdAndErrorCode_AreWhatRunHistoryRecords()
     {
         var device = new DeviceConfig { Name = "DeviceA", Serial = "DeviceA" };

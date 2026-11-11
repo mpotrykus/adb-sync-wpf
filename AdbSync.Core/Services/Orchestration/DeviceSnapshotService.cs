@@ -3,12 +3,14 @@ using AdbSync.Core.Services.Config;
 using AdbSync.Core.Models.Config;
 using AdbSync.Core.Models.Orchestration;
 using AdbSync.Core.Services.Devices;
+using AdbSync.Core.Services.Merge;
 using AdbSync.Core.Services.Transfer;
 using System.Globalization;
 
 namespace AdbSync.Core.Services.Orchestration;
 
-public sealed class DeviceSnapshotService(IAdbDeviceResolver deviceResolver, IAdbTransferEngine transfer) : IDeviceSnapshotService
+public sealed class DeviceSnapshotService(
+    IAdbDeviceResolver deviceResolver, IAdbTransferEngine transfer, ISyncLockManager lockManager, IManifestStore manifests) : IDeviceSnapshotService
 {
     private const string TimestampFormat = "yyyy-MM-dd_HH-mm-ss";
 
@@ -17,6 +19,7 @@ public sealed class DeviceSnapshotService(IAdbDeviceResolver deviceResolver, IAd
     {
         var eff = job.Resolve(settings);
         var checkpointsRoot = GetCheckpointsRoot(job, eff);
+        await using var @lock = await AcquireAsync(job, eff, ct);
         var snapshotRoot = Path.Combine(checkpointsRoot, DateTimeOffset.Now.ToString(TimestampFormat));
         var exclude = new ExcludeMatcher(job.Exclude);
 
@@ -76,6 +79,7 @@ public sealed class DeviceSnapshotService(IAdbDeviceResolver deviceResolver, IAd
             throw new InvalidOperationException($"Checkpoint '{snapshotPath}' no longer exists.");
 
         var eff = job.Resolve(settings);
+        await using var @lock = await AcquireAsync(job, eff, ct);
         var exclude = new ExcludeMatcher(job.Exclude);
         var restoredDevices = 0;
         var totalFilesCopied = 0;
@@ -106,8 +110,17 @@ public sealed class DeviceSnapshotService(IAdbDeviceResolver deviceResolver, IAd
             restoredDevices++;
         }
 
+        // The restored devices no longer match their manifests. Left alone, the next sync would read the restore as
+        // device-side edits and deletions and copy them to master and every other device; cleared, it rebuilds the
+        // manifests from both sides, so differences become conflicts and nothing is deleted.
+        await manifests.ClearAsync(job.Name, ct);
+
         return new SnapshotResult(snapshotPath, restoredDevices, totalFilesCopied, totalBytes, errors, totalFilesDeleted, skipped);
     }
+
+    private async Task<IAsyncDisposable> AcquireAsync(SyncJobConfig job, EffectiveJobSettings eff, CancellationToken ct) =>
+        await lockManager.TryAcquireAsync(ProjectFolders.RequireAvailable(eff, job.Name), ct)
+            ?? throw new InvalidOperationException($"Job '{job.Name}' is running - wait for it to finish and try again.");
 
     private const string CheckpointsFolderName = "checkpoints";
 
