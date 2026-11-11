@@ -40,6 +40,48 @@ public static class JobExtraEndpoints
             });
         });
 
+        api.MapGet("/jobs/{jobId:guid}/app-icon", async (
+            Guid jobId, HttpContext http, AppConfigService configService, IAdbDeviceResolver resolver, AppIconService icons, CancellationToken ct) =>
+        {
+            var config = await configService.GetAsync();
+            if (config.Jobs.FirstOrDefault(j => j.Id == jobId) is not { } job)
+                return JobNotFound();
+            if (!ApkIcons.IsValidPackageName(job.AppPackage))
+                return NoIcon();
+            var package = job.AppPackage!;
+
+            if (icons.TryGetCached(package) is { } cached)
+            {
+                http.Response.Headers.CacheControl = "private, max-age=86400";
+                return Results.File(cached, "image/png");
+            }
+            if (icons.IsKnownMissing(package))
+                return NoIcon();
+
+            foreach (var binding in job.Devices)
+            {
+                if (config.Devices.FirstOrDefault(d => d.Id == binding.DeviceId) is not { } device)
+                    continue;
+                try
+                {
+                    using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    timeout.CancelAfter(TimeSpan.FromSeconds(20));
+                    var serial = await resolver.EnsureConnectedAsync(device, timeout.Token);
+                    var fetched = await icons.FetchAsync(package, serial, ct);
+                    if (!fetched.PackageFound)
+                        continue;
+                    if (fetched.Png is null)
+                        return NoIcon();
+                    http.Response.Headers.CacheControl = "private, max-age=86400";
+                    return Results.File(fetched.Png, "image/png");
+                }
+                catch (Exception) when (!ct.IsCancellationRequested)
+                {
+                }
+            }
+            return NoIcon();
+        });
+
         api.MapGet("/jobs/{jobId:guid}/manifests", async (Guid jobId, AppConfigService configService, IManifestStore manifests, CancellationToken ct) =>
         {
             var config = await configService.GetAsync();
@@ -206,4 +248,6 @@ public static class JobExtraEndpoints
             : config.Devices.FirstOrDefault(d => string.Equals(d.Name, binding.DeviceName, StringComparison.OrdinalIgnoreCase))?.Id ?? Guid.Empty;
 
     private static IResult JobNotFound() => Problems.NotFound("No job with that id.");
+
+    private static IResult NoIcon() => Problems.Create(StatusCodes.Status404NotFound, "no_icon", "There's no icon for that job's app.");
 }

@@ -66,6 +66,7 @@ builder.Services.AddSingleton<RunRegistry>();
 builder.Services.AddSingleton<ConfigEditor>();
 builder.Services.AddSingleton<OperationRegistry>();
 builder.Services.AddSingleton<WatchStateTracker>();
+builder.Services.AddSingleton<AppIconService>();
 builder.Services.AddSingleton<JobStateRenamer>();
 builder.Services.AddHostedService<EngineEventSource>();
 builder.Services.AddAdbSyncEngine(paths);

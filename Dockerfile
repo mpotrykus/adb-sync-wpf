@@ -17,10 +17,10 @@ COPY AdbSync.Server/ AdbSync.Server/
 RUN dotnet publish AdbSync.Server/AdbSync.Server.csproj -c Release -a $TARGETARCH --self-contained false --no-restore -o /app
 
 # Ubuntu's adb package is built for arm64 as well as amd64 (Google's platform-tools zip is x86-64 only), and
-# 24.04 ships adb 34, which supports wireless pairing.
+# 24.04 ships adb 34, which supports wireless pairing. aapt reads launcher icons out of APKs pulled from the phones.
 FROM mcr.microsoft.com/dotnet/aspnet:8.0-noble
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends adb tzdata \
+    && apt-get install -y --no-install-recommends adb aapt tzdata \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /app .

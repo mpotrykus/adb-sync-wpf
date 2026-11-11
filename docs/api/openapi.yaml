@@ -306,6 +306,30 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/EffectiveJobSettings" }
         "404": { $ref: "#/components/responses/Problem" }
+  /jobs/{jobId}/app-icon:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+    get:
+      tags: [jobs]
+      operationId: getJobAppIcon
+      summary: The launcher icon of the app the job is linked to, as a 128px PNG.
+      description: >
+        Served from a cache under the data directory. The first request for an app pulls its base APK from one of the job's
+        phones and reads the icon with `aapt`, so it can take a few seconds and needs a reachable phone. Apps with only an
+        adaptive (XML) icon have no raster icon to extract and answer `no_icon`; clients should fall back to a generated tile.
+      responses:
+        "200":
+          description: The icon.
+          headers:
+            Cache-Control: { schema: { type: string }, description: "`private, max-age=86400`." }
+          content:
+            image/png:
+              schema: { type: string, contentEncoding: binary }
+        "404":
+          description: "`not_found` for an unknown job, or `no_icon` when the job has no linked app, no phone has it, or its icon can't be extracted."
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
   /jobs/{jobId}/runs:
     parameters:
       - $ref: "#/components/parameters/JobId"
