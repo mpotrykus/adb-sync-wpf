@@ -1,3 +1,4 @@
+using AdbSync.Server.Events;
 using Microsoft.AspNetCore.Authorization;
 
 namespace AdbSync.Server.Auth;
@@ -61,8 +62,14 @@ public static class AuthEndpoints
                 .Select(c => new ClientResponse(c.Id, c.Name, c.Kind, c.Version, c.CreatedAt, c.LastSeenAt, c.Id == current));
         });
 
-        api.MapDelete("/auth/clients/{clientId:guid}", async (Guid clientId, AuthStore store, CancellationToken ct) =>
-            await store.RevokeAsync(clientId, ct) ? Results.NoContent() : Problems.NotFound("No client with that id."));
+        api.MapDelete("/auth/clients/{clientId:guid}", async (Guid clientId, AuthStore store, EventBus bus, CancellationToken ct) =>
+        {
+            if (!await store.RevokeAsync(clientId, ct))
+                return Problems.NotFound("No client with that id.");
+            bus.Publish("client.revoked", new { clientId }, onlyClient: clientId);
+            bus.Disconnect(clientId);
+            return Results.NoContent();
+        });
     }
 }
 

@@ -6,7 +6,9 @@ using AdbSync.Core.Services.Persistence;
 using AdbSync.Engine;
 using AdbSync.Engine.Services;
 using AdbSync.Server;
+using AdbSync.Server.Api;
 using AdbSync.Server.Auth;
+using AdbSync.Server.Events;
 using Microsoft.AspNetCore.RateLimiting;
 using Serilog;
 using System.Threading.RateLimiting;
@@ -57,6 +59,9 @@ builder.Services.AddSingleton(options);
 builder.Services.AddSingleton(identity);
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<AuthStore>();
+builder.Services.AddSingleton<EventBus>();
+builder.Services.AddSingleton<JobStatusBuilder>();
+builder.Services.AddHostedService<EngineEventSource>();
 builder.Services.AddAdbSyncEngine(paths);
 builder.Services.AddSingleton<ISyncEventSink>(sp => sp.GetRequiredService<JobStatusTracker>());
 builder.Services.AddSingleton<IHostPowerEvents, NoHostPowerEvents>();
@@ -83,6 +88,8 @@ app.Lifetime.ApplicationStopping.Register(() => app.Services.GetRequiredService<
 var api = app.MapGroup($"/api/{SystemEndpoints.ApiVersion}").RequireClientToken();
 api.MapSystemEndpoints();
 api.MapAuthEndpoints();
+api.MapStatusEndpoints();
+api.MapEventEndpoints();
 
 app.Logger.LogInformation(
     "AdbSync server listening on https://{Address}:{Port} as {Url}, data in {DataDir}, certificate fingerprint {Fingerprint}",

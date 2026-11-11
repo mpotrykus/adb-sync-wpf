@@ -15,16 +15,7 @@ public static class SystemEndpoints
     public static void MapSystemEndpoints(this IEndpointRouteBuilder api)
     {
         api.MapGet("/info", async (ServerOptions options, AppConfigService configService) =>
-        {
-            var config = await configService.GetAsync();
-            return Results.Ok(new ServerInfo(
-                options.Name,
-                ServerVersion,
-                [ApiVersion],
-                new Dictionary<string, string>(),
-                ScheduleClock.Zone(config.Settings).Id,
-                []));
-        }).AllowAnonymous();
+            Results.Ok(Info(options, await configService.GetAsync()))).AllowAnonymous();
 
         api.MapGet("/health", async (EngineDatabase database, AppConfigService configService, CancellationToken ct) =>
         {
@@ -53,6 +44,9 @@ public static class SystemEndpoints
             return Results.Ok(new Health(unavailable.Count == 0 ? "ok" : "degraded", checks));
         }).AllowAnonymous();
     }
+
+    public static ServerInfo Info(ServerOptions options, AppConfig config) => new(
+        options.Name, ServerVersion, [ApiVersion], new Dictionary<string, string>(), ScheduleClock.Zone(config.Settings).Id, ["events"]);
 
     private static string ServerVersion =>
         typeof(SystemEndpoints).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "0.0.0";
