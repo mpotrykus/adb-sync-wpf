@@ -40,6 +40,34 @@ public sealed class JobRunService(
 
     public bool IsRunning(int jobIndex) => _runningJobs.ContainsKey(jobIndex);
 
+    public bool AnyRunning => !_runningJobs.IsEmpty;
+
+    private int _holds;
+    private string? _holdReason;
+
+    /// <summary>
+    /// Until disposed, new runs (scheduled, on-change or manual) are skipped instead of started; for operations such as
+    /// moving the projects directory that must not overlap a sync. Runs already going are unaffected, so check
+    /// <see cref="AnyRunning"/> first.
+    /// </summary>
+    public IDisposable HoldNewRuns(string reason)
+    {
+        _holdReason = reason;
+        Interlocked.Increment(ref _holds);
+        return new Hold(this);
+    }
+
+    private sealed class Hold(JobRunService owner) : IDisposable
+    {
+        private int _disposed;
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) == 0)
+                Interlocked.Decrement(ref owner._holds);
+        }
+    }
+
     public async Task<JobRunResult> RunJobAsync(
         int jobIndex, bool forcePush = false, CancellationToken ct = default, bool dryRun = false,
         RunTrigger trigger = RunTrigger.Manual, Guid? runId = null, Guid? requestedBy = null)
@@ -47,6 +75,12 @@ public sealed class JobRunService(
         var config = await configService.GetAsync();
         var job = config.Jobs[jobIndex];
         var globalGate = await _globalGate.Value;
+
+        if (Volatile.Read(ref _holds) > 0)
+        {
+            events.JobSkipped(job.Name, _holdReason ?? "runs are on hold");
+            return new JobRunResult(JobRunOutcome.Skipped, _holdReason, RunErrorCode.AlreadyRunning);
+        }
 
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         if (!_runningJobs.TryAdd(jobIndex, cts))

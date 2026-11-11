@@ -63,6 +63,7 @@ builder.Services.AddSingleton<EventBus>();
 builder.Services.AddSingleton<JobStatusBuilder>();
 builder.Services.AddSingleton<RunRegistry>();
 builder.Services.AddSingleton<ConfigEditor>();
+builder.Services.AddSingleton<OperationRegistry>();
 builder.Services.AddSingleton<JobStateRenamer>();
 builder.Services.AddHostedService<EngineEventSource>();
 builder.Services.AddAdbSyncEngine(paths);
@@ -102,6 +103,7 @@ api.MapJobEndpoints();
 api.MapRunEndpoints();
 api.MapDeviceEndpoints();
 api.MapConflictEndpoints();
+api.MapSettingsEndpoints();
 
 app.Logger.LogInformation(
     "AdbSync server listening on https://{Address}:{Port} as {Url}, data in {DataDir}, certificate fingerprint {Fingerprint}",
