@@ -3,9 +3,6 @@ using AdbSync.Core.Models.Merge;
 using AdbSync.Core.Services.Merge;
 using AdbSync.Engine.Services;
 using AdbSync.Server.Events;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.Formats.Jpeg;
-using SixLabors.ImageSharp.Processing;
 
 namespace AdbSync.Server.Api;
 
@@ -44,19 +41,9 @@ public static class ConflictEndpoints
             if (path is null || !PreviewExtensions.Contains(Path.GetExtension(conflict.RelativePath)))
                 return NoPreview();
 
-            try
-            {
-                using var image = await Image.LoadAsync(path, ct);
-                var size = Math.Clamp(maxSize ?? 320, 32, 1024);
-                image.Mutate(x => x.AutoOrient().Resize(new ResizeOptions { Size = new Size(size, size), Mode = ResizeMode.Max }));
-                var output = new MemoryStream();
-                await image.SaveAsJpegAsync(output, new JpegEncoder { Quality = 80 }, ct);
-                return Results.File(output.ToArray(), "image/jpeg");
-            }
-            catch (Exception ex) when (ex is UnknownImageFormatException or InvalidImageContentException or IOException)
-            {
-                return NoPreview();
-            }
+            var size = Math.Clamp(maxSize ?? 320, 32, 1024);
+            var jpeg = await Task.Run(() => Thumbnails.RenderJpeg(path, size), ct);
+            return jpeg is null ? NoPreview() : Results.File(jpeg, "image/jpeg");
         });
 
         api.MapPost("/conflicts/{conflictId}/resolve", async (
