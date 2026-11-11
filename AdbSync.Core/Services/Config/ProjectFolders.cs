@@ -26,7 +26,7 @@ public static class ProjectFolders
     /// <summary>The job's project folder (<c>{projects directory}/{job name}</c>), or throws when the root or name is invalid.</summary>
     public static string ProjectRoot(EffectiveJobSettings eff, string jobName) =>
         RootProblem(eff.ProjectsDirectory) is { } problem
-            ? throw new InvalidOperationException(problem)
+            ? throw new ProjectFolderUnavailableException(problem)
             : Path.Combine(eff.ProjectsDirectory, ConfigNames.Segment(jobName));
 
     /// <summary>The job's project folder, or null when the root or name is invalid. For read-only lookups.</summary>

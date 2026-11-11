@@ -520,6 +520,7 @@ public class SyncJobRunnerTests : IDisposable
         var result = await runner.RunAsync(job, 0, [device], new GlobalSettings { ProjectsDirectory = mountPoint }, resumeFrom: null);
 
         Assert.Equal(JobRunOutcome.SkippedProjectFolderUnavailable, result.Outcome);
+        Assert.Equal(RunErrorCode.ProjectFolderUnavailable, result.ErrorCode);
         Assert.Contains(ProjectFolders.MarkerFileName, result.ErrorMessage);
         Assert.Empty(Directory.EnumerateFileSystemEntries(mountPoint));
         Assert.Equal("content", File.ReadAllText(Path.Combine(DeviceFolder("DeviceA"), "photo.jpg")));
@@ -666,6 +667,27 @@ public class SyncJobRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task RunAsync_SuppliedRunIdAndErrorCode_AreWhatRunHistoryRecords()
+    {
+        var device = new DeviceConfig { Name = "DeviceA", Serial = "DeviceA" };
+        var job = new SyncJobConfig
+        {
+            Name = "JobQueuedId",
+            Devices = [new JobDeviceBinding { DeviceName = "DeviceA", RemotePath = "/sdcard/app" }],
+        };
+        await using var held = await new SyncLockManager().TryAcquireAsync(Path.Combine(_projectsDirectory, job.Name));
+        var runId = Guid.NewGuid();
+
+        var result = await CreateRunner(new Dictionary<string, string> { ["DeviceA"] = DeviceFolder("DeviceA") })
+            .RunAsync(job, 0, [device], _settings, resumeFrom: null, runId: runId);
+
+        Assert.Equal(RunErrorCode.AlreadyRunning, result.ErrorCode);
+        var record = Assert.Single(await new RunHistoryStore(_appPaths).ListRunsAsync(job.Name));
+        Assert.Equal(runId, record.RunId);
+        Assert.Equal(RunErrorCode.AlreadyRunning, record.ErrorCode);
+    }
+
+    [Fact]
     public async Task RunAsync_FirstRunWithTwoDevices_NeverBootstrapsAManifestWhileAnotherDeviceMergesIntoMaster()
     {
         WriteDeviceFile("DeviceA", "a.txt", "from-a");
@@ -804,6 +826,7 @@ public class SyncJobRunnerTests : IDisposable
         var result = await runner.RunAsync(job, 0, [device], _settings, resumeFrom: null);
 
         Assert.Equal(JobRunOutcome.SkippedAppRunning, result.Outcome);
+        Assert.Equal(RunErrorCode.AppRunning, result.ErrorCode);
         var masterPath = Path.Combine(_projectsDirectory, "JobFour", "master");
         Assert.False(File.Exists(Path.Combine(masterPath, "a.txt")));
     }
@@ -844,6 +867,7 @@ public class SyncJobRunnerTests : IDisposable
 
         Assert.Equal(JobRunOutcome.Failed, result.Outcome);
         Assert.Contains("Safety check blocked", result.ErrorMessage);
+        Assert.Equal(RunErrorCode.PushSafetyBlocked, result.ErrorCode);
     }
 
     [Fact]

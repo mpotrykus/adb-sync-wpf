@@ -1,6 +1,7 @@
 using AdbSync.Core.Services.Common;
 using AdbSync.Core.Services.Config;
 using AdbSync.Core.Models.Config;
+using AdbSync.Core.Models.Devices;
 using AdbSync.Core.Models.Merge;
 using AdbSync.Core.Models.Orchestration;
 using AdbSync.Core.Models.Orchestration.RunHistory;
@@ -46,9 +47,9 @@ public sealed class SyncJobRunner(
 
     public async Task<JobRunResult> RunAsync(
         SyncJobConfig job, int jobIndex, IReadOnlyList<DeviceConfig> devices, GlobalSettings settings,
-        SyncCheckpoint? resumeFrom, bool forcePush = false, CancellationToken ct = default, bool dryRun = false)
+        SyncCheckpoint? resumeFrom, bool forcePush = false, CancellationToken ct = default, bool dryRun = false, Guid? runId = null)
     {
-        var runId = Guid.NewGuid();
+        var id = runId ?? Guid.NewGuid();
         var startedAt = DateTimeOffset.UtcNow;
         using var runLog = RunLogCapture.Begin(job.Name, liveLog);
         var steps = new RunStepRecorder(job.Name, liveSteps);
@@ -82,7 +83,7 @@ public sealed class SyncJobRunner(
             {
                 _logger.LogWarning("Job '{Job}' skipped - {Reason}", job.Name, unavailable);
                 events.JobSkipped(job.Name, unavailable);
-                return await FinishAsync(JobRunOutcome.SkippedProjectFolderUnavailable, unavailable);
+                return await FinishAsync(JobRunOutcome.SkippedProjectFolderUnavailable, unavailable, RunErrorCode.ProjectFolderUnavailable);
             }
 
             if (rollbackPoints is not null && eff.RollbackPointsToKeep > 0 && !eff.DryRun && resumeFrom is null)
@@ -95,7 +96,7 @@ public sealed class SyncJobRunner(
             {
                 _logger.LogInformation("Job '{Job}' skipped - already running", job.Name);
                 events.JobSkipped(job.Name, AlreadyRunningReason);
-                return await FinishAsync(JobRunOutcome.Skipped);
+                return await FinishAsync(JobRunOutcome.Skipped, errorCode: RunErrorCode.AlreadyRunning);
             }
 
             steps.Plan(job.Devices.Select(b => b.DeviceName));
@@ -122,7 +123,7 @@ public sealed class SyncJobRunner(
                     _logger.LogInformation("Job '{Job}' skipped - {Package} is currently running on {Device}", job.Name, job.AppPackage, deviceName);
                     events.JobBlockedByApp(job.Name, deviceName);
                     events.JobSkipped(job.Name, $"{job.AppPackage} is currently running on {deviceName}");
-                    return await FinishAsync(JobRunOutcome.SkippedAppRunning);
+                    return await FinishAsync(JobRunOutcome.SkippedAppRunning, errorCode: RunErrorCode.AppRunning);
                 }
             }
 
@@ -159,7 +160,7 @@ public sealed class SyncJobRunner(
                         $"'{masterPath}'. If this is now the right folder, empty the job's master folder and the next run re-syncs it from the devices.";
                     _logger.LogWarning("Job '{Job}' skipped - {Reason}", job.Name, reason);
                     events.JobSkipped(job.Name, reason);
-                    return await FinishAsync(JobRunOutcome.SkippedProjectFolderUnavailable, reason);
+                    return await FinishAsync(JobRunOutcome.SkippedProjectFolderUnavailable, reason, RunErrorCode.ProjectFolderUnavailable);
                 }
                 if (!eff.DryRun && recordedRoot != currentRoot)
                     await manifests.SetRootAsync(job.Name, currentRoot, ct);
@@ -228,14 +229,14 @@ public sealed class SyncJobRunner(
         {
             _logger.LogError(ex, "Job '{Job}' failed", job.Name);
             events.JobFailed(job.Name, ex);
-            return await FinishAsync(JobRunOutcome.Failed, ex.Message);
+            return await FinishAsync(JobRunOutcome.Failed, ex.Message, Classify(ex));
         }
 
-        async Task<JobRunResult> FinishAsync(JobRunOutcome outcome, string? errorMessage = null)
+        async Task<JobRunResult> FinishAsync(JobRunOutcome outcome, string? errorMessage = null, RunErrorCode? errorCode = null)
         {
             var record = new JobRunRecord(
-                runId, job.Name, startedAt, DateTimeOffset.UtcNow, outcome, errorMessage,
-                totalFilesCopied, totalFilesDeleted, totalErrors, totalBytesCopied, pullDuration, pushDuration);
+                id, job.Name, startedAt, DateTimeOffset.UtcNow, outcome, errorMessage,
+                totalFilesCopied, totalFilesDeleted, totalErrors, totalBytesCopied, pullDuration, pushDuration, errorCode);
             var finalSteps = steps.Complete(outcome);
             rollback?.Finish();
             try
@@ -250,9 +251,18 @@ public sealed class SyncJobRunner(
             {
                 steps.End();
             }
-            return new JobRunResult(outcome, errorMessage);
+            return new JobRunResult(outcome, errorMessage, errorCode);
         }
     }
+
+    private static RunErrorCode Classify(Exception ex) => ex switch
+    {
+        PushSafetyException => RunErrorCode.PushSafetyBlocked,
+        ProjectFolderUnavailableException => RunErrorCode.ProjectFolderUnavailable,
+        DeviceConnectException => RunErrorCode.DeviceUnreachable,
+        ArgumentException => RunErrorCode.ValidationFailed,
+        _ => RunErrorCode.InternalError,
+    };
 
     private async Task<PhaseStats> RunPullPhaseAsync(
         SyncJobConfig job, int jobIndex, string masterPath, Dictionary<string, string> serials,

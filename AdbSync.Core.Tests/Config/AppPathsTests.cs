@@ -109,7 +109,7 @@ public class AppPathsTests
     {
         var eff = new SyncJobConfig { Name = "Job" }.Resolve(new GlobalSettings { ProjectsDirectory = "projects" });
 
-        Assert.Throws<InvalidOperationException>(() => ProjectFolders.ProjectRoot(eff, "Job"));
+        Assert.Throws<ProjectFolderUnavailableException>(() => ProjectFolders.ProjectRoot(eff, "Job"));
         Assert.Null(ProjectFolders.TryProjectRoot(eff, "Job"));
     }
 

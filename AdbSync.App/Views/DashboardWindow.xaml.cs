@@ -214,7 +214,9 @@ public partial class DashboardWindow : Window
             if (lastRun.Outcome == JobRunOutcome.Failed)
             {
                 vm.NeedsAttention = true;
-                vm.CanForcePush = lastRun.ErrorMessage?.Contains("Safety check blocked push", StringComparison.Ordinal) == true;
+                // Runs recorded before error codes existed only have the message text.
+                vm.CanForcePush = lastRun.ErrorCode == RunErrorCode.PushSafetyBlocked
+                    || (lastRun.ErrorCode is null && lastRun.ErrorMessage?.Contains("Safety check blocked push", StringComparison.Ordinal) == true);
             }
         }
     }

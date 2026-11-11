@@ -35,8 +35,8 @@ public sealed class RunHistoryStore : IRunHistoryStore
         {
             insertRun.Transaction = transaction;
             insertRun.CommandText = """
-                INSERT INTO Runs (RunId, JobName, StartedAt, CompletedAt, Outcome, ErrorMessage, FilesCopied, FilesDeleted, ErrorCount, BytesCopied, PullDurationTicks, PushDurationTicks)
-                VALUES (@runId, @jobName, @startedAt, @completedAt, @outcome, @errorMessage, @filesCopied, @filesDeleted, @errorCount, @bytesCopied, @pullDurationTicks, @pushDurationTicks);
+                INSERT INTO Runs (RunId, JobName, StartedAt, CompletedAt, Outcome, ErrorMessage, FilesCopied, FilesDeleted, ErrorCount, BytesCopied, PullDurationTicks, PushDurationTicks, ErrorCode)
+                VALUES (@runId, @jobName, @startedAt, @completedAt, @outcome, @errorMessage, @filesCopied, @filesDeleted, @errorCount, @bytesCopied, @pullDurationTicks, @pushDurationTicks, @errorCode);
                 """;
             insertRun.Parameters.AddWithValue("@runId", record.RunId.ToString("N"));
             insertRun.Parameters.AddWithValue("@jobName", record.JobName);
@@ -50,6 +50,7 @@ public sealed class RunHistoryStore : IRunHistoryStore
             insertRun.Parameters.AddWithValue("@bytesCopied", record.BytesCopied);
             insertRun.Parameters.AddWithValue("@pullDurationTicks", (object?)record.PullDuration?.Ticks ?? DBNull.Value);
             insertRun.Parameters.AddWithValue("@pushDurationTicks", (object?)record.PushDuration?.Ticks ?? DBNull.Value);
+            insertRun.Parameters.AddWithValue("@errorCode", (object?)record.ErrorCode?.ToString() ?? DBNull.Value);
             await insertRun.ExecuteNonQueryAsync(ct);
         }
 
@@ -150,7 +151,7 @@ public sealed class RunHistoryStore : IRunHistoryStore
         await using var connection = await OpenAsync(ct);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT RunId, JobName, StartedAt, CompletedAt, Outcome, ErrorMessage, FilesCopied, FilesDeleted, ErrorCount, BytesCopied, PullDurationTicks, PushDurationTicks
+            SELECT RunId, JobName, StartedAt, CompletedAt, Outcome, ErrorMessage, FilesCopied, FilesDeleted, ErrorCount, BytesCopied, PullDurationTicks, PushDurationTicks, ErrorCode
             FROM Runs WHERE JobName = @jobName ORDER BY StartedAt DESC;
             """;
         command.Parameters.AddWithValue("@jobName", jobName);
@@ -171,7 +172,8 @@ public sealed class RunHistoryStore : IRunHistoryStore
                 reader.GetInt32(8),
                 reader.GetInt64(9),
                 reader.IsDBNull(10) ? null : TimeSpan.FromTicks(reader.GetInt64(10)),
-                reader.IsDBNull(11) ? null : TimeSpan.FromTicks(reader.GetInt64(11))));
+                reader.IsDBNull(11) ? null : TimeSpan.FromTicks(reader.GetInt64(11)),
+                reader.IsDBNull(12) ? null : Enum.TryParse<RunErrorCode>(reader.GetString(12), out var code) ? code : RunErrorCode.InternalError));
         }
         return results;
     }
@@ -263,6 +265,7 @@ public sealed class RunHistoryStore : IRunHistoryStore
         ("BytesCopied", "INTEGER NOT NULL DEFAULT 0"),
         ("PullDurationTicks", "INTEGER NULL"),
         ("PushDurationTicks", "INTEGER NULL"),
+        ("ErrorCode", "TEXT NULL"),
     ];
 
     private async Task EnsureSchemaAsync(SqliteConnection connection, CancellationToken ct)
