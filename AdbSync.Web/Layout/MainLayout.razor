@@ -31,7 +31,7 @@ else
     <MudLayout>
         <MudAppBar Elevation="0">
             <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@(() => _drawerOpen = !_drawerOpen)" />
-            <MudText Typo="Typo.h6" Class="ml-2">AdbSync</MudText>
+            <span class="brand ml-3"><span class="brand-mark"></span><MudText Typo="Typo.h6" Class="brand-text">AdbSync</MudText></span>
             @if (Status.Snapshot?.Server.Name is { } name)
             {
                 <MudText Typo="Typo.caption" Class="ml-3 mt-1 d-none d-sm-flex" Style="opacity:.8">@name</MudText>
@@ -53,7 +53,7 @@ else
                 <MudMenuItem Icon="@Icons.Material.Filled.Logout" OnClick="SignOutAsync">Sign out</MudMenuItem>
             </MudMenu>
         </MudAppBar>
-        <MudDrawer @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="0" Variant="DrawerVariant.Responsive" Breakpoint="Breakpoint.Md">
+        <MudDrawer @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="0" Variant="DrawerVariant.Mini" OpenMiniOnHover="true">
             <MudNavMenu Class="mt-2">
                 <MudNavLink Href="" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Sync">Jobs</MudNavLink>
                 <MudNavLink Href="runs" Icon="@Icons.Material.Filled.History">Run history</MudNavLink>
@@ -79,7 +79,7 @@ else
 
     private MudThemeProvider? _themeProvider;
     private bool _dark;
-    private bool _drawerOpen = true;
+    private bool _drawerOpen;
     private bool _schedulerBusy;
     private bool _watching;
 
@@ -87,24 +87,43 @@ else
     {
         PaletteLight = new PaletteLight
         {
-            Primary = "#22867a",
+            Primary = "#6c63ff",
             Secondary = "#e76f51",
-            AppbarBackground = "#1f6f66",
-            Background = "#f5f6f8",
+            AppbarBackground = "#4c3fd1",
+            Background = "#eef0fb",
             DrawerBackground = "#ffffff",
         },
         PaletteDark = new PaletteDark
         {
-            Primary = "#3fbfae",
-            Secondary = "#f4a261",
-            AppbarBackground = "#1d2127",
-            Background = "#16181d",
-            Surface = "#1f232a",
-            DrawerBackground = "#1b1e24",
+            Primary = "#6c63ff",
+            Secondary = "#9c97b3",
+            Tertiary = "#7c5cff",
+            Success = "#5bd98a",
+            Warning = "#ffb454",
+            Error = "#ff6b6b",
+            Info = "#4c6fff",
+            TextPrimary = "#f5f3fa",
+            TextSecondary = "#9c97b3",
+            TextDisabled = "#5c5870",
+            ActionDefault = "#9c97b3",
+            AppbarBackground = "#00000000",
+            AppbarText = "#f5f3fa",
+            Background = "#0d0a18",
+            BackgroundGray = "#0d0a18",
+            Surface = "#271f38",
+            DrawerBackground = "#00000000",
+            DrawerText = "#f5f3fa",
+            DrawerIcon = "#9c97b3",
+            LinesDefault = "rgba(255,255,255,0.09)",
+            LinesInputs = "rgba(255,255,255,0.15)",
+            Divider = "rgba(255,255,255,0.09)",
+            DividerLight = "rgba(255,255,255,0.06)",
+            TableLines = "rgba(255,255,255,0.09)",
+            OverlayDark = "rgba(0,0,0,0.55)",
         },
         Typography = new Typography
         {
-            Default = new DefaultTypography { FontFamily = ["Inter", "Segoe UI", "Roboto", "system-ui", "sans-serif"] },
+            Default = new DefaultTypography { FontFamily = ["IBM Plex Sans", "Segoe UI", "system-ui", "sans-serif"] },
         },
         LayoutProperties = new LayoutProperties { DefaultBorderRadius = "10px" },
     };
@@ -134,9 +153,21 @@ else
         {
             "dark" => true,
             "light" => false,
-            _ => await _themeProvider.GetSystemDarkModeAsync(),
+            _ => true,
         };
+        await ApplyGlassAsync();
         StateHasChanged();
+    }
+
+    private async Task ApplyGlassAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("document.body.classList.toggle", "glass", _dark);
+        }
+        catch (JSException)
+        {
+        }
     }
 
     private bool OnSignInPage => Navigation.ToBaseRelativePath(Navigation.Uri).StartsWith("signin", StringComparison.OrdinalIgnoreCase);
@@ -194,6 +225,7 @@ else
     private async Task ToggleDarkAsync()
     {
         _dark = !_dark;
+        await ApplyGlassAsync();
         try
         {
             await JS.InvokeVoidAsync("localStorage.setItem", ThemeKey, _dark ? "dark" : "light");

@@ -44,14 +44,46 @@ else if (snapshot.Jobs.Count == 0)
 }
 else
 {
+    var runningCount = snapshot.Jobs.Count(j => j.State != "idle");
+    var conflictCount = snapshot.Jobs.Sum(j => j.PendingConflicts);
+    var failedCount = snapshot.Jobs.Count(j => j.LastRun?.Status == "failed");
+    var enabledCount = snapshot.Jobs.Count(j => j.Enabled);
+    var nextUp = snapshot.Jobs.Where(j => j.NextRunAt is not null).Select(j => j.NextRunAt!.Value).DefaultIfEmpty().Min();
+    <div class="stat-strip">
+        <div class="stat-tile @(runningCount > 0 ? "live" : "")" style="--c:#7c5cff;--i:0">
+            <div class="stat-value">@runningCount</div>
+            <div class="stat-label"><span class="stat-dot"></span>Running</div>
+        </div>
+        <div class="stat-tile" style="--c:#5bd98a;--i:1">
+            <div class="stat-value">@enabledCount<span style="opacity:.45;font-size:1.1rem"> / @snapshot.Jobs.Count</span></div>
+            <div class="stat-label"><span class="stat-dot"></span>Enabled</div>
+        </div>
+        <div class="stat-tile" style="--c:#ffb454;--i:2">
+            <div class="stat-value">@conflictCount</div>
+            <div class="stat-label"><span class="stat-dot"></span>Conflicts</div>
+        </div>
+        <div class="stat-tile" style="--c:#ff6b6b;--i:3">
+            <div class="stat-value">@failedCount</div>
+            <div class="stat-label"><span class="stat-dot"></span>Failed last run</div>
+        </div>
+        <div class="stat-tile" style="--c:#38bdf8;--i:4">
+            <div class="stat-value" style="font-size:1.45rem;padding-top:6px">@(nextUp == default ? "-" : Format.Ago(nextUp))</div>
+            <div class="stat-label"><span class="stat-dot"></span>Next run</div>
+        </div>
+    </div>
+    var cardIndex = 0;
     <MudGrid>
         @foreach (var job in Sorted(snapshot.Jobs))
         {
             var busy = job.State != "idle";
             var config = _jobs.GetValueOrDefault(job.JobId);
+            var stateClass = busy ? "is-running" : !job.Enabled ? "is-off" : job.LastRun?.Status == "failed" ? "is-failed" : job.PendingConflicts > 0 ? "is-warn" : "is-ok";
             <MudItem xs="12" md="6" lg="4">
-                <MudCard Elevation="1" Class="job-card">
+                <MudCard Elevation="1" Class="@("job-card " + stateClass)" Style="@($"--i:{cardIndex++}")">
                     <MudCardHeader>
+                        <CardHeaderAvatar>
+                            <AppIcon JobId="job.JobId" Package="@job.AppPackage" />
+                        </CardHeaderAvatar>
                         <CardHeaderContent>
                             <MudText Typo="Typo.h6">@job.Name</MudText>
                             <MudText Typo="Typo.caption" Class="mud-text-secondary">@(job.AppPackage ?? "No linked app")</MudText>
@@ -92,6 +124,26 @@ else
                                 <MudChip T="string" Color="Color.Info" Size="Size.Small" Icon="@Icons.Material.Filled.Bookmark">Resumable</MudChip>
                             }
                         </div>
+
+                        @if (busy)
+                        {
+                            <div class="phase-graph">
+                                @for (var i = 0; i < Phases.Length; i++)
+                                {
+                                    var (key, label, icon) = Phases[i];
+                                    var state = PhaseClass(job.Phase, key);
+                                    <MudTooltip Text="@($"{label} · {PhaseText(state)}")" RootClass="phase-node-wrap">
+                                        <div class="phase-node @state" title="@($"{label} · {PhaseText(state)}")">
+                                            <MudIcon Icon="@(state == "done" ? Icons.Material.Filled.Check : icon)" />
+                                        </div>
+                                    </MudTooltip>
+                                    @if (i < Phases.Length - 1)
+                                    {
+                                        <div class="phase-line @state"></div>
+                                    }
+                                }
+                            </div>
+                        }
 
                         <MudSimpleTable Dense="true" Elevation="0" Style="background:transparent">
                             <tbody>
@@ -169,6 +221,28 @@ else
 }
 
 @code {
+    private static readonly (string Key, string Label, string Icon)[] Phases =
+    [
+        ("preConnect", "Connect", Icons.Material.Filled.Link),
+        ("pull", "Pull", Icons.Material.Filled.Download),
+        ("merge", "Merge", Icons.Material.Filled.CallMerge),
+        ("push", "Push", Icons.Material.Filled.Upload),
+    ];
+
+    private static string PhaseClass(string? current, string key)
+    {
+        var cur = Array.FindIndex(Phases, p => p.Key == current);
+        var idx = Array.FindIndex(Phases, p => p.Key == key);
+        return cur < 0 ? "" : idx < cur ? "done" : idx == cur ? "active" : "";
+    }
+
+    private static string PhaseText(string state) => state switch
+    {
+        "done" => "done",
+        "active" => "in progress",
+        _ => "waiting",
+    };
+
     private Dictionary<Guid, JobDto> _jobs = [];
     private Dictionary<Guid, string> _deviceNames = [];
     private List<DeviceDto> _devices = [];

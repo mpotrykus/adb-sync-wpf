@@ -1,0 +1,385 @@
+@property --ang {
+    syntax: "<angle>";
+    inherits: false;
+    initial-value: 0deg;
+}
+
+/* ---------- animated aurora + grain ---------- */
+body.glass {
+    background-image: none;
+    background-color: #09061a;
+}
+
+body.glass::before {
+    content: "";
+    position: fixed;
+    inset: -25%;
+    z-index: -2;
+    pointer-events: none;
+    background:
+        radial-gradient(40% 35% at 20% 20%, rgba(124, 92, 255, 0.16), transparent 70%),
+        radial-gradient(35% 32% at 80% 15%, rgba(56, 189, 248, 0.09), transparent 70%),
+        radial-gradient(42% 38% at 75% 85%, rgba(217, 70, 239, 0.09), transparent 70%),
+        radial-gradient(30% 30% at 15% 80%, rgba(76, 111, 255, 0.1), transparent 70%);
+    animation: aurora 38s ease-in-out infinite alternate;
+}
+
+body.glass::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    opacity: 0.07;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+
+@keyframes aurora {
+    0% { transform: translate3d(-3%, -2%, 0) rotate(0deg) scale(1); }
+    50% { transform: translate3d(4%, 3%, 0) rotate(6deg) scale(1.08); }
+    100% { transform: translate3d(-2%, 5%, 0) rotate(-4deg) scale(1.02); }
+}
+
+/* ---------- app bar ---------- */
+body.glass .mud-appbar::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, #7c5cff 25%, #4c6fff 55%, #38bdf8 80%, transparent);
+    opacity: 0.85;
+}
+
+.brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.brand-mark {
+    width: 16px;
+    height: 16px;
+    border-radius: 5px;
+    background: linear-gradient(135deg, #7c5cff, #38bdf8);
+    box-shadow: 0 0 14px rgba(124, 92, 255, 0.8);
+    transform: rotate(45deg);
+    animation: mark-pulse 3.2s ease-in-out infinite;
+}
+
+@keyframes mark-pulse {
+    0%, 100% { box-shadow: 0 0 10px rgba(124, 92, 255, 0.6); }
+    50% { box-shadow: 0 0 22px rgba(56, 189, 248, 0.9); }
+}
+
+body.glass .brand-text {
+    background: linear-gradient(90deg, #ffffff, #b9b4ff);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    letter-spacing: -0.02em;
+}
+
+body.glass .mud-typography-h4 {
+    background: linear-gradient(90deg, #ffffff 30%, #a59fff);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+
+/* ---------- nav rail ---------- */
+body.glass .mud-drawer--closed.mud-drawer-mini,
+body.glass .mud-drawer-mini {
+    transition: width 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+body.glass .mud-drawer {
+    background: rgba(0, 0, 0, 0.68);
+}
+
+body.glass .mud-nav-link {
+    position: relative;
+}
+
+body.glass .mud-nav-link.active::before {
+    content: "";
+    position: absolute;
+    left: -8px;
+    top: 20%;
+    bottom: 20%;
+    width: 3px;
+    border-radius: 3px;
+    background: linear-gradient(#7c5cff, #38bdf8);
+    box-shadow: 0 0 10px rgba(124, 92, 255, 0.9);
+}
+
+/* ---------- stat strip ---------- */
+.stat-strip {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 14px;
+    margin-bottom: 22px;
+}
+
+.stat-tile {
+    position: relative;
+    overflow: hidden;
+    padding: 14px 16px 12px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(24px) saturate(140%);
+    -webkit-backdrop-filter: blur(24px) saturate(140%);
+    animation: rise 0.5s both;
+    animation-delay: calc(var(--i, 0) * 60ms);
+}
+
+.stat-tile::before,
+.job-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.25s;
+    background: radial-gradient(260px circle at var(--mx, 50%) var(--my, 50%), rgba(255, 255, 255, 0.04), transparent 65%);
+}
+
+.stat-tile:hover::before,
+.job-card:hover::before {
+    opacity: 1;
+}
+
+.stat-tile .stat-value {
+    font-size: 2rem;
+    font-weight: 600;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.03em;
+}
+
+.stat-tile .stat-label {
+    margin-top: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #9c97b3;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.stat-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--c);
+    box-shadow: 0 0 8px var(--c);
+}
+
+.stat-tile.live .stat-dot {
+    animation: ping 1.6s ease-out infinite;
+}
+
+.stat-tile .stat-value {
+    background: linear-gradient(180deg, #fff, color-mix(in srgb, var(--c) 55%, #fff));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+
+@keyframes ping {
+    0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--c) 70%, transparent); }
+    100% { box-shadow: 0 0 0 9px transparent; }
+}
+
+/* ---------- job cards ---------- */
+body.glass .job-card {
+    --st: #5bd98a;
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.25s;
+    animation: rise 0.55s both;
+    animation-delay: calc(var(--i, 0) * 80ms + 180ms);
+    box-shadow: inset 3px 0 0 var(--st), 0 4px 18px rgba(0, 0, 0, 0.28) !important;
+}
+
+body.glass .job-card:hover {
+    transform: translateY(-2px);
+    box-shadow: inset 3px 0 0 var(--st), 0 8px 24px rgba(0, 0, 0, 0.36), 0 0 14px color-mix(in srgb, var(--st) 8%, transparent) !important;
+}
+
+body.glass .job-card.is-running { --st: #7c5cff; }
+body.glass .job-card.is-failed { --st: #ff6b6b; }
+body.glass .job-card.is-warn { --st: #ffb454; }
+body.glass .job-card.is-off { --st: #5c5870; }
+
+body.glass .job-card.is-running::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1.5px;
+    pointer-events: none;
+    background: conic-gradient(from var(--ang), transparent 0 55%, #7c5cff, #38bdf8 80%, transparent);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+    animation: spin 3.2s linear infinite;
+}
+
+@keyframes spin {
+    to { --ang: 360deg; }
+}
+
+@keyframes rise {
+    from { opacity: 0; transform: translateY(14px); }
+    to { opacity: 1; transform: none; }
+}
+
+/* ---------- buttons ---------- */
+body.glass .mud-button-filled.mud-button-filled-primary {
+    position: relative;
+    overflow: hidden;
+}
+
+body.glass .mud-button-filled.mud-button-filled-primary::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: -80%;
+    width: 50%;
+    height: 100%;
+    background: linear-gradient(105deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+    transform: skewX(-20deg);
+    transition: left 0.5s;
+}
+
+body.glass .mud-button-filled.mud-button-filled-primary:hover::after {
+    left: 130%;
+}
+
+/* ---------- light mode: frosted white ---------- */
+body:not(.glass) {
+    background:
+        radial-gradient(50% 40% at 10% 0%, rgba(124, 92, 255, 0.22), transparent 70%),
+        radial-gradient(45% 40% at 95% 10%, rgba(56, 189, 248, 0.2), transparent 70%),
+        radial-gradient(50% 45% at 80% 100%, rgba(217, 70, 239, 0.14), transparent 70%),
+        #eef0fb;
+    background-attachment: fixed;
+}
+
+body:not(.glass) .mud-layout,
+body:not(.glass) .mud-main-content {
+    background: transparent;
+}
+
+body:not(.glass) .mud-card,
+body:not(.glass) .stat-tile {
+    background: rgba(255, 255, 255, 0.62);
+    backdrop-filter: blur(22px) saturate(160%);
+    -webkit-backdrop-filter: blur(22px) saturate(160%);
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    box-shadow: 0 6px 24px rgba(76, 63, 209, 0.1);
+}
+
+body:not(.glass) .mud-appbar {
+    background: linear-gradient(90deg, #4c3fd1, #6c63ff);
+}
+
+body:not(.glass) .mud-drawer {
+    background: rgba(255, 255, 255, 0.55);
+    backdrop-filter: blur(22px);
+    -webkit-backdrop-filter: blur(22px);
+}
+
+body:not(.glass) .stat-tile .stat-value {
+    background: linear-gradient(180deg, #2b2550, color-mix(in srgb, var(--c) 70%, #2b2550));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+
+body:not(.glass) .stat-tile .stat-label {
+    color: #6b668a;
+}
+
+body:not(.glass) .brand-text {
+    color: #fff;
+}
+
+body:not(.glass) .job-card {
+    position: relative;
+    overflow: hidden;
+    animation: rise 0.55s both;
+    animation-delay: calc(var(--i, 0) * 80ms + 180ms);
+}
+
+/* ---------- phase graph: circles joined by lines ---------- */
+.phase-graph {
+    display: flex;
+    align-items: center;
+    margin: -2px 6px 18px;
+}
+
+.phase-node-wrap {
+    flex: 0 0 auto;
+    display: flex;
+}
+
+.phase-node {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    cursor: default;
+    color: #6f6a86;
+    border: 1.5px solid rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.03);
+    transition: color 0.3s, border-color 0.3s, background 0.3s, box-shadow 0.3s;
+}
+
+.phase-node .mud-icon-root {
+    font-size: 1.05rem;
+}
+
+.phase-node.done {
+    color: #5bd98a;
+    border-color: #5bd98a;
+    background: rgba(91, 217, 138, 0.12);
+}
+
+.phase-node.active {
+    color: #fff;
+    border-color: #7c5cff;
+    background: rgba(124, 92, 255, 0.28);
+    box-shadow: 0 0 0 4px rgba(124, 92, 255, 0.14);
+}
+
+.phase-line {
+    flex: 1 1 0;
+    min-width: 12px;
+    height: 2px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.phase-line.done {
+    background: #5bd98a;
+}
+
+.phase-line.active {
+    background: linear-gradient(90deg, #7c5cff, rgba(255, 255, 255, 0.12));
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation: none !important;
+        transition: none !important;
+    }
+}

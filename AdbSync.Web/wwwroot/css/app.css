@@ -1,17 +1,258 @@
+@font-face {
+    font-family: "IBM Plex Mono";
+    src: url("../fonts/IBMPlexMono-Regular.ttf") format("truetype");
+    font-weight: 400 700;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "IBM Plex Sans";
+    src: url("../fonts/IBMPlexSans-latin-ext.woff2") format("woff2");
+    font-weight: 400 700;
+    font-display: swap;
+    unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+    font-family: "IBM Plex Sans";
+    src: url("../fonts/IBMPlexSans-latin.woff2") format("woff2");
+    font-weight: 400 700;
+    font-display: swap;
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 html, body {
     margin: 0;
-    font-family: Inter, "Segoe UI", Roboto, system-ui, -apple-system, sans-serif;
+    font-family: "IBM Plex Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+
+.mud-typography-h4,
+.mud-typography-h5,
+.mud-typography-h6 {
+    font-weight: 600;
+    letter-spacing: -0.01em;
+}
+
+.mud-typography-h4 {
+    font-size: 2rem;
+}
+
+.mud-typography-h5 {
+    font-size: 1.5rem;
+}
+
+.mud-typography-h6 {
+    font-size: 1.15rem;
+}
+
+.mud-typography-overline {
+    font-weight: 600;
+    letter-spacing: 0.08em;
 }
 
 body {
-    background: #f5f6f8;
+    background: var(--mud-palette-background, #0d0a18);
+    color: var(--mud-palette-text-primary, #f5f3fa);
 }
 
-@media (prefers-color-scheme: dark) {
-    body {
-        background: #16181d;
-        color: #e6e6e6;
-    }
+body.glass {
+    background-color: #0d0a18;
+    background-image:
+        radial-gradient(ellipse 60% 50% at 12% 8%, rgba(124, 92, 255, 0.2), transparent 70%),
+        radial-gradient(ellipse 50% 45% at 88% 18%, rgba(76, 111, 255, 0.14), transparent 70%),
+        radial-gradient(ellipse 55% 50% at 70% 95%, rgba(168, 85, 247, 0.12), transparent 70%),
+        radial-gradient(ellipse 45% 40% at 5% 85%, rgba(56, 189, 248, 0.07), transparent 70%);
+    background-attachment: fixed;
+    color: #f5f3fa;
+}
+
+body.glass .mud-layout,
+body.glass .mud-main-content {
+    background: transparent;
+}
+
+body.glass .mud-appbar {
+    background: rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(28px) saturate(150%);
+    -webkit-backdrop-filter: blur(28px) saturate(150%);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+    box-shadow: none;
+}
+
+body.glass .mud-drawer {
+    background: rgba(0, 0, 0, 0.28);
+    backdrop-filter: blur(28px) saturate(150%);
+    -webkit-backdrop-filter: blur(28px) saturate(150%);
+    border-right: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+body.glass .mud-nav-link {
+    border-radius: 6px;
+    margin: 2px 8px;
+}
+
+body.glass .mud-nav-link:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+body.glass .mud-nav-link.active {
+    background: rgba(47, 107, 255, 0.2);
+    color: #f5f3fa;
+    border-right: 0;
+}
+
+body.glass .mud-nav-link.active .mud-icon-root {
+    color: #a59fff;
+}
+
+body.glass .mud-paper:not(.mud-dialog):not(.mud-popover-paper):not(.mud-appbar):not(.mud-drawer),
+body.glass .mud-card,
+body.glass .mud-table {
+    background: rgba(255, 255, 255, 0.07);
+    backdrop-filter: blur(24px) saturate(140%);
+    -webkit-backdrop-filter: blur(24px) saturate(140%);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.28);
+}
+
+body.glass .mud-dialog,
+body.glass .mud-popover,
+body.glass .mud-menu-list,
+body.glass .mud-picker-paper,
+body.glass .mud-select-popover {
+    background: rgba(39, 31, 56, 0.94);
+    backdrop-filter: blur(30px) saturate(150%);
+    -webkit-backdrop-filter: blur(30px) saturate(150%);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+}
+
+body.glass .mud-overlay-dialog .mud-overlay-scrim {
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+}
+
+body.glass .mud-list-item:hover,
+body.glass .mud-menu-item:hover {
+    background: rgba(255, 255, 255, 0.12);
+}
+
+body.glass .mud-list-item.mud-selected-item {
+    background: rgba(47, 107, 255, 0.2);
+}
+
+body.glass .mud-input-outlined .mud-input-outlined-border {
+    border-color: rgba(255, 255, 255, 0.15);
+    border-width: 1.2px;
+}
+
+body.glass .mud-input-outlined {
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 5px;
+}
+
+body.glass .mud-input-outlined:hover:not(.mud-disabled):not(.mud-focused) .mud-input-outlined-border {
+    border-color: rgba(255, 255, 255, 0.25);
+}
+
+body.glass .mud-input-outlined.mud-focused .mud-input-outlined-border {
+    border-color: #6c63ff;
+}
+
+body.glass .mud-button-filled.mud-button-filled-primary {
+    background: linear-gradient(135deg, #7c5cff, #4c6fff);
+    color: #fff;
+    box-shadow: none;
+    border-radius: 6px;
+}
+
+body.glass .mud-button-filled.mud-button-filled-primary:hover {
+    background: linear-gradient(135deg, #8e72ff, #5c7dff);
+    box-shadow: 0 0 16px rgba(108, 99, 255, 0.55);
+}
+
+body.glass .mud-button-filled.mud-button-filled-primary:active {
+    background: linear-gradient(135deg, #6647e0, #3d59d6);
+}
+
+body.glass .mud-button-filled.mud-button-filled-error {
+    background: rgba(255, 107, 107, 0.2);
+    border: 1px solid rgba(255, 107, 107, 0.4);
+    box-shadow: none;
+}
+
+body.glass .mud-button-filled.mud-button-filled-error:hover {
+    background: rgba(255, 107, 107, 0.35);
+    border-color: #ff6b6b;
+}
+
+body.glass .mud-button-outlined {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.15);
+    border-radius: 6px;
+}
+
+body.glass .mud-button-outlined:hover {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.25);
+}
+
+body.glass .mud-table-head .mud-table-cell {
+    background: transparent;
+    color: #9c97b3;
+    font-size: 11px;
+    font-weight: 600;
+    border-bottom: 2px solid #6c63ff;
+}
+
+body.glass .mud-table-row:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+body.glass .mud-chip.mud-chip-filled {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+body.glass .mud-switch-track {
+    background-color: rgba(255, 255, 255, 0.15);
+    opacity: 1;
+}
+
+body.glass .mud-tabs-toolbar {
+    background: transparent;
+}
+
+body.glass .log-view {
+    background: rgba(0, 0, 0, 0.3);
+}
+
+body.glass .mud-snackbar {
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+}
+
+body.glass ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+body.glass ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 5px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+}
+
+body.glass ::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.35);
+    background-clip: content-box;
+}
+
+body.glass ::-webkit-scrollbar-track {
+    background: transparent;
 }
 
 .boot {
@@ -28,7 +269,7 @@ body {
     width: 36px;
     height: 36px;
     border: 3px solid rgba(127, 127, 127, 0.25);
-    border-top-color: #2a9d8f;
+    border-top-color: #6c63ff;
     border-radius: 50%;
     animation: boot-spin 0.8s linear infinite;
 }
@@ -82,11 +323,11 @@ body {
 }
 
 .mono {
-    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    font-family: "IBM Plex Mono", ui-monospace, Consolas, monospace;
 }
 
 .mono-input input {
-    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    font-family: "IBM Plex Mono", ui-monospace, Consolas, monospace;
 }
 
 .code-input input {
@@ -166,8 +407,38 @@ body {
     opacity: 0.85;
 }
 
-.exec-running { color: #2a9d8f; border-color: #2a9d8f; background: rgba(42, 157, 143, 0.12); }
+.exec-running { color: #a59fff; border-color: #6c63ff; background: rgba(108, 99, 255, 0.18); }
 .exec-succeeded { color: #2e9d57; border-color: #2e9d57; background: rgba(46, 157, 87, 0.12); }
 .exec-failed { color: #d1453b; border-color: #d1453b; background: rgba(209, 69, 59, 0.12); }
 .exec-waiting, .exec-cancelled { color: #d98e04; border-color: #d98e04; background: rgba(217, 142, 4, 0.12); }
 .exec-pending, .exec-skipped { background: transparent; }
+
+.app-icon {
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    display: grid;
+    place-items: center;
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+    user-select: none;
+}
+
+img.app-icon {
+    object-fit: cover;
+    background: rgba(255, 255, 255, 0.06);
+    border: 0;
+}
+
+.app-icon.generic {
+    color: var(--mud-palette-primary);
+    background: rgba(127, 127, 127, 0.14);
+    box-shadow: none;
+}
+
+.app-icon.generic .mud-icon-root {
+    font-size: 1.4rem;
+}

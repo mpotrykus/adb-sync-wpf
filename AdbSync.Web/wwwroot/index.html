@@ -10,6 +10,7 @@
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
     <link href="_content/MudBlazor/MudBlazor.min.css" rel="stylesheet" />
     <link href="css/app.css" rel="stylesheet" />
+    <link href="css/effects.css" rel="stylesheet" />
 </head>
 
 <body>
@@ -26,6 +27,15 @@
     </div>
     <script src="_framework/blazor.webassembly.js"></script>
     <script src="_content/MudBlazor/MudBlazor.min.js"></script>
+    <script>
+        document.addEventListener("pointermove", function (e) {
+            var c = e.target.closest && e.target.closest(".job-card, .stat-tile");
+            if (!c) return;
+            var r = c.getBoundingClientRect();
+            c.style.setProperty("--mx", (e.clientX - r.left) + "px");
+            c.style.setProperty("--my", (e.clientY - r.top) + "px");
+        });
+    </script>
 </body>
 
 </html>
