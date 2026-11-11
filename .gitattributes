@@ -3,3 +3,4 @@ Dockerfile text eol=lf
 compose.yaml text eol=lf
 *.sh text eol=lf
 tools/pi/Dockerfile.deploy text eol=lf
+tools/pi/*.sh text eol=lf

@@ -61,3 +61,44 @@ curl -sk https://127.0.0.1:47615/api/v1/health   # from the host (-k: self-signe
 docker exec adbsync adbsync-server healthcheck; echo $?
 docker exec adbsync adb version
 ```
+
+## Deploying a new build
+
+A full `docker build` on a Raspberry Pi takes about 11 minutes, mostly compiling. `tools/deploy-pi.sh` avoids that: it publishes for `linux-arm64` on the development machine (about 10 seconds), copies the files over ssh and layers them onto a base image that already has the .NET runtime and adb.
+
+```sh
+tools/deploy-pi.sh --recreate        # build the image on the Pi, then recreate the container and wait until it is healthy
+```
+
+The Pi needs an `adbsync-server:base` image once. After a full build (`docker build -t adbsync-server:latest .`), run `docker tag adbsync-server:latest adbsync-server:base`. Repeat that only when the base changes: a new adb or .NET runtime.
+
+Recreating the container interrupts any run in progress, so check the logs first. The adb key and everything else in `/data` survive it.
+
+## Backing up the data folder
+
+The project folders (the masters) are plain files and belong to whatever backs up the drive they are on. `/data` is small, 20 MB or less, and holds what is hard to rebuild: settings, the manifests that record what was last merged, run history, pending conflicts, the adb key, the TLS certificate and the paired clients. Losing the manifests is the worst case. The next run then has to treat every file as new, and the server refuses to push in that state.
+
+`tools/pi/backup-data.sh` writes a dated `.tar.gz` of the folder and keeps the newest 14. It copies the SQLite databases with SQLite's backup API, so a snapshot taken while the server is writing is consistent, and it integrity-checks each one. It refuses to run when the backup drive isn't mounted, because an unmounted drive leaves an empty mount point and the archive would land on the SD card. It prints nothing on success, so a cron job mails only when something is wrong.
+
+```sh
+scp tools/pi/backup-data.sh raspi-server:Scripts/adbsync-data-backup.sh
+ssh raspi-server chmod +x Scripts/adbsync-data-backup.sh
+# crontab -e on the Pi, one line:
+15 4 * * * /home/<user>/Scripts/adbsync-data-backup.sh
+```
+
+Defaults are `ADBSYNC_DATA=~/adbsync/data`, `ADBSYNC_BACKUP_MOUNT=/mnt/usb4`, `ADBSYNC_BACKUP_DIR=$ADBSYNC_BACKUP_MOUNT/adbsync-backups` and `ADBSYNC_BACKUP_KEEP=14`. Keep the backup folder outside any folder that another job mirrors with `--delete`.
+
+The archives contain the adb private key, the certificate's private key and hashed client tokens. On an NTFS drive mounted with `fmask=111` every local user can read them, so put them on a drive only you can reach if the machine is shared.
+
+### Restoring
+
+```sh
+cd ~/adbsync && docker compose down
+mv data data.broken
+mkdir data
+tar -xzf /mnt/usb4/adbsync-backups/adbsync-data-<stamp>.tar.gz -C data --strip-components=1
+docker compose up -d
+```
+
+The adb key comes back with it, so the phones still trust the server, and the paired web and phone clients keep their tokens. Restoring an older snapshot puts the manifests back to that moment. Files changed since then are seen as new changes on the next run, which is safe but may raise conflicts.
