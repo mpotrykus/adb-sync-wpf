@@ -1,5 +1,6 @@
 using AdbSync.Core.Models.Orchestration;
 using AdbSync.Core.Services.Common;
+using AdbSync.Core.Services.Config;
 using System.Globalization;
 
 namespace AdbSync.Core.Services.Orchestration;
@@ -41,7 +42,7 @@ public sealed class RollbackPointStore
 
     public void CaptureDevice(string pointPath, string deviceName, string deviceFolder)
     {
-        var target = Path.Combine(pointPath, DevicesFolderName, deviceName);
+        var target = Path.Combine(pointPath, DevicesFolderName, ConfigNames.Segment(deviceName));
         if (Directory.Exists(deviceFolder))
             DirectoryUtil.CopyRecursive(deviceFolder, target);
         else

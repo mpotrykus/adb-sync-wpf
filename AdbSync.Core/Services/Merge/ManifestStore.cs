@@ -40,7 +40,7 @@ public sealed class ManifestStore(AppPaths paths) : IManifestStore
 
     public int Clear(string jobName)
     {
-        var dir = Path.Combine(paths.ManifestsDir, jobName);
+        var dir = Path.Combine(paths.ManifestsDir, ConfigNames.Segment(jobName));
         if (!Directory.Exists(dir))
             return 0;
 
@@ -52,7 +52,7 @@ public sealed class ManifestStore(AppPaths paths) : IManifestStore
 
     public async Task<bool> AnyEntriesAsync(string jobName, CancellationToken ct = default)
     {
-        var dir = Path.Combine(paths.ManifestsDir, jobName);
+        var dir = Path.Combine(paths.ManifestsDir, ConfigNames.Segment(jobName));
         if (!Directory.Exists(dir))
             return false;
 
@@ -66,7 +66,7 @@ public sealed class ManifestStore(AppPaths paths) : IManifestStore
     }
 
     private string GetManifestPath(string jobName, string deviceName) =>
-        Path.Combine(paths.ManifestsDir, jobName, $"{deviceName}.manifest.json");
+        Path.Combine(paths.ManifestsDir, ConfigNames.Segment(jobName), $"{ConfigNames.Segment(deviceName)}.manifest.json");
 
     private static bool IsSame(string stagingPath, string masterPath, FileEntry staging, FileEntry master) =>
         staging.Size == master.Size

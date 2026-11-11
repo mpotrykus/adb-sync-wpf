@@ -56,5 +56,5 @@ public sealed class PushSafetyGuard(AppPaths paths) : IPushSafetyGuard
     private Task SaveHistoryAsync(string jobName, PushSafetyHistory history, CancellationToken ct) =>
         JsonFileIo.WriteAtomicAsync(GetHistoryPath(jobName), history, AppConfigJsonContext.Default.PushSafetyHistory, ct);
 
-    private string GetHistoryPath(string jobName) => Path.Combine(paths.Root, "push-safety", $"{jobName}.json");
+    private string GetHistoryPath(string jobName) => Path.Combine(paths.Root, "push-safety", $"{ConfigNames.Segment(jobName)}.json");
 }

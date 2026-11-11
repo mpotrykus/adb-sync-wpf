@@ -1,4 +1,5 @@
 using AdbSync.Core.Services.Common;
+using AdbSync.Core.Services.Config;
 using AdbSync.Core.Models.Config;
 using AdbSync.Core.Models.Merge;
 using AdbSync.Core.Models.Orchestration;
@@ -79,6 +80,9 @@ public sealed class SyncJobRunner(
         {
             if (string.IsNullOrWhiteSpace(projectsDirectory))
                 throw new InvalidOperationException("Projects directory is not configured - set it in Settings before running a job.");
+            ConfigNames.Segment(job.Name);
+            foreach (var binding in job.Devices)
+                ConfigNames.Segment(binding.DeviceName);
 
             Directory.CreateDirectory(masterPath);
 
@@ -491,13 +495,13 @@ public sealed class SyncJobRunner(
 
     private static string GetStagingPath(string projectRoot, string deviceName)
     {
-        var path = Path.Combine(SyncLockManager.GetStagingRoot(projectRoot), deviceName);
+        var path = Path.Combine(SyncLockManager.GetStagingRoot(projectRoot), ConfigNames.Segment(deviceName));
         Directory.CreateDirectory(path);
         return path;
     }
 
     private static string GetConflictBackupDir(string projectRoot, string deviceName) =>
-        Path.Combine(projectRoot, ".sync_conflicts", deviceName);
+        Path.Combine(projectRoot, ".sync_conflicts", ConfigNames.Segment(deviceName));
 
     /// <summary>Lazily creates one rollback point per run, the first time a device is about to merge (so master is
     /// still untouched), and drops it again at the end if no merge changed anything - an idle schedule tick must

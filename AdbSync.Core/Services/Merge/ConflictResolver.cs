@@ -51,7 +51,7 @@ public sealed class ConflictResolver(
         var job = config.Jobs.FirstOrDefault(j => j.Name == conflict.JobName)
             ?? throw new ConflictResolutionException($"Job '{conflict.JobName}' no longer exists.");
         var eff = job.Resolve(config.Settings);
-        var projectRoot = Path.Combine(eff.ProjectsDirectory, job.Name);
+        var projectRoot = Path.Combine(eff.ProjectsDirectory, ConfigNames.Segment(job.Name));
         var masterPath = Path.Combine(projectRoot, "master");
 
         await using var @lock = await AcquireAsync(projectRoot, TimeSpan.FromHours(eff.StaleLockHours), ct)
@@ -66,7 +66,7 @@ public sealed class ConflictResolver(
             choice = PickNewest(conflict);
 
         var manifest = await manifests.TryGetAsync(conflict.JobName, conflict.DeviceName, ct) ?? new SyncManifest();
-        var backupDir = Path.Combine(projectRoot, ".sync_conflicts", conflict.DeviceName);
+        var backupDir = Path.Combine(projectRoot, ".sync_conflicts", ConfigNames.Segment(conflict.DeviceName));
 
         if (choice == ConflictChoice.Device)
         {
@@ -114,7 +114,7 @@ public sealed class ConflictResolver(
         if (job is null)
             return null;
 
-        var masterFile = Path.Combine(job.Resolve(config.Settings).ProjectsDirectory, job.Name, "master", conflict.RelativePath);
+        var masterFile = Path.Combine(job.Resolve(config.Settings).ProjectsDirectory, ConfigNames.Segment(job.Name), "master", conflict.RelativePath);
         return new ConflictFiles(File.Exists(masterFile) ? masterFile : null, pending.GetDeviceCopyPath(conflict));
     }
 
@@ -143,7 +143,7 @@ public sealed class ConflictResolver(
         var name = Path.GetFileNameWithoutExtension(masterFile);
         var ext = Path.GetExtension(masterFile);
         var stamp = DateTimeOffset.UtcNow.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
-        return Path.Combine(dir, $"{name} ({deviceName} {stamp}){ext}");
+        return Path.Combine(dir, $"{name} ({ConfigNames.Segment(deviceName)} {stamp}){ext}");
     }
 
     private static void Backup(string source, string backupDir, string relativePath)

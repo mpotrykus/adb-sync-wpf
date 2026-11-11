@@ -1,4 +1,5 @@
 using AdbSync.Core.Models.Config;
+using AdbSync.Core.Services.Config;
 using AdbSync.Core.Services.Devices;
 using AdbSync.Core.Services.Transfer;
 using Microsoft.Win32;
@@ -15,6 +16,7 @@ public partial class JobEditorWindow : Window
     private readonly ObservableCollection<JobDeviceBindingRow> _bindings = [];
     private readonly SyncJobConfig? _originalJob;
     private readonly List<DeviceConfig> _devices;
+    private readonly List<string> _otherJobNames;
     private readonly IAdbDeviceResolver _deviceResolver;
     private readonly IDeviceChangeWatcher _changeWatcher;
     private readonly IRemoteFileSystemFactory _remoteFileSystemFactory;
@@ -29,6 +31,7 @@ public partial class JobEditorWindow : Window
         InitializeComponent();
         _originalJob = job;
         _devices = config.Devices;
+        _otherJobNames = config.Jobs.Where(j => j != job).Select(j => j.Name).ToList();
         _deviceResolver = deviceResolver;
         _changeWatcher = changeWatcher;
         _remoteFileSystemFactory = remoteFileSystemFactory;
@@ -230,9 +233,12 @@ public partial class JobEditorWindow : Window
         DevicesErrorText.Visibility = Visibility.Collapsed;
 
         var hasError = false;
-        if (string.IsNullOrWhiteSpace(NameBox.Text))
+        var name = NameBox.Text.Trim();
+        var nameProblem = ConfigNames.Problem(name)
+            ?? (ConfigNames.IsUnique(name, _otherJobNames) ? null : $"A job named '{name}' already exists.");
+        if (_originalJob is null && nameProblem is not null)
         {
-            NameErrorText.Text = "Name is required.";
+            NameErrorText.Text = nameProblem;
             NameErrorText.Visibility = Visibility.Visible;
             hasError = true;
         }
@@ -251,7 +257,7 @@ public partial class JobEditorWindow : Window
 
         Result = new SyncJobConfig
         {
-            Name = NameBox.Text.Trim(),
+            Name = name,
             AppPackage = string.IsNullOrWhiteSpace(AppPackageBox.Text) ? null : AppPackageBox.Text.Trim(),
             ProjectDirectory = string.IsNullOrWhiteSpace(ProjectDirectoryBox.Text) ? null : ProjectDirectoryBox.Text.Trim(),
             Exclude = ParseExcludePatterns(),

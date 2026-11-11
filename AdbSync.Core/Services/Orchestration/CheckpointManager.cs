@@ -35,5 +35,5 @@ public sealed class CheckpointManager(AppPaths paths) : ICheckpointManager
         return results;
     }
 
-    private string GetPath(string jobName) => Path.Combine(paths.CheckpointsDir, $"{jobName}.json");
+    private string GetPath(string jobName) => Path.Combine(paths.CheckpointsDir, $"{ConfigNames.Segment(jobName)}.json");
 }

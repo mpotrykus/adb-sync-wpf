@@ -1,4 +1,5 @@
 using AdbSync.Core.Services.Common;
+using AdbSync.Core.Services.Config;
 using AdbSync.Core.Models.Config;
 using AdbSync.Core.Models.Orchestration;
 using AdbSync.Core.Services.Devices;
@@ -29,7 +30,7 @@ public sealed class DeviceSnapshotService(IAdbDeviceResolver deviceResolver, IAd
                 ?? throw new InvalidOperationException($"Device '{binding.DeviceName}' referenced by job '{job.Name}' was not found.");
             var serial = await deviceResolver.EnsureConnectedAsync(device, ct);
 
-            var destination = Path.Combine(snapshotRoot, binding.DeviceName);
+            var destination = Path.Combine(snapshotRoot, ConfigNames.Segment(binding.DeviceName));
             Directory.CreateDirectory(destination);
             var result = await transfer.PullMirrorAsync(serial, binding.RemotePath, destination, exclude, eff.ToTransferPolicy(), ct);
             totalFiles += result.FilesCopied;
@@ -107,7 +108,7 @@ public sealed class DeviceSnapshotService(IAdbDeviceResolver deviceResolver, IAd
     }
 
     private static string GetCheckpointsRoot(SyncJobConfig job, EffectiveJobSettings eff) =>
-        Path.Combine(eff.ProjectsDirectory, job.Name, "checkpoints");
+        Path.Combine(eff.ProjectsDirectory, ConfigNames.Segment(job.Name), "checkpoints");
 
     private static void PruneOldSnapshots(string checkpointsRoot, int retentionDays)
     {

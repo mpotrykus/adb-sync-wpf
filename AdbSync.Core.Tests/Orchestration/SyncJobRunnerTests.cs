@@ -461,6 +461,27 @@ public class SyncJobRunnerTests : IDisposable
         Assert.Equal(1, record.FilesCopied);
     }
 
+    [Theory]
+    [InlineData("../Escape", "DeviceA")]
+    [InlineData("JobOne", "../DeviceA")]
+    public async Task RunAsync_InvalidJobOrDeviceName_FailsWithoutTouchingDisk(string jobName, string deviceName)
+    {
+        WriteDeviceFile(deviceName, "photo.jpg", "content");
+        var device = new DeviceConfig { Name = deviceName, Serial = deviceName };
+        var job = new SyncJobConfig
+        {
+            Name = jobName,
+            Devices = [new JobDeviceBinding { DeviceName = deviceName, RemotePath = "/sdcard/app" }],
+        };
+        var runner = CreateRunner(new Dictionary<string, string> { [deviceName] = DeviceFolder(deviceName) });
+
+        var result = await runner.RunAsync(job, 0, [device], _settings, resumeFrom: null);
+
+        Assert.Equal(JobRunOutcome.Failed, result.Outcome);
+        Assert.Contains("can't be used as a job or device name", result.ErrorMessage);
+        Assert.False(Directory.Exists(_projectsDirectory));
+    }
+
     [Fact]
     public async Task RunAsync_FirstRunWithTwoDevices_NeverBootstrapsAManifestWhileAnotherDeviceMergesIntoMaster()
     {

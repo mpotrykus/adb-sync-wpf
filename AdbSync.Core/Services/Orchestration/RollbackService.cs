@@ -1,6 +1,7 @@
 using AdbSync.Core.Models.Config;
 using AdbSync.Core.Models.Orchestration;
 using AdbSync.Core.Services.Common;
+using AdbSync.Core.Services.Config;
 using AdbSync.Core.Services.Devices;
 using AdbSync.Core.Services.Merge;
 using AdbSync.Core.Services.Transfer;
@@ -26,7 +27,7 @@ public sealed class RollbackService(
             throw new InvalidOperationException($"Rollback point '{pointPath}' no longer exists.");
 
         var eff = job.Resolve(settings);
-        var projectRoot = Path.Combine(eff.ProjectsDirectory, job.Name);
+        var projectRoot = Path.Combine(eff.ProjectsDirectory, ConfigNames.Segment(job.Name));
         var masterPath = Path.Combine(projectRoot, "master");
         var exclude = new ExcludeMatcher(job.Exclude);
 

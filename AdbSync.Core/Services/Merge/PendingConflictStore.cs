@@ -134,10 +134,10 @@ public sealed class PendingConflictStore(AppPaths paths) : IPendingConflictStore
     }
 
     private string GetFilePath(string jobName, string deviceName) =>
-        Path.Combine(paths.PendingConflictsDir, jobName, $"{deviceName}.pending.json");
+        Path.Combine(paths.PendingConflictsDir, ConfigNames.Segment(jobName), $"{ConfigNames.Segment(deviceName)}.pending.json");
 
     private string GetCopyPath(PendingConflict conflict) =>
-        Path.Combine(paths.PendingConflictsDir, conflict.JobName, conflict.DeviceName, $"{conflict.Id}.blob");
+        Path.Combine(paths.PendingConflictsDir, ConfigNames.Segment(conflict.JobName), ConfigNames.Segment(conflict.DeviceName), $"{conflict.Id}.blob");
 
     private static bool SameTime(DateTimeOffset? a, DateTimeOffset? b) =>
         a is not null && b is not null && (a.Value - b.Value).Duration() <= ModifiedTolerance;
