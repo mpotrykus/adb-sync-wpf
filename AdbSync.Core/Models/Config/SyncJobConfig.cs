@@ -2,6 +2,9 @@ namespace AdbSync.Core.Models.Config;
 
 public sealed class SyncJobConfig
 {
+    /// <summary>Stable id, assigned when the job is first saved. Names are display values and can change.</summary>
+    public Guid Id { get; set; }
+
     /// <summary>Folder name under <see cref="GlobalSettings.ProjectsDirectory"/> (or <see cref="ProjectDirectory"/> if set).</summary>
     public string Name { get; set; } = string.Empty;
 

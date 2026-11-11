@@ -163,9 +163,9 @@ public sealed class TrayIconService(
         runJobMenu.IsEnabled = runJobMenu.Items.Count > 0;
         menu.Items.Add(runJobMenu);
 
-        menu.Items.Add(MakeItem(scheduler.Paused ? "Resume Scheduling" : "Pause Scheduling", (_, _) =>
+        menu.Items.Add(MakeItem(scheduler.Paused ? "Resume Scheduling" : "Pause Scheduling", async (_, _) =>
         {
-            scheduler.Paused = !scheduler.Paused;
+            await scheduler.SetPausedAsync(!scheduler.Paused);
             RebuildContextMenu();
         }));
 

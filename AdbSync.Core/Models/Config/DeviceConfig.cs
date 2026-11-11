@@ -2,6 +2,9 @@ namespace AdbSync.Core.Models.Config;
 
 public sealed class DeviceConfig
 {
+    /// <summary>Stable id, assigned when the device is first saved.</summary>
+    public Guid Id { get; set; }
+
     public string Name { get; set; } = string.Empty;
 
     /// <summary>WiFi/mDNS device. Null when <see cref="Serial"/> is set (legacy USB fallback).</summary>

@@ -278,6 +278,7 @@ public partial class JobEditorWindow : Window
 
         Result = new SyncJobConfig
         {
+            Id = _originalJob?.Id ?? Guid.Empty,
             Name = name,
             AppPackage = string.IsNullOrWhiteSpace(AppPackageBox.Text) ? null : AppPackageBox.Text.Trim(),
             ProjectDirectory = projectDirectory.Length == 0 ? null : projectDirectory,

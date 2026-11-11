@@ -141,7 +141,9 @@ public partial class App : Application
     private static void ConfigureServices(HostBuilderContext context, IServiceCollection services)
     {
         services.AddSingleton(AppPaths.Default);
-        services.AddSingleton<IAppConfigStore, AppConfigStore>();
+        services.AddSingleton<EngineDatabase>(sp => new EngineDatabase(sp.GetRequiredService<AppPaths>()));
+        services.AddSingleton<IAppConfigStore>(sp => new AppConfigStore(sp.GetRequiredService<EngineDatabase>(), sp.GetRequiredService<AppPaths>()));
+        services.AddSingleton<SchedulerStateStore>();
         services.AddSingleton<AppConfigService>();
         services.AddSingleton<DashboardUiStateStore>();
 
