@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>adbsync-server</AssemblyName>
+    <RootNamespace>AdbSync.Server</RootNamespace>
+    <Version>2.0.0-alpha.1</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AdbSync.Engine\AdbSync.Engine.csproj" />
+  </ItemGroup>
+
+</Project>

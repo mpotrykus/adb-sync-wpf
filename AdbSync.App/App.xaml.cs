@@ -1,4 +1,5 @@
 using AdbSync.App.Services;
+using AdbSync.Engine;
 using AdbSync.Engine.Services;
 using AdbSync.App.Tray;
 using AdbSync.App.ViewModels;
@@ -141,60 +142,19 @@ public partial class App : Application
 
     private static void ConfigureServices(HostBuilderContext context, IServiceCollection services)
     {
-        services.AddSingleton(AppPaths.Default);
-        services.AddSingleton<EngineDatabase>(sp => new EngineDatabase(sp.GetRequiredService<AppPaths>()));
-        services.AddSingleton<IAppConfigStore>(sp => new AppConfigStore(sp.GetRequiredService<EngineDatabase>(), sp.GetRequiredService<AppPaths>()));
-        services.AddSingleton<SchedulerStateStore>();
-        services.AddSingleton<AppConfigService>();
-        services.AddSingleton<DashboardUiStateStore>();
-
-        services.AddSingleton<IAdbClient>(_ => new AdbClient());
-        services.AddSingleton<IAdbServer>(_ => new AdbServer());
-        services.AddSingleton<IMdnsBrowser, MdnsBrowser>();
-        services.AddSingleton<IAdbDeviceResolver, AdbDeviceResolver>();
-        services.AddSingleton<IDeviceChangeWatcher, DeviceChangeWatcher>();
-        services.AddSingleton<IAppRunningGuard, AppRunningGuard>();
-        services.AddSingleton<IDeviceAppControl, DeviceAppControl>();
-        services.AddSingleton<IDevicePackageLister, AdbDevicePackageLister>();
-        services.AddSingleton<ISyncLockManager, SyncLockManager>();
-        services.AddSingleton<IDeviceAccessGate, DeviceAccessGate>();
-        services.AddSingleton<IAdbProcessRunner>(_ => new AdbProcessRunner());
-        services.AddSingleton<IMirrorDiffer, MirrorDiffer>();
-        services.AddSingleton<IRemoteFileSystemFactory, AdbRemoteFileSystemFactory>();
-        services.AddSingleton<IAdbTransferEngine, NativeAdbTransferEngine>();
-        services.AddSingleton<ITwoWayMergeEngine, TwoWayMergeEngine>();
-        services.AddSingleton<IManifestStore>(sp => new ManifestStore(sp.GetRequiredService<EngineDatabase>()));
-        services.AddSingleton<IPendingConflictStore>(sp => new PendingConflictStore(sp.GetRequiredService<EngineDatabase>(), sp.GetRequiredService<AppPaths>()));
-        services.AddSingleton<IConflictResolver, ConflictResolver>();
-        services.AddSingleton<IPushSafetyGuard>(sp => new PushSafetyGuard(sp.GetRequiredService<EngineDatabase>()));
-        services.AddSingleton<ICheckpointManager>(sp => new CheckpointManager(sp.GetRequiredService<EngineDatabase>()));
-        services.AddSingleton<IDeviceSnapshotService, DeviceSnapshotService>();
-        services.AddSingleton<RollbackPointStore>();
-        services.AddSingleton<RollbackService>();
-        services.AddSingleton<IRunHistoryStore, RunHistoryStore>();
-        services.AddSingleton<ILiveRunLogSink, LiveRunLogSink>();
-        services.AddSingleton<ILiveRunStepSink, LiveRunStepSink>();
+        services.AddAdbSyncEngine(AppPaths.Default);
 
         services.AddSingleton<DashboardViewModel>();
-        services.AddSingleton<CompanionCertificateStore>();
-        services.AddSingleton<CompanionBroadcastService>();
-        services.AddHostedService(sp => sp.GetRequiredService<CompanionBroadcastService>());
-        services.AddSingleton<JobStatusTracker>();
         services.AddSingleton<ISyncEventSink>(sp => new CompositeSyncEventSink(
         [
             sp.GetRequiredService<DashboardViewModel>(),
             sp.GetRequiredService<CompanionBroadcastService>().Sink,
             sp.GetRequiredService<JobStatusTracker>(),
         ]));
-        services.AddSingleton<SyncJobRunner>();
-        services.AddSingleton<JobRunService>();
-        services.AddSingleton<AppGateService>();
-
         services.AddSingleton<IHostPowerEvents, WindowsPowerEvents>();
-        services.AddSingleton<SchedulerHostedService>();
-        services.AddHostedService(sp => sp.GetRequiredService<SchedulerHostedService>());
 
-        services.AddSingleton<ChangeWatchHostedService>();
+        services.AddHostedService(sp => sp.GetRequiredService<CompanionBroadcastService>());
+        services.AddHostedService(sp => sp.GetRequiredService<SchedulerHostedService>());
         services.AddHostedService(sp => sp.GetRequiredService<ChangeWatchHostedService>());
 
         services.AddSingleton<CompanionServerService>();
