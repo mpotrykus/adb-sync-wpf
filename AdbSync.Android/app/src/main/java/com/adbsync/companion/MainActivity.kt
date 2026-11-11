@@ -35,7 +35,7 @@ import com.adbsync.companion.Ui.sectionLabel
 import com.adbsync.companion.Ui.statusLine
 import com.adbsync.companion.Ui.styled
 import com.adbsync.companion.Ui.subSectionLabel
-import com.adbsync.companion.Ui.title
+import com.adbsync.companion.Ui.header
 import com.adbsync.companion.Ui.toggle
 import android.text.TextUtils
 import android.text.format.DateUtils
@@ -87,7 +87,9 @@ class MainActivity : Activity() {
             setPadding(dp(16), dp(20), dp(16), dp(24))
         }
 
-        column.addView(title("AdbSync"))
+        column.addView(header(button("Web UI", fill = false) { openWebUi() }.apply {
+            (layoutParams as LinearLayout.LayoutParams).marginEnd = 0
+        }))
         pcStatus = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(6), 0, 0)
@@ -168,6 +170,25 @@ class MainActivity : Activity() {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         refreshSetup()
+    }
+
+    private fun openWebUi() {
+        val config = PcConfig.load(this)
+        if (config == null) {
+            Toast.makeText(this, "Connect to a server first.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        io.execute {
+            val code = runCatching { PcClient(config).createPairingCode() }.getOrNull()
+            val target = if (code != null) "${config.url.trimEnd('/')}/signin?code=${Uri.encode(code)}" else config.url
+            ui {
+                try {
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(target)))
+                } catch (_: android.content.ActivityNotFoundException) {
+                    Toast.makeText(this, "No browser found to open the web UI.", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
     }
 
     private fun setPcStatus(text: String, color: Int) {

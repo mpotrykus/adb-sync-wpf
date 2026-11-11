@@ -3,6 +3,12 @@ package com.adbsync.companion
 import android.app.AlertDialog
 import android.content.Context
 import android.content.res.ColorStateList
+import android.graphics.Canvas
+import android.graphics.ColorFilter
+import android.graphics.Paint
+import android.graphics.PixelFormat
+import android.graphics.RadialGradient
+import android.graphics.Shader
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
@@ -17,13 +23,14 @@ import android.widget.ProgressBar
 import android.widget.Switch
 import android.widget.TextView
 
-/** Palette and components mirroring AdbSync.App/Themes/Theme.xaml so the phone matches the PC app. */
+/** Palette and components mirroring AdbSync.Web/wwwroot/css/app.css (the glass theme) so the phone matches the web UI. */
 object Ui {
-    const val BACKGROUND_TOP = 0xFF1A1625.toInt()
-    const val BACKGROUND_BOTTOM = 0xFF0D0B12.toInt()
-    const val SURFACE = 0x14FFFFFF
+    const val BACKGROUND = 0xFF0D0A18.toInt()
+    const val SURFACE = 0x12FFFFFF
+    const val SURFACE_BORDER = 0x1AFFFFFF
     const val SURFACE_ALT = 0xF0271F38.toInt()
-    const val DIVIDER = 0x16FFFFFF
+    const val SURFACE_ALT_BORDER = 0x40FFFFFF
+    const val DIVIDER = 0x17FFFFFF
 
     const val ACCENT = 0xFF6C63FF.toInt()
     const val ACCENT_FROM = 0xFF7C5CFF.toInt()
@@ -35,19 +42,48 @@ object Ui {
     const val TEXT_PRIMARY = 0xFFF5F3FA.toInt()
     const val TEXT_SECONDARY = 0xFF9C97B3.toInt()
 
-    private val semiBold: Typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+    private fun Context.plex(weight: Int): Typeface = resources.getFont(
+        when {
+            weight >= 600 -> R.font.ibm_plex_sans_semibold
+            weight >= 500 -> R.font.ibm_plex_sans_medium
+            else -> R.font.ibm_plex_sans_regular
+        },
+    )
 
     enum class ButtonKind { Neutral, Success, Danger, Primary }
 
     fun Context.dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 
-    fun windowBackground() = GradientDrawable(
-        GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(BACKGROUND_TOP, BACKGROUND_BOTTOM),
-    )
+    /** The web UI's body.glass backdrop: near-black violet with four soft colored glows. */
+    fun windowBackground(): Drawable = object : Drawable() {
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val glows = listOf(
+            Triple(0.12f to 0.08f, 0.60f, 0x33 shl 24 or 0x7C5CFF),
+            Triple(0.88f to 0.18f, 0.50f, 0x24 shl 24 or 0x4C6FFF),
+            Triple(0.70f to 0.95f, 0.55f, 0x1F shl 24 or 0xA855F7),
+            Triple(0.05f to 0.85f, 0.45f, 0x12 shl 24 or 0x38BDF8),
+        )
+
+        override fun draw(canvas: Canvas) {
+            canvas.drawColor(BACKGROUND)
+            val w = bounds.width().toFloat()
+            val h = bounds.height().toFloat()
+            for ((center, radius, color) in glows) {
+                val r = radius * maxOf(w, h)
+                paint.shader = RadialGradient(center.first * w, center.second * h, r, color, color and 0x00FFFFFF, Shader.TileMode.CLAMP)
+                canvas.drawRect(bounds, paint)
+            }
+        }
+
+        override fun setAlpha(alpha: Int) {}
+        override fun setColorFilter(colorFilter: ColorFilter?) {}
+        @Suppress("OVERRIDE_DEPRECATION")
+        override fun getOpacity() = PixelFormat.OPAQUE
+    }
 
     fun Context.card(): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        background = rounded(SURFACE, dp(8))
+        background = glass(SURFACE, SURFACE_BORDER, dp(8), dp(1))
         setPadding(dp(16), dp(14), dp(16), dp(14))
         layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(12) }
     }
@@ -55,7 +91,7 @@ object Ui {
     fun Context.title(text: String) = TextView(this).apply {
         this.text = text
         textSize = 22f
-        typeface = semiBold
+        typeface = plex(600)
         setTextColor(TEXT_PRIMARY)
     }
 
@@ -63,7 +99,7 @@ object Ui {
     fun Context.sectionLabel(text: String) = TextView(this).apply {
         this.text = text
         textSize = 15f
-        typeface = semiBold
+        typeface = plex(600)
         setTextColor(TEXT_PRIMARY)
     }
 
@@ -71,7 +107,7 @@ object Ui {
     fun Context.subSectionLabel(text: String) = TextView(this).apply {
         this.text = text.uppercase()
         textSize = 11f
-        typeface = semiBold
+        typeface = plex(600)
         letterSpacing = 0.06f
         setTextColor(TEXT_SECONDARY)
         setPadding(dp(4), dp(20), 0, dp(8))
@@ -113,7 +149,7 @@ object Ui {
         TextView(this).apply {
             this.text = text
             textSize = 13f
-            typeface = semiBold
+            typeface = plex(600)
             gravity = Gravity.CENTER
             minHeight = dp(36)
             setPadding(dp(14), dp(8), dp(14), dp(8))
@@ -121,9 +157,9 @@ object Ui {
             isFocusable = true
             val radius = dp(if (kind == ButtonKind.Primary) 6 else 5)
             val (content, textColor) = when (kind) {
-                ButtonKind.Neutral -> stroked(0x14FFFFFF, 0x20FFFFFF, radius) to TEXT_PRIMARY
+                ButtonKind.Neutral -> stroked(0x14FFFFFF, 0x26FFFFFF, radius) to TEXT_PRIMARY
                 ButtonKind.Success -> stroked(0x1F5BD98A, 0x335BD98A, radius) to SUCCESS
-                ButtonKind.Danger -> stroked(0x1FFF6B6B, 0x33FF6B6B, radius) to DANGER
+                ButtonKind.Danger -> stroked(0x33FF6B6B, 0x66FF6B6B, radius) to DANGER
                 ButtonKind.Primary -> GradientDrawable(
                     GradientDrawable.Orientation.TL_BR, intArrayOf(ACCENT_FROM, ACCENT_TO),
                 ).apply { cornerRadius = radius.toFloat() } to 0xFFFFFFFF.toInt()
@@ -140,6 +176,7 @@ object Ui {
     fun Context.toggle(text: String) = Switch(this).apply {
         this.text = text
         textSize = 14f
+        typeface = plex(400)
         setTextColor(TEXT_PRIMARY)
         thumbTintList = ColorStateList.valueOf(0xFFFFFFFF.toInt())
         trackTintList = ColorStateList(
@@ -166,7 +203,7 @@ object Ui {
     /** Dialogs use the PC's Surface.Alt popup color. */
     fun AlertDialog.styled(): AlertDialog = apply {
         setOnShowListener {
-            window?.setBackgroundDrawable(rounded(SURFACE_ALT, context.dp(12)))
+            window?.setBackgroundDrawable(glass(SURFACE_ALT, SURFACE_ALT_BORDER, context.dp(8), context.dp(1)))
             getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(ACCENT)
             getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(TEXT_SECONDARY)
         }
@@ -177,10 +214,25 @@ object Ui {
         cornerRadius = radius.toFloat()
     }
 
-    private fun stroked(fill: Int, stroke: Int, radius: Int) = GradientDrawable().apply {
+    fun glass(fill: Int, stroke: Int, radius: Int, strokeWidth: Int): Drawable = GradientDrawable().apply {
         setColor(fill)
-        setStroke(2, stroke)
+        setStroke(strokeWidth, stroke)
         cornerRadius = radius.toFloat()
+    }
+
+    private fun stroked(fill: Int, stroke: Int, radius: Int) = glass(fill, stroke, radius, 2)
+
+    /** The app bar: brand mark and name on the left, [action] (e.g. the web UI link) on the right. */
+    fun Context.header(action: View?): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        addView(View(context).apply {
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(ACCENT_FROM, ACCENT_TO))
+                .apply { cornerRadius = dp(5).toFloat() }
+            layoutParams = LinearLayout.LayoutParams(dp(14), dp(14)).apply { marginEnd = dp(10) }
+        })
+        addView(title("AdbSync"), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+        if (action != null) addView(action)
     }
 
     /** Colors a last-result string the way the dashboard's LAST RESULT column does. */

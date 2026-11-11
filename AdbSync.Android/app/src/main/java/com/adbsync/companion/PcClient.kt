@@ -293,6 +293,12 @@ class PcClient(private val config: PcConfig) {
     fun pair(device: String, port: Int, code: String): Pair<Int, String> =
         postJson("/api/v1/devices/${deviceId(device)}/pair", JSONObject().put("port", port).put("code", code), readTimeoutMs = 45_000)
 
+    /** A one-time code the web UI's sign-in page accepts, or null if the server refused. */
+    fun createPairingCode(): String? {
+        val (code, text) = postJson("/api/v1/auth/pairing-codes", null)
+        return if (code in 200..299) JSONObject(text).getString("code") else null
+    }
+
     /** The devices the server knows, by name, for choosing which one this phone is. */
     fun deviceList(): List<RemoteDevice> {
         val array = JSONArray(getText("/api/v1/devices"))

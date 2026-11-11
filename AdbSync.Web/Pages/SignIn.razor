@@ -48,11 +48,22 @@
     private string? _error;
     private bool _busy;
 
+    [SupplyParameterFromQuery(Name = "code")] private string? CodeFromLink { get; set; }
+
     protected override async Task OnInitializedAsync()
     {
         await Session.LoadAsync();
         if (Session.SignedIn)
+        {
             Navigation.NavigateTo("");
+            return;
+        }
+        if (!string.IsNullOrWhiteSpace(CodeFromLink))
+        {
+            _code = CodeFromLink;
+            _name = "Web browser (from phone)";
+            await PairAsync();
+        }
     }
 
     private async Task PairAsync()
