@@ -181,14 +181,28 @@ class MainActivity : Activity() {
         io.execute {
             val code = runCatching { PcClient(config).createPairingCode() }.getOrNull()
             val target = if (code != null) "${config.url.trimEnd('/')}/signin?code=${Uri.encode(code)}" else config.url
-            ui {
-                try {
-                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(target)))
-                } catch (_: android.content.ActivityNotFoundException) {
-                    Toast.makeText(this, "No browser found to open the web UI.", Toast.LENGTH_LONG).show()
-                }
-            }
+            ui { chooseBrowser(target) }
         }
+    }
+
+    private fun chooseBrowser(target: String) {
+        val probe = Intent(Intent.ACTION_VIEW, Uri.parse("https://example.com"))
+            .addCategory(Intent.CATEGORY_BROWSABLE)
+        val browsers = packageManager.queryIntentActivities(probe, PackageManager.MATCH_ALL)
+            .distinctBy { it.activityInfo.packageName }
+        if (browsers.isEmpty()) {
+            Toast.makeText(this, "No browser found to open the web UI.", Toast.LENGTH_LONG).show()
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Open web UI with")
+            .setItems(browsers.map { it.loadLabel(packageManager).toString() }.toTypedArray()) { _, which ->
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(target)).setPackage(browsers[which].activityInfo.packageName))
+            }
+            .setNegativeButton("Cancel", null)
+            .create()
+            .styled()
+            .show()
     }
 
     private fun setPcStatus(text: String, color: Int) {
