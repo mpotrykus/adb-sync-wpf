@@ -166,9 +166,21 @@ else
                                 <tr>
                                     <td><MudText Typo="Typo.body2" Class="mud-text-secondary">Devices</MudText></td>
                                     <td>
-                                        <MudText Typo="Typo.body2">
-                                            @(config is null ? "-" : string.Join(", ", config.Devices.Select(d => _deviceNames.GetValueOrDefault(d.DeviceId, "?"))))
-                                        </MudText>
+                                        @if (config is null)
+                                        {
+                                            <MudText Typo="Typo.body2">-</MudText>
+                                        }
+                                        else
+                                        {
+                                            foreach (var binding in config.Devices)
+                                            {
+                                                var deviceState = _devices.FirstOrDefault(d => d.Id == binding.DeviceId)?.Connection.State ?? "unknown";
+                                                <div class="job-device-row">
+                                                    <span class="@("device-dot " + deviceState)" title="@Format.Words(deviceState)"></span>
+                                                    <MudText Typo="Typo.body2">@_deviceNames.GetValueOrDefault(binding.DeviceId, "?")</MudText>
+                                                </div>
+                                            }
+                                        }
                                     </td>
                                 </tr>
                                 <tr>

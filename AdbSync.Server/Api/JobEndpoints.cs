@@ -270,8 +270,10 @@ public static class JobEndpoints
             return Results.Text(text, "text/plain");
         });
 
-        api.MapGet("/runs/{runId:guid}/files", async (Guid runId, Guid? deviceId, string? action, AppConfigService configService, IRunHistoryStore history, CancellationToken ct) =>
+        api.MapGet("/runs/{runId:guid}/files", async (Guid runId, Guid? deviceId, string? action, AppConfigService configService, IRunHistoryStore history, RunRegistry registry, CancellationToken ct) =>
         {
+            if (registry.Get(runId) is not null)
+                return Results.Ok(new RunFilesPageDto(false, [], null));
             if (await history.GetRunAsync(runId, ct) is null)
                 return Problems.NotFound("No run with that id.");
             var config = await configService.GetAsync();

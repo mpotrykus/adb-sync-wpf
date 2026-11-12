@@ -383,3 +383,28 @@ body:not(.glass) .job-card {
         transition: none !important;
     }
 }
+
+.job-device-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 2px 0;
+}
+
+.device-dot {
+    flex: none;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--mud-palette-text-disabled);
+}
+
+.device-dot.connected {
+    background: #4ade80;
+    box-shadow: 0 0 6px #4ade80;
+}
+
+.device-dot.unreachable,
+.device-dot.unauthorized {
+    background: #ff6b6b;
+}
