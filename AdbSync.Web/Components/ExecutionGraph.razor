@@ -16,14 +16,19 @@
                         <div class="exec-glyph"><MudIcon Icon="@Icon(step)" /></div>
                         <div class="exec-title">@Title(step.Phase)</div>
                         <div class="exec-detail">
-                            @{ var parts = Detail(step).Split(" · "); }
-                            @for (var p = 0; p < parts.Length; p++)
+                            @foreach (var (icon, text, tip) in Items(step))
                             {
-                                if (p > 0)
-                                {
-                                    <span>· </span>
-                                }
-                                <span class="nowrap">@parts[p] </span>
+                                <span class="exec-item" title="@tip">
+                                    @if (icon is not null)
+                                    {
+                                        <MudIcon Icon="@icon" />
+                                    }
+                                    else
+                                    {
+                                        <span></span>
+                                    }
+                                    <span class="exec-value">@text</span>
+                                </span>
                             }
                         </div>
                     </div>
@@ -79,6 +84,34 @@
             _ => Icons.Material.Filled.Link,
         },
     };
+
+    private static List<(string? Icon, string Text, string Tip)> Items(RunStepDto step)
+    {
+        var items = new List<(string?, string, string)>();
+        var elapsed = step.StartedAt is null ? null : Format.Duration(step.StartedAt, step.EndedAt);
+        switch (step.Status)
+        {
+            case "pending": return [(null, "pending", "Pending")];
+            case "skipped": return [(null, "skipped", "Skipped")];
+            case "waiting": return [(Icons.Material.Filled.HourglassEmpty, "device", "Waiting for device")];
+        }
+        var touched = step.FilesCopied + step.FilesDeleted;
+        if (step.Phase is "pull" or "push" or "merge")
+            items.Add((Icons.Material.Filled.InsertDriveFile, touched.ToString(), step.Phase == "merge" ? "Files changed" : "Files copied or deleted"));
+        if (step.Phase is "pull" or "push" && step.BytesCopied > 0)
+            items.Add((Icons.Material.Filled.Storage, Format.Bytes(step.BytesCopied), "Bytes copied"));
+        if (step.Conflicts > 0)
+            items.Add((Icons.Material.Filled.CompareArrows, step.Conflicts.ToString(), "Conflicts"));
+        if (step.Errors > 0)
+            items.Add((Icons.Material.Filled.ErrorOutline, step.Errors.ToString(), "Errors"));
+        if (step.Status == "running")
+            items.Add((Icons.Material.Filled.Timer, elapsed ?? "0 s", "Elapsed"));
+        else if (elapsed is not null)
+            items.Add((Icons.Material.Filled.Timer, elapsed, "Duration"));
+        else if (step.Status == "cancelled")
+            items.Add((null, "stopped", "Stopped"));
+        return items.Count == 0 ? [(null, step.Status, step.Status)] : items;
+    }
 
     private static string Detail(RunStepDto step)
     {

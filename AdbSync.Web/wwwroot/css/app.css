@@ -387,24 +387,24 @@ body.glass .boot {
 }
 
 .exec-step {
-    flex: 0 0 128px;
-    width: 128px;
+    flex: 0 0 156px;
+    width: 156px;
     aspect-ratio: 1;
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    justify-content: flex-start;
     align-items: center;
     overflow: hidden;
     text-align: center;
-    padding: 16px;
-    border-radius: 50%;
+    padding: 14px 10px 12px;
+    border-radius: 16px;
     color: #6f6a86;
     border: 1.5px solid rgba(255, 255, 255, 0.16);
     background: rgba(255, 255, 255, 0.03);
 }
 
 .exec-link {
-    flex: 0 0 32px;
+    flex: 0 0 28px;
     align-self: center;
     height: 2px;
     border-radius: 2px;
@@ -421,11 +421,11 @@ body.glass .boot {
 
 .exec-glyph {
     line-height: 0;
-    margin-bottom: 3px;
+    margin-bottom: 8px;
 }
 
 .exec-glyph .mud-icon-root {
-    font-size: 3rem;
+    font-size: 2.5rem;
 }
 
 .exec-title {
@@ -434,13 +434,38 @@ body.glass .boot {
     color: inherit;
 }
 
-.exec-detail .nowrap {
+.exec-detail {
+    display: grid;
+    grid-template-columns: auto auto;
+    justify-content: center;
+    align-items: center;
+    column-gap: 8px;
+    row-gap: 4px;
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 88px;
+    align-content: start;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: color-mix(in srgb, currentColor 10%, transparent);
+}
+
+.exec-item {
+    display: contents;
+}
+
+.exec-value {
     white-space: nowrap;
+    text-align: left;
+}
+
+.exec-item .mud-icon-root {
+    font-size: 1rem;
 }
 
 .exec-detail {
-    margin-top: 2px;
-    font-size: 9px;
+    margin-top: 6px;
+    font-size: 11px;
     opacity: 0.85;
 }
 
