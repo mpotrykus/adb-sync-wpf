@@ -260,6 +260,10 @@ public sealed class ChangeWatchHostedService(
             else
                 events.JobSkipped(jobName, "watch stopped");
         }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Change-triggered run for job '{Job}' failed before it could start", jobName);
+        }
         finally
         {
             _manualStops.TryRemove(new KeyValuePair<string, CancellationTokenSource>(jobName, manualStopCts));
@@ -291,15 +295,26 @@ public sealed class ChangeWatchHostedService(
 
         var serials = new List<string>();
         var deviceNamesBySerial = new Dictionary<string, string>();
-        foreach (var binding in job.Devices)
+        string? runningSerial;
+        try
         {
-            var device = config.Devices.First(d => d.Name == binding.DeviceName);
-            var serial = await deviceResolver.EnsureConnectedAsync(device, ct);
-            serials.Add(serial);
-            deviceNamesBySerial[serial] = binding.DeviceName;
+            foreach (var binding in job.Devices)
+            {
+                var device = config.Devices.First(d => d.Name == binding.DeviceName);
+                var serial = await deviceResolver.EnsureConnectedAsync(device, ct);
+                serials.Add(serial);
+                deviceNamesBySerial[serial] = binding.DeviceName;
+            }
+
+            runningSerial = await appGuard.FindRunningSerialAsync(job.AppPackage, serials, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Without this the first trigger died silently on a connect failure: no retry and no run-history row.
+            logger.LogWarning(ex, "Could not check whether {Package} is running for job '{Job}'; backing off, then the run will try to connect itself", job.AppPackage, jobName);
+            return false;
         }
 
-        var runningSerial = await appGuard.FindRunningSerialAsync(job.AppPackage, serials, ct);
         if (runningSerial is null)
             return true;
 

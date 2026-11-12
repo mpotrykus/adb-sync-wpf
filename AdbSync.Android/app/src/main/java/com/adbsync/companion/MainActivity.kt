@@ -35,6 +35,15 @@ import com.adbsync.companion.Ui.sectionLabel
 import com.adbsync.companion.Ui.statusLine
 import com.adbsync.companion.Ui.styled
 import com.adbsync.companion.Ui.subSectionLabel
+import com.adbsync.companion.Ui.title
+import com.adbsync.companion.Ui.chip
+import com.adbsync.companion.Ui.statTile
+import com.adbsync.companion.Ui.statStrip
+import com.adbsync.companion.Ui.phaseGraph
+import com.adbsync.companion.Ui.infoRow
+import com.adbsync.companion.Ui.appIcon
+import android.view.ViewGroup.LayoutParams.MATCH_PARENT
+import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import com.adbsync.companion.Ui.header
 import com.adbsync.companion.Ui.toggle
 import android.text.TextUtils
@@ -60,6 +69,11 @@ class MainActivity : Activity() {
     private lateinit var conflictsBanner: LinearLayout
     private lateinit var jobsContainer: LinearLayout
     private lateinit var setupCard: LinearLayout
+    private lateinit var statsContainer: LinearLayout
+    private lateinit var jobsPage: View
+    private lateinit var devicePage: View
+    private lateinit var tabBar: Ui.TabBar
+    private var currentTab = 0
     private lateinit var wifiDebugStatus: LinearLayout
     private lateinit var autoEnableSwitch: Switch
     private lateinit var serviceStatus: TextView
@@ -82,68 +96,94 @@ class MainActivity : Activity() {
             0, WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS,
         )
 
-        val column = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(20), dp(16), dp(24))
+        fun page(vararg views: View) = ScrollView(this).apply {
+            isVerticalScrollBarEnabled = false
+            addView(LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(16), dp(16), dp(16), dp(24))
+                views.forEach { addView(it) }
+            })
         }
 
-        column.addView(header(button("Web UI", fill = false) { openWebUi() }.apply {
-            (layoutParams as LinearLayout.LayoutParams).marginEnd = 0
-        }))
         pcStatus = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(6), 0, 0)
+            setPadding(0, dp(2), 0, dp(6))
         }
-        column.addView(pcStatus)
-
         conflictsBanner = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(12), 0, 0)
         }
-        column.addView(conflictsBanner)
-
-        column.addView(subSectionLabel("Jobs"))
+        statsContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(14), 0, 0)
+        }
         jobsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        column.addView(jobsContainer)
+        jobsPage = page(title("Jobs"), pcStatus, conflictsBanner, statsContainer, jobsContainer)
 
-        column.addView(subSectionLabel("Wireless debugging"))
-        column.addView(card().apply {
-            wifiDebugStatus = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.VERTICAL }
-            addView(wifiDebugStatus)
-            autoEnableSwitch = toggle("Turn back on when Wi-Fi connects").apply {
-                setOnCheckedChangeListener { _, checked ->
-                    WirelessDebugging.setAutoEnable(this@MainActivity, checked)
-                    if (checked) CompanionJobService.scheduleEnable(this@MainActivity)
-                }
+        wifiDebugStatus = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        autoEnableSwitch = toggle("Turn back on when Wi-Fi connects").apply {
+            setOnCheckedChangeListener { _, checked ->
+                WirelessDebugging.setAutoEnable(this@MainActivity, checked)
+                if (checked) CompanionJobService.scheduleEnable(this@MainActivity)
             }
-            addView(divider())
-            addView(autoEnableSwitch)
-            addView(divider())
-            addView(button("Pair with PC over Wi-Fi", fill = true) { startPairing() })
-        })
-
-        column.addView(subSectionLabel("Setup"))
+        }
+        serviceStatus = caption()
         setupCard = card()
-        column.addView(setupCard)
+        devicePage = page(
+            title("Device"),
+            subSectionLabel("Wireless debugging"),
+            card().apply {
+                addView(wifiDebugStatus)
+                addView(divider())
+                addView(autoEnableSwitch)
+                addView(divider())
+                addView(button("Pair with PC over Wi-Fi", fill = true) { startPairing() })
+            },
+            subSectionLabel("Setup"),
+            setupCard,
+            subSectionLabel("Diagnostics"),
+            card().apply {
+                addView(serviceStatus)
+                addView(View(this@MainActivity).apply { minimumHeight = dp(10) })
+                addView(button("Simulate a 10s sync", fill = true) { simulateSync() })
+            },
+        )
 
-        column.addView(subSectionLabel("Diagnostics"))
-        column.addView(card().apply {
-            serviceStatus = caption()
-            addView(serviceStatus)
-            addView(View(this@MainActivity).apply { minimumHeight = dp(10) })
-            addView(button("Simulate a 10s sync", fill = true) { simulateSync() })
+        val appBar = header(button("Web UI", fill = false) { openWebUi() }.apply {
+            (layoutParams as LinearLayout.LayoutParams).marginEnd = 0
         })
-
-        setContentView(ScrollView(this).apply {
-            addView(column)
-            isVerticalScrollBarEnabled = false
+        val pages = FrameLayout(this).apply {
+            addView(jobsPage)
+            addView(devicePage)
+        }
+        tabBar = Ui.TabBar(this, listOf(R.drawable.ic_sync to "Jobs", R.drawable.ic_phone to "Device")) { showTab(it) }
+        setContentView(LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(appBar)
+            addView(pages, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
+            addView(tabBar)
             setOnApplyWindowInsetsListener { view, insets ->
                 val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
-                view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+                view.setPadding(bars.left, 0, bars.right, 0)
+                appBar.setPadding(appBar.paddingLeft, bars.top + dp(10), appBar.paddingRight, dp(10))
+                tabBar.setPadding(0, 0, 0, bars.bottom)
                 insets
             }
         })
+        showTab(savedInstanceState?.getInt(STATE_TAB) ?: 0)
         handlePairingIntent(intent)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putInt(STATE_TAB, currentTab)
+    }
+
+    private fun showTab(index: Int) {
+        currentTab = index
+        jobsPage.visibility = if (index == 0) View.VISIBLE else View.GONE
+        devicePage.visibility = if (index == 1) View.VISIBLE else View.GONE
+        tabBar.select(index)
     }
 
     override fun onResume() {
@@ -291,7 +331,7 @@ class MainActivity : Activity() {
         conflictsBanner.removeAllViews()
         val total = jobs.values.sumOf { it.pendingConflicts }
         if (total == 0) return
-        conflictsBanner.addView(card().apply {
+        conflictsBanner.addView(card(Ui.WARNING).apply {
             addView(sectionLabel(if (total == 1) "1 file needs a decision" else "$total files need a decision"))
             addView(caption("Changed in two places, so AdbSync left it alone. Pick which version to keep.").apply {
                 setPadding(0, dp(4), 0, dp(10))
@@ -304,6 +344,7 @@ class MainActivity : Activity() {
 
     private fun renderJobs() {
         renderConflictsBanner()
+        renderStats()
         jobsContainer.removeAllViews()
         if (jobs.isEmpty()) {
             jobsContainer.addView(card().apply {
@@ -314,84 +355,171 @@ class MainActivity : Activity() {
         for (job in jobs.values) jobsContainer.addView(jobCard(job))
     }
 
-    private fun jobCard(job: RemoteJob): View = card().apply {
-        val header = LinearLayout(this@MainActivity).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
+    private fun renderStats() {
+        statsContainer.removeAllViews()
+        if (jobs.isEmpty()) return
+        val all = jobs.values
+        val running = all.count { it.running }
+        val conflicts = all.sumOf { it.pendingConflicts }
+        val failed = all.count { it.lastFailed }
+        val next = all.filter { it.enabled }.mapNotNull { it.nextRunAt }.minOrNull()
+        val nextText = when {
+            next == null -> "-"
+            !next.isAfter(OffsetDateTime.now()) -> "now"
+            else -> DateUtils.getRelativeTimeSpanString(
+                next.toInstant().toEpochMilli(), System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS, DateUtils.FORMAT_ABBREV_RELATIVE,
+            ).toString()
         }
-        header.addView(sectionLabel(job.name).apply {
-            if (!job.enabled) setTextColor(Ui.TEXT_SECONDARY)
-            maxLines = 2
-            ellipsize = TextUtils.TruncateAt.END
-        })
-        if (job.needsAttention) header.addView(badge("⚠", Ui.WARNING))
-        if (job.hasCheckpoint) header.addView(badge("↻", CHECKPOINT_BLUE))
-        header.addView(View(this@MainActivity).apply { layoutParams = LinearLayout.LayoutParams(0, 0, 1f) })
-        header.addView(toggle("").apply {
-            isChecked = job.enabled
-            setOnCheckedChangeListener { _, checked ->
-                act(job.name, "Update") { it.setEnabled(job.name, checked) }
-            }
-        })
-        addView(header)
-        addView(View(this@MainActivity).apply { minimumHeight = dp(6) })
-
-        if (job.running) {
-            addView(statusLine(job.statusText(), Ui.ACCENT, Ui.ACCENT))
-            addView(indeterminateBar())
-        } else {
-            addView(statusLine("Idle", Ui.TEXT_SECONDARY, Ui.TEXT_SECONDARY))
-        }
-        job.lastResult?.let { result ->
-            addView(body(result, Ui.resultColor(result, job.lastFailed), 13f).apply { setPadding(dp(15), dp(4), 0, 0) })
-        }
-        addView(caption(scheduleText(job)).apply { setPadding(dp(15), dp(4), 0, 0) })
-        job.staleDevices.forEach { (device, reason) ->
-            addView(body("$device is out of sync: $reason", Ui.WARNING, 12f).apply { setPadding(dp(15), dp(4), 0, 0) })
-        }
-        if (job.hasCheckpoint && !job.running) {
-            job.checkpointSummary?.let { summary ->
-                addView(body(summary, CHECKPOINT_BLUE, 12f).apply { setPadding(dp(15), dp(4), 0, 0) })
-            }
-        }
-
-        val buttons = LinearLayout(this@MainActivity).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(0, dp(12), 0, 0)
-        }
-        if (job.running) {
-            buttons.addView(button("Stop", ButtonKind.Danger) { confirmStop(job) })
-        } else {
-            buttons.addView(button("Run now", ButtonKind.Success) { act(job.name, "Run") { it.run(job.name) } })
-        }
-        buttons.addView(button("Log") { showLog(job.name) })
-        buttons.addView(button("History") { showHistory(job.name, job.running) })
-        if (!job.running || job.hasCheckpoint) {
-            lateinit var more: View
-            more = button("⋯") { showMoreMenu(more, job) }
-            buttons.addView(more)
-        }
-        addView(buttons)
+        statsContainer.addView(statStrip(listOf(
+            statTile("$running", "Running", Ui.ACCENT_FROM),
+            statTile("${all.count { it.enabled }}/${all.size}", "Enabled", Ui.SUCCESS),
+            statTile("$conflicts", "Conflicts", Ui.WARNING) {
+                if (conflicts > 0) startActivity(Intent(this, ConflictsActivity::class.java))
+            },
+            statTile("$failed", "Failed", Ui.DANGER),
+            statTile(nextText, "Next run", 0xFF38BDF8.toInt()),
+        )))
     }
 
-    private fun badge(glyph: String, color: Int) = TextView(this).apply {
-        text = glyph
-        textSize = 14f
-        setTextColor(color)
-        setPadding(dp(8), 0, 0, 0)
+    private fun jobCard(job: RemoteJob): View {
+        val stateColor = when {
+            job.running -> Ui.ACCENT_FROM
+            !job.enabled -> 0xFF5C5870.toInt()
+            job.lastFailed -> Ui.DANGER
+            job.pendingConflicts > 0 -> Ui.WARNING
+            else -> Ui.SUCCESS
+        }
+        return card(stateColor, glow = job.running).apply {
+            val header = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            header.addView(jobIcon(job))
+            header.addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(sectionLabel(job.name).apply {
+                    textSize = 17f
+                    if (!job.enabled) setTextColor(Ui.TEXT_SECONDARY)
+                    maxLines = 2
+                    ellipsize = TextUtils.TruncateAt.END
+                })
+                addView(caption(job.appPackage ?: "No linked app").apply {
+                    typeface = Typeface.MONOSPACE
+                    textSize = 11f
+                    maxLines = 1
+                    ellipsize = TextUtils.TruncateAt.MIDDLE
+                })
+            }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+            header.addView(toggle("").apply {
+                isChecked = job.enabled
+                setOnCheckedChangeListener { _, checked ->
+                    act(job.name, "Update") { it.setEnabled(job.name, checked) }
+                }
+            })
+            addView(header)
+
+            val chips = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, dp(12), 0, 0)
+            }
+            val waiting = job.phase == "WaitingForAppClose" || job.devices.any { it.second == "WaitingForAppClose" }
+            when {
+                waiting -> chips.addView(chip("Waiting · app is open", Ui.WARNING))
+                job.running -> chips.addView(chip(
+                    "Running" + (job.phase?.let { " · " + Protocol.phaseLabel(it) } ?: ""), Ui.ACCENT_FROM,
+                ))
+                else -> chips.addView(chip(if (job.enabled) "Idle" else "Disabled", Ui.TEXT_SECONDARY))
+            }
+            if (job.pendingConflicts > 0) {
+                chips.addView(chip(
+                    "${job.pendingConflicts} conflict${if (job.pendingConflicts == 1) "" else "s"}", Ui.WARNING,
+                ) { startActivity(Intent(this@MainActivity, ConflictsActivity::class.java)) })
+            }
+            if (job.hasCheckpoint) chips.addView(chip("Resumable", CHECKPOINT_BLUE))
+            addView(chips)
+
+            if (job.running) {
+                addView(phaseGraph(phaseSteps(job)))
+                if (job.devices.isNotEmpty()) {
+                    addView(infoRow("Devices", LinearLayout(this@MainActivity).apply {
+                        orientation = LinearLayout.VERTICAL
+                        job.devices.forEach { (device, phase) ->
+                            addView(body("$device · ${Protocol.phaseLabel(phase)}", Ui.TEXT_PRIMARY, 13f))
+                        }
+                    }))
+                }
+            }
+
+            addView(View(this@MainActivity).apply { minimumHeight = dp(8) })
+            val last = job.lastResultAt?.let {
+                DateUtils.getRelativeTimeSpanString(it.toInstant().toEpochMilli(), System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS).toString()
+            }
+            addView(infoRow("Last run", body(
+                if (job.lastResult == null) "Never" else job.lastResult + (last?.let { " · $it" } ?: ""),
+                if (job.lastResult == null) Ui.TEXT_PRIMARY else Ui.resultColor(job.lastResult, job.lastFailed), 13f,
+            )))
+            addView(infoRow("Next run", body(nextRunText(job), Ui.TEXT_PRIMARY, 13f)))
+            job.staleDevices.forEach { (device, reason) ->
+                addView(body("$device is out of sync: $reason", Ui.WARNING, 12f).apply { setPadding(0, dp(6), 0, 0) })
+            }
+            if (job.hasCheckpoint && !job.running) {
+                job.checkpointSummary?.let { summary ->
+                    addView(body(summary, CHECKPOINT_BLUE, 12f).apply { setPadding(0, dp(6), 0, 0) })
+                }
+            }
+
+            val buttons = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, dp(12), 0, 0)
+            }
+            if (job.running) {
+                buttons.addView(button("Stop", ButtonKind.Danger) { confirmStop(job) })
+            } else {
+                buttons.addView(button("Run now", ButtonKind.Success) { act(job.name, "Run") { it.run(job.name) } })
+            }
+            buttons.addView(button("Log") { showLog(job.name) })
+            buttons.addView(button("History") { showHistory(job.name, job.running) })
+            if (!job.running || job.hasCheckpoint) {
+                lateinit var more: View
+                more = button("⋯") { showMoreMenu(more, job) }
+                buttons.addView(more)
+            }
+            addView(buttons)
+        }
     }
 
-    private fun scheduleText(job: RemoteJob): String {
-        val last = job.lastResultAt?.let {
-            DateUtils.getRelativeTimeSpanString(it.toInstant().toEpochMilli(), System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS).toString()
-        } ?: "never"
-        val next = when {
-            !job.enabled -> "-"
-            job.nextRunAt == null -> "-"
-            !job.nextRunAt.isAfter(OffsetDateTime.now()) -> "due now"
-            else -> job.nextRunAt.atZoneSameInstant(ZoneId.systemDefault()).format(NEXT_RUN_FORMAT)
+    private fun jobIcon(job: RemoteJob): View {
+        val pkg = job.appPackage
+        val bitmap = pkg?.let { AppIcons.cached(it) }
+        if (pkg != null && bitmap == null) {
+            val config = PcConfig.load(this)
+            if (config != null) AppIcons.request(pkg, { PcClient(config).appIcon(job.name) }) { ui { renderJobs() } }
         }
-        return "Last run $last  ·  Next run $next"
+        return appIcon(pkg, bitmap)
+    }
+
+    private fun phaseSteps(job: RemoteJob): List<Triple<Int, String, Ui.StepState>> {
+        val order = listOf(
+            Triple("PreConnect", "Connect", R.drawable.ic_link),
+            Triple("Pull", "Pull", R.drawable.ic_download),
+            Triple("Merge", "Merge", R.drawable.ic_merge),
+            Triple("Push", "Push", R.drawable.ic_upload),
+        )
+        val current = order.indexOfFirst { it.first == (job.phase ?: job.devices.firstOrNull()?.second) }
+        return order.mapIndexed { i, (_, label, icon) ->
+            Triple(icon, label, when {
+                current < 0 -> Ui.StepState.Pending
+                i < current -> Ui.StepState.Done
+                i == current -> Ui.StepState.Active
+                else -> Ui.StepState.Pending
+            })
+        }
+    }
+
+    private fun nextRunText(job: RemoteJob): String = when {
+        !job.enabled || job.nextRunAt == null -> "-"
+        !job.nextRunAt.isAfter(OffsetDateTime.now()) -> "due now"
+        else -> job.nextRunAt.atZoneSameInstant(ZoneId.systemDefault()).format(NEXT_RUN_FORMAT)
     }
 
     private fun showMoreMenu(anchor: View, job: RemoteJob) {
@@ -663,9 +791,11 @@ class MainActivity : Activity() {
     private fun refreshSetup() {
         setupCard.removeAllViews()
         var first = true
+        var problems = 0
         fun item(ok: Boolean?, okText: String, problemText: String, actionText: String?, action: (() -> Unit)?) {
             if (!first) setupCard.addView(divider())
             first = false
+            if (ok != true) problems++
             val color = when (ok) {
                 true -> Ui.SUCCESS
                 false -> Ui.DANGER
@@ -718,6 +848,8 @@ class MainActivity : Activity() {
             },
             "Open developer options",
         ) { startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)) }
+
+        tabBar.setBadge(1, problems > 0)
 
         wifiDebugStatus.removeAllViews()
         val canWrite = WirelessDebugging.canWrite(this)
@@ -794,6 +926,7 @@ class MainActivity : Activity() {
     }
 
     private companion object {
+        const val STATE_TAB = "tab"
         const val REQUEST_NOTIFICATIONS = 1
         const val MENU_DRY_RUN = 1
         const val MENU_DISCARD = 2

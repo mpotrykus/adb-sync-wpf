@@ -17,7 +17,7 @@ public class AdbDeviceResolverTests
 
     public AdbDeviceResolverTests()
     {
-        _resolver = new AdbDeviceResolver(_adbClient, _mdns, _adbServer);
+        _resolver = new AdbDeviceResolver(_adbClient, _mdns, _adbServer, onlineWait: TimeSpan.Zero);
     }
 
     private static Task<IEnumerable<DeviceData>> Devices(params DeviceData[] devices) =>
@@ -181,6 +181,24 @@ public class AdbDeviceResolverTests
             });
 
         await Assert.ThrowsAsync<DeviceConnectException>(() => _resolver.EnsureConnectedAsync(device));
+    }
+
+    [Fact]
+    public async Task EnsureConnectedAsync_ConnectComesOnlineAfterAFewPolls_Succeeds()
+    {
+        var resolver = new AdbDeviceResolver(_adbClient, _mdns, _adbServer, onlineWait: TimeSpan.FromSeconds(5));
+        var device = new DeviceConfig { Name = "S23+", Ip = "192.168.0.40" };
+        var online = Devices(new DeviceData { Serial = "192.168.0.40:41000", State = DeviceState.Online });
+        _adbClient.GetDevicesAsync(Arg.Any<CancellationToken>()).Returns(Devices(), Devices(), Devices(), online);
+        _mdns.BrowseAsync(Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns(new List<MdnsAnnouncement>
+            {
+                new("instance", "host.local", 41000, [IPAddress.Parse("192.168.0.40")]),
+            });
+
+        var result = await resolver.EnsureConnectedAsync(device);
+
+        Assert.Equal("192.168.0.40:41000", result);
     }
 
     [Fact]

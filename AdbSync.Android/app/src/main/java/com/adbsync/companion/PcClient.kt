@@ -274,6 +274,18 @@ class PcClient(private val config: PcConfig) {
         }
     }
 
+    /** The job's app icon as PNG bytes, or null when the server couldn't make one. */
+    fun appIcon(job: String): ByteArray? {
+        val conn = open("/api/v1/jobs/${jobId(job)}/app-icon", readTimeoutMs = 60_000)
+        try {
+            if (conn.responseCode == 404) return null
+            check(conn)
+            return conn.inputStream.use { it.readBytes() }
+        } finally {
+            conn.disconnect()
+        }
+    }
+
     /** Returns the HTTP status and the server's message, if any. A successful resolve also queues the job. */
     fun resolveConflict(id: String, choice: ConflictChoice): Pair<Int, String> =
         postJson("/api/v1/conflicts/${encode(id)}/resolve", JSONObject().put("choice", choice.wire), readTimeoutMs = 30_000)

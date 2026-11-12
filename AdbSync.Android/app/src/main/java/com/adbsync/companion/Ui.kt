@@ -3,13 +3,21 @@ package com.adbsync.companion
 import android.app.AlertDialog
 import android.content.Context
 import android.content.res.ColorStateList
+import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Outline
+import android.graphics.drawable.LayerDrawable
+import android.view.ViewOutlineProvider
+import android.widget.FrameLayout
+import android.widget.HorizontalScrollView
+import android.widget.ImageView
 import android.graphics.ColorFilter
 import android.graphics.Paint
 import android.graphics.PixelFormat
 import android.graphics.RadialGradient
 import android.graphics.Shader
 import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
@@ -81,16 +89,26 @@ object Ui {
         override fun getOpacity() = PixelFormat.OPAQUE
     }
 
-    fun Context.card(): LinearLayout = LinearLayout(this).apply {
+    /** A glass card. With [accent] it gets the web job card's colored left edge; [glow] adds a tinted border (running jobs). */
+    fun Context.card(accent: Int? = null, glow: Boolean = false): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        background = glass(SURFACE, SURFACE_BORDER, dp(8), dp(1))
-        setPadding(dp(16), dp(14), dp(16), dp(14))
+        val border = if (glow && accent != null) (accent and 0x00FFFFFF) or (0x99 shl 24) else SURFACE_BORDER
+        val base = glass(SURFACE, border, dp(10), dp(1))
+        val edge = dp(10).toFloat()
+        background = if (accent == null) base else LayerDrawable(arrayOf(base, GradientDrawable().apply {
+            setColor(accent)
+            cornerRadii = floatArrayOf(edge, edge, 0f, 0f, 0f, 0f, edge, edge)
+        })).apply {
+            setLayerGravity(1, Gravity.START or Gravity.FILL_VERTICAL)
+            setLayerWidth(1, dp(3))
+        }
+        setPadding(dp(if (accent == null) 16 else 18), dp(14), dp(16), dp(14))
         layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(12) }
     }
 
     fun Context.title(text: String) = TextView(this).apply {
         this.text = text
-        textSize = 22f
+        textSize = 26f
         typeface = plex(600)
         setTextColor(TEXT_PRIMARY)
     }
@@ -116,6 +134,7 @@ object Ui {
     fun Context.body(text: CharSequence = "", color: Int = TEXT_PRIMARY, size: Float = 14f) = TextView(this).apply {
         this.text = text
         textSize = size
+        typeface = plex(400)
         setTextColor(color)
         setLineSpacing(0f, 1.1f)
     }
@@ -222,17 +241,250 @@ object Ui {
 
     private fun stroked(fill: Int, stroke: Int, radius: Int) = glass(fill, stroke, radius, 2)
 
-    /** The app bar: brand mark and name on the left, [action] (e.g. the web UI link) on the right. */
+    /** The app bar: translucent black, brand mark and name on the left, [action] (e.g. the web UI link) on the right. */
     fun Context.header(action: View?): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
+        setBackgroundColor(0xA6000000.toInt())
+        setPadding(dp(16), dp(10), dp(16), dp(10))
         addView(View(context).apply {
             background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(ACCENT_FROM, ACCENT_TO))
                 .apply { cornerRadius = dp(5).toFloat() }
             layoutParams = LinearLayout.LayoutParams(dp(14), dp(14)).apply { marginEnd = dp(10) }
         })
-        addView(title("AdbSync"), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+        addView(TextView(context).apply {
+            text = "AdbSync"
+            textSize = 18f
+            typeface = plex(600)
+            setTextColor(TEXT_PRIMARY)
+        }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         if (action != null) addView(action)
+    }
+
+    /** A pill like the web's MudChip: tinted fill and border. */
+    fun Context.chip(text: String, color: Int, onClick: (() -> Unit)? = null) = TextView(this).apply {
+        this.text = text
+        textSize = 12f
+        typeface = plex(500)
+        setTextColor(color)
+        setPadding(dp(10), dp(4), dp(10), dp(4))
+        background = glass((color and 0x00FFFFFF) or (0x1F shl 24), (color and 0x00FFFFFF) or (0x59 shl 24), dp(14), dp(1))
+        layoutParams = LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { marginEnd = dp(8) }
+        if (onClick != null) setOnClickListener { onClick() }
+    }
+
+    /** One tile of the stat strip: big value over an uppercase label with a dot in the tile's color. */
+    fun Context.statTile(value: String, label: String, color: Int, onClick: (() -> Unit)? = null) = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        background = glass(0x0FFFFFFF, 0x1AFFFFFF, dp(10), dp(1))
+        setPadding(dp(14), dp(10), dp(14), dp(10))
+        minimumWidth = dp(112)
+        addView(TextView(context).apply {
+            text = value
+            textSize = 26f
+            typeface = plex(600)
+            letterSpacing = -0.03f
+            setTextColor(blend(color, 0xFFFFFFFF.toInt(), 0.45f))
+        })
+        addView(LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(dot(color))
+            addView(TextView(context).apply {
+                text = label.uppercase()
+                textSize = 10f
+                typeface = plex(600)
+                letterSpacing = 0.1f
+                setTextColor(TEXT_SECONDARY)
+            })
+        })
+        layoutParams = LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { marginEnd = dp(10) }
+        if (onClick != null) setOnClickListener { onClick() }
+    }
+
+    fun Context.statStrip(tiles: List<View>) = HorizontalScrollView(this).apply {
+        isHorizontalScrollBarEnabled = false
+        overScrollMode = View.OVER_SCROLL_NEVER
+        addView(LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            tiles.forEach { addView(it) }
+        })
+        layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(14) }
+    }
+
+    enum class StepState { Pending, Active, Done }
+
+    /** The web's phase graph: bordered circles joined by lines, green when done, violet when active. */
+    fun Context.phaseGraph(steps: List<Triple<Int, String, StepState>>) = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_HORIZONTAL
+        setPadding(0, dp(14), 0, dp(4))
+        steps.forEachIndexed { i, (icon, label, state) ->
+            val (stroke, fill, tint) = when (state) {
+                StepState.Done -> Triple(SUCCESS, 0x1F5BD98A, SUCCESS)
+                StepState.Active -> Triple(ACCENT_FROM, 0x477C5CFF, 0xFFFFFFFF.toInt())
+                StepState.Pending -> Triple(0x29FFFFFF, 0x08FFFFFF, 0xFF6F6A86.toInt())
+            }
+            addView(LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER_HORIZONTAL
+                addView(FrameLayout(context).apply {
+                    background = GradientDrawable().apply {
+                        shape = GradientDrawable.OVAL
+                        setColor(fill)
+                        setStroke(dp(2), stroke)
+                    }
+                    addView(ImageView(context).apply {
+                        setImageResource(if (state == StepState.Done) R.drawable.ic_check else icon)
+                        imageTintList = ColorStateList.valueOf(tint)
+                    }, FrameLayout.LayoutParams(dp(17), dp(17), Gravity.CENTER))
+                }, LinearLayout.LayoutParams(dp(34), dp(34)))
+                addView(TextView(context).apply {
+                    text = label
+                    textSize = 10f
+                    typeface = plex(500)
+                    setTextColor(if (state == StepState.Pending) TEXT_SECONDARY else TEXT_PRIMARY)
+                    setPadding(0, dp(3), 0, 0)
+                })
+            })
+            if (i < steps.size - 1) {
+                addView(View(context).apply {
+                    background = when (state) {
+                        StepState.Done -> rounded(SUCCESS, dp(2))
+                        StepState.Active -> GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(ACCENT_FROM, 0x1FFFFFFF))
+                        StepState.Pending -> rounded(0x1FFFFFFF, dp(2))
+                    }
+                }, LinearLayout.LayoutParams(dp(40), dp(2)).apply { topMargin = dp(16) })
+            }
+        }
+    }
+
+    /** A label/value row like the web job card's info table. */
+    fun Context.infoRow(label: String, value: View) = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        setPadding(0, dp(3), 0, dp(3))
+        addView(caption(label), LinearLayout.LayoutParams(dp(78), WRAP_CONTENT))
+        addView(value, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+    }
+
+    /** The job's app icon (rounded), or the web's generated initial tile while it's missing. */
+    fun Context.appIcon(pkg: String?, bitmap: Bitmap?, sizeDp: Int = 42): View {
+        val size = dp(sizeDp)
+        val radius = size * 0.24f
+        val params = LinearLayout.LayoutParams(size, size).apply { marginEnd = dp(12) }
+        if (bitmap != null) return ImageView(this).apply {
+            setImageBitmap(bitmap)
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            clipToOutline = true
+            outlineProvider = object : ViewOutlineProvider() {
+                override fun getOutline(view: View, outline: Outline) = outline.setRoundRect(0, 0, view.width, view.height, radius)
+            }
+            layoutParams = params
+        }
+        return FrameLayout(this).apply {
+            layoutParams = params
+            if (pkg.isNullOrEmpty()) {
+                background = glass(0x14FFFFFF, 0x26FFFFFF, radius.toInt(), 1)
+                addView(ImageView(context).apply {
+                    setImageResource(R.drawable.ic_sync)
+                    imageTintList = ColorStateList.valueOf(TEXT_SECONDARY)
+                }, FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER))
+            } else {
+                var hash = 17
+                for (c in pkg) hash = hash * 31 + c.code
+                val hue = Math.abs(hash) % 360
+                background = GradientDrawable(
+                    GradientDrawable.Orientation.TL_BR,
+                    intArrayOf(hsl(hue.toFloat(), 0.68f, 0.56f), hsl(((hue + 45) % 360).toFloat(), 0.70f, 0.38f)),
+                ).apply { cornerRadius = radius }
+                val name = pkg.split('.').filter { it.isNotEmpty() }.let { parts ->
+                    parts.lastOrNull { it.lowercase() !in GENERIC_SEGMENTS } ?: parts.lastOrNull() ?: "?"
+                }
+                addView(TextView(context).apply {
+                    text = name.take(1).uppercase()
+                    textSize = sizeDp * 0.42f
+                    typeface = plex(600)
+                    setTextColor(0xFFFFFFFF.toInt())
+                    gravity = Gravity.CENTER
+                }, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+            }
+        }
+    }
+
+    private val GENERIC_SEGMENTS = setOf("app", "android", "mobile", "free", "pro", "lite", "client")
+
+    private fun blend(from: Int, to: Int, amount: Float): Int {
+        fun mix(shift: Int) = (((from shr shift) and 0xFF) * (1 - amount) + ((to shr shift) and 0xFF) * amount).toInt()
+        return (0xFF shl 24) or (mix(16) shl 16) or (mix(8) shl 8) or mix(0)
+    }
+
+    private fun hsl(h: Float, s: Float, l: Float): Int {
+        val c = (1 - Math.abs(2 * l - 1)) * s
+        val x = c * (1 - Math.abs((h / 60f) % 2 - 1))
+        val m = l - c / 2
+        val (r, g, b) = when {
+            h < 60 -> Triple(c, x, 0f)
+            h < 120 -> Triple(x, c, 0f)
+            h < 180 -> Triple(0f, c, x)
+            h < 240 -> Triple(0f, x, c)
+            h < 300 -> Triple(x, 0f, c)
+            else -> Triple(c, 0f, x)
+        }
+        return (0xFF shl 24) or (((r + m) * 255).toInt() shl 16) or (((g + m) * 255).toInt() shl 8) or ((b + m) * 255).toInt()
+    }
+
+    /** Bottom navigation in the web nav rail's style: dark translucent bar, accent-colored active tab, optional alert dot. */
+    class TabBar(context: Context, tabs: List<Pair<Int, String>>, private val onSelect: (Int) -> Unit) : LinearLayout(context) {
+        private val icons = ArrayList<ImageView>()
+        private val labels = ArrayList<TextView>()
+        private val badges = ArrayList<View>()
+
+        init {
+            orientation = HORIZONTAL
+            setBackgroundColor(0xB0000000.toInt())
+            val d = resources.displayMetrics.density
+            tabs.forEachIndexed { i, (icon, label) ->
+                val tab = LinearLayout(context).apply {
+                    orientation = VERTICAL
+                    gravity = Gravity.CENTER_HORIZONTAL
+                    setPadding(0, (8 * d).toInt(), 0, (8 * d).toInt())
+                    isClickable = true
+                    background = RippleDrawable(ColorStateList.valueOf(0x22FFFFFF), null, ColorDrawable(0xFFFFFFFF.toInt()))
+                    setOnClickListener { select(i); onSelect(i) }
+                }
+                val image = ImageView(context).apply { setImageResource(icon) }
+                val badge = View(context).apply {
+                    background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(WARNING) }
+                    visibility = GONE
+                }
+                tab.addView(FrameLayout(context).apply {
+                    addView(image, FrameLayout.LayoutParams((24 * d).toInt(), (24 * d).toInt(), Gravity.CENTER))
+                    addView(badge, FrameLayout.LayoutParams((8 * d).toInt(), (8 * d).toInt(), Gravity.TOP or Gravity.END))
+                }, LayoutParams((40 * d).toInt(), (24 * d).toInt()))
+                val text = TextView(context).apply {
+                    this.text = label
+                    textSize = 11f
+                    typeface = context.resources.getFont(R.font.ibm_plex_sans_medium)
+                    setPadding(0, (2 * d).toInt(), 0, 0)
+                }
+                tab.addView(text)
+                addView(tab, LayoutParams(0, WRAP_CONTENT, 1f))
+                icons += image; labels += text; badges += badge
+            }
+            select(0)
+        }
+
+        fun select(index: Int) {
+            icons.indices.forEach { i ->
+                val color = if (i == index) ACCENT_FROM else TEXT_SECONDARY
+                icons[i].imageTintList = ColorStateList.valueOf(color)
+                labels[i].setTextColor(color)
+            }
+        }
+
+        fun setBadge(index: Int, visible: Boolean) {
+            badges[index].visibility = if (visible) VISIBLE else GONE
+        }
     }
 
     /** Colors a last-result string the way the dashboard's LAST RESULT column does. */

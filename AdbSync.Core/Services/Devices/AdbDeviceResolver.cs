@@ -11,8 +11,12 @@ namespace AdbSync.Core.Services.Devices;
 
 public sealed class AdbDeviceResolver(
     IAdbClient adbClient, IMdnsBrowser mdns, IAdbServer adbServer, string adbExecutablePath = "adb",
-    ILogger<AdbDeviceResolver>? logger = null) : IAdbDeviceResolver
+    ILogger<AdbDeviceResolver>? logger = null, TimeSpan? onlineWait = null) : IAdbDeviceResolver
 {
+    private static readonly TimeSpan DefaultOnlineWait = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan OnlinePollInterval = TimeSpan.FromMilliseconds(500);
+    private readonly TimeSpan _onlineWait = onlineWait ?? DefaultOnlineWait;
+
     private const string AdbTlsConnectServiceType = "_adb-tls-connect._tcp";
     private const string AdbTlsPairingServiceType = "_adb-tls-pairing._tcp";
     private static readonly TimeSpan MdnsBrowseTimeout = TimeSpan.FromSeconds(5);
@@ -80,7 +84,7 @@ public sealed class AdbDeviceResolver(
             try
             {
                 await adbClient.ConnectAsync(device.Ip, staticPort, ct);
-                if (await GetStateAsync(staticHostPort, ct) == DeviceState.Online)
+                if (await WaitForStateAsync(staticHostPort, ct) == DeviceState.Online)
                 {
                     Cache(device, staticHostPort);
                     return staticHostPort;
@@ -121,7 +125,7 @@ public sealed class AdbDeviceResolver(
             }
 
             var hostPort = $"{device.Ip}:{candidate.Port}";
-            var state = await GetStateAsync(hostPort, ct);
+            var state = await WaitForStateAsync(hostPort, ct);
             if (state == DeviceState.Online)
             {
                 Cache(device, hostPort);
@@ -192,7 +196,7 @@ public sealed class AdbDeviceResolver(
             return false;
         }
 
-        if (!await IsOnlineAsync(hostPort, ct))
+        if (await WaitForStateAsync(hostPort, ct) != DeviceState.Online)
             return false;
 
         _logger.LogDebug("Device '{Device}': reconnected to cached {HostPort}", device.Name, hostPort);
@@ -220,6 +224,20 @@ public sealed class AdbDeviceResolver(
     {
         var devices = await adbClient.GetDevicesAsync(ct);
         return devices.FirstOrDefault(d => d.Serial == hostPort)?.State;
+    }
+
+    /// <summary>A just-made wireless connection can take a few seconds to show up in 'adb devices' (or show as offline
+    /// first), so a single immediate look reports a healthy device as missing. Polls until it is online or the wait is up.</summary>
+    private async Task<DeviceState?> WaitForStateAsync(string hostPort, CancellationToken ct)
+    {
+        var state = await GetStateAsync(hostPort, ct);
+        var deadline = DateTime.UtcNow + _onlineWait;
+        while (state != DeviceState.Online && state != DeviceState.Unauthorized && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(OnlinePollInterval, ct);
+            state = await GetStateAsync(hostPort, ct);
+        }
+        return state;
     }
 
     private async Task<bool> IsOnlineAsync(string hostPort, CancellationToken ct) =>
