@@ -380,71 +380,136 @@ body.glass .boot {
 .exec-row {
     display: flex;
     align-items: stretch;
+    justify-content: safe center;
     gap: 0;
     overflow-x: auto;
+    padding: 4px;
 }
 
 .exec-step {
-    flex: 1 1 0;
-    min-width: 96px;
+    flex: 0 0 128px;
+    width: 128px;
+    aspect-ratio: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
     text-align: center;
-    padding: 8px 6px;
-    border-radius: 8px;
-    border: 1px solid rgba(127, 127, 127, 0.35);
-    color: #7a7f8a;
+    padding: 16px;
+    border-radius: 50%;
+    color: #6f6a86;
+    border: 1.5px solid rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.03);
 }
 
 .exec-link {
-    flex: 0 0 16px;
+    flex: 0 0 32px;
     align-self: center;
     height: 2px;
-    background: rgba(127, 127, 127, 0.4);
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.exec-link.done {
+    background: #5bd98a;
+}
+
+.exec-link.active {
+    background: linear-gradient(90deg, #7c5cff, rgba(255, 255, 255, 0.12));
 }
 
 .exec-glyph {
-    font-size: 20px;
-    line-height: 24px;
+    line-height: 0;
+    margin-bottom: 3px;
+}
+
+.exec-glyph .mud-icon-root {
+    font-size: 3rem;
 }
 
 .exec-title {
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 600;
     color: inherit;
 }
 
+.exec-detail .nowrap {
+    white-space: nowrap;
+}
+
 .exec-detail {
-    font-size: 11px;
+    margin-top: 2px;
+    font-size: 9px;
     opacity: 0.85;
 }
 
-.exec-running {
-    color: #a59fff;
-    border-color: #6c63ff;
-    background: rgba(108, 99, 255, 0.18);
+.exec-step.done {
+    color: #5bd98a;
+    border-color: #5bd98a;
+    background: rgba(91, 217, 138, 0.12);
 }
 
-.exec-succeeded {
-    color: #2e9d57;
-    border-color: #2e9d57;
-    background: rgba(46, 157, 87, 0.12);
+.exec-step.active {
+    color: #fff;
+    border-color: #7c5cff;
+    background: rgba(124, 92, 255, 0.28);
+    box-shadow: 0 0 0 4px rgba(124, 92, 255, 0.14);
 }
 
-.exec-failed {
+.exec-step.failed {
     color: #d1453b;
     border-color: #d1453b;
     background: rgba(209, 69, 59, 0.12);
 }
 
-.exec-waiting,
-.exec-cancelled {
+.exec-step.warn {
     color: #d98e04;
     border-color: #d98e04;
     background: rgba(217, 142, 4, 0.12);
 }
 
-.exec-pending,
-.exec-skipped {
-    background: transparent;
+body:not(.glass) .exec-step {
+    color: #6b668a;
+    border-color: rgba(43, 37, 80, 0.3);
+    background: rgba(43, 37, 80, 0.05);
+}
+
+body:not(.glass) .exec-step.done {
+    color: #1f9d55;
+    border-color: #1f9d55;
+    background: rgba(31, 157, 85, 0.14);
+}
+
+body:not(.glass) .exec-step.active {
+    color: #4c3fd1;
+    border-color: #6a4cf0;
+    background: rgba(106, 76, 240, 0.16);
+    box-shadow: 0 0 0 4px rgba(106, 76, 240, 0.14);
+}
+
+body:not(.glass) .exec-step.failed {
+    color: #d1453b;
+    border-color: #d1453b;
+    background: rgba(209, 69, 59, 0.12);
+}
+
+body:not(.glass) .exec-step.warn {
+    color: #b87503;
+    border-color: #b87503;
+    background: rgba(217, 142, 4, 0.12);
+}
+
+body:not(.glass) .exec-link {
+    background: rgba(43, 37, 80, 0.18);
+}
+
+body:not(.glass) .exec-link.done {
+    background: #1f9d55;
+}
+
+body:not(.glass) .exec-link.active {
+    background: linear-gradient(90deg, #6a4cf0, rgba(43, 37, 80, 0.18));
 }
 
 .app-icon {
@@ -862,6 +927,17 @@ html {
         font-size: 0.74rem;
         letter-spacing: 0;
     }
+}
+
+.drawer-bottom {
+    position: absolute;
+    bottom: 48px;
+    left: 0;
+    right: 0;
+}
+
+.drawer-bottom-mobile {
+    bottom: 8px;
 }
 
 .drawer-toggle {

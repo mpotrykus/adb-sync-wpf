@@ -52,6 +52,8 @@ else
                 <MudNavLink Href="runs" Icon="@Icons.Material.Filled.History">Run history</MudNavLink>
                 <MudNavLink Href="conflicts" Icon="@Icons.Material.Filled.CallSplit">Conflicts</MudNavLink>
                 <MudNavLink Href="devices" Icon="@Icons.Material.Filled.PhoneAndroid">Devices</MudNavLink>
+            </MudNavMenu>
+            <MudNavMenu Class="@(_mobile ? "drawer-bottom drawer-bottom-mobile" : "drawer-bottom")">
                 <MudNavLink Href="settings" Icon="@Icons.Material.Filled.Settings">Settings</MudNavLink>
             </MudNavMenu>
             @if (!_mobile)

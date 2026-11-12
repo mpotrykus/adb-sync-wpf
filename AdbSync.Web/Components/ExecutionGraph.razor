@@ -3,19 +3,29 @@
     {
         var deviceSteps = Steps.Where(s => s.DeviceName == device).OrderBy(s => Order(s.Phase)).ToList();
         <MudPaper Outlined="true" Class="pa-3 mb-3">
-            <MudText Typo="Typo.subtitle2" Class="mb-2">@device</MudText>
+            <MudText Typo="Typo.subtitle2" Class="mb-2 text-center">@device</MudText>
             <div class="exec-row">
                 @for (var i = 0; i < deviceSteps.Count; i++)
                 {
                     var step = deviceSteps[i];
                     if (i > 0)
                     {
-                        <div class="exec-link"></div>
+                        <div class="exec-link @StateClass(deviceSteps[i - 1].Status)"></div>
                     }
-                    <div class="exec-step exec-@step.Status" title="@Detail(step)">
-                        <div class="exec-glyph">@Glyph(step.Status)</div>
+                    <div class="exec-step @StateClass(step.Status)" title="@Detail(step)">
+                        <div class="exec-glyph"><MudIcon Icon="@Icon(step)" /></div>
                         <div class="exec-title">@Title(step.Phase)</div>
-                        <div class="exec-detail">@Detail(step)</div>
+                        <div class="exec-detail">
+                            @{ var parts = Detail(step).Split(" · "); }
+                            @for (var p = 0; p < parts.Length; p++)
+                            {
+                                if (p > 0)
+                                {
+                                    <span>· </span>
+                                }
+                                <span class="nowrap">@parts[p] </span>
+                            }
+                        </div>
                     </div>
                 }
             </div>
@@ -45,16 +55,29 @@
         _ => Format.Words(phase),
     };
 
-    private static string Glyph(string status) => status switch
+    private static string StateClass(string status) => status switch
     {
-        "pending" => "○",
-        "waiting" => "…",
-        "running" => "●",
-        "succeeded" => "✓",
-        "failed" => "✕",
-        "skipped" => "–",
-        "cancelled" => "■",
+        "succeeded" => "done",
+        "running" => "active",
+        "failed" => "failed",
+        "waiting" or "cancelled" => "warn",
+        "skipped" => "skipped",
         _ => "",
+    };
+
+    private static string Icon(RunStepDto step) => step.Status switch
+    {
+        "succeeded" => Icons.Material.Filled.Check,
+        "failed" => Icons.Material.Filled.Close,
+        "cancelled" => Icons.Material.Filled.Stop,
+        "skipped" => Icons.Material.Filled.Remove,
+        _ => step.Phase switch
+        {
+            "pull" => Icons.Material.Filled.Download,
+            "merge" => Icons.Material.Filled.CallMerge,
+            "push" => Icons.Material.Filled.Upload,
+            _ => Icons.Material.Filled.Link,
+        },
     };
 
     private static string Detail(RunStepDto step)
