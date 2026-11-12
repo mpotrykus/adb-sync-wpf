@@ -32,6 +32,23 @@ public sealed class AdbDeviceResolver(
 
     private readonly ILogger<AdbDeviceResolver> _logger = new RunCapturingLogger<AdbDeviceResolver>(logger ?? NullLogger<AdbDeviceResolver>.Instance);
 
+    // Two callers starting a cold adb server at once race: the loser fails with "Address already in use" and the
+    // client's recovery kills the server the winner just started, dropping its half-built wireless transports.
+    private static readonly SemaphoreSlim ServerStartGate = new(1, 1);
+
+    private async Task<StartServerResult> StartServerSerializedAsync(CancellationToken ct)
+    {
+        await ServerStartGate.WaitAsync(ct);
+        try
+        {
+            return await adbServer.StartServerAsync(adbExecutablePath, restartServerIfNewer: false, ct);
+        }
+        finally
+        {
+            ServerStartGate.Release();
+        }
+    }
+
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _connectGates = new(StringComparer.OrdinalIgnoreCase);
 
     public async Task<string> EnsureConnectedAsync(DeviceConfig device, CancellationToken ct = default)
@@ -50,7 +67,7 @@ public sealed class AdbDeviceResolver(
 
     private async Task<string> EnsureConnectedCoreAsync(DeviceConfig device, CancellationToken ct)
     {
-        var startResult = await adbServer.StartServerAsync(adbExecutablePath, restartServerIfNewer: false, ct);
+        var startResult = await StartServerSerializedAsync(ct);
         if (startResult != StartServerResult.AlreadyRunning)
             _logger.LogDebug("Device '{Device}': adb server start result: {Result}", device.Name, startResult);
 
@@ -148,7 +165,7 @@ public sealed class AdbDeviceResolver(
         if (device.Ip is null)
             throw new InvalidOperationException($"Device '{device.Name}' has no IP configured; pairing only applies to WiFi devices.");
 
-        await adbServer.StartServerAsync(adbExecutablePath, restartServerIfNewer: false, ct);
+        await StartServerSerializedAsync(ct);
 
         var announcements = await mdns.BrowseAsync(AdbTlsPairingServiceType, MdnsBrowseTimeout, ct);
         var candidate = announcements.FirstOrDefault(a => a.Addresses.Any(addr => addr.ToString() == device.Ip));
@@ -166,7 +183,7 @@ public sealed class AdbDeviceResolver(
         if (device.Ip is null)
             throw new InvalidOperationException($"Device '{device.Name}' has no IP configured; pairing only applies to WiFi devices.");
 
-        await adbServer.StartServerAsync(adbExecutablePath, restartServerIfNewer: false, ct);
+        await StartServerSerializedAsync(ct);
         return await PairCoreAsync(device, device.Ip, pairingPort, pairingCode, ct);
     }
 

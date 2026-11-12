@@ -202,6 +202,35 @@ public class AdbDeviceResolverTests
     }
 
     [Fact]
+    public async Task EnsureConnectedAsync_DifferentDevicesAtOnce_NeverStartTheAdbServerConcurrently()
+    {
+        var running = 0;
+        var maxRunning = 0;
+        _adbServer.StartServerAsync(Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<CancellationToken>()).Returns(async _ =>
+        {
+            var now = Interlocked.Increment(ref running);
+            InterlockedMax(ref maxRunning, now);
+            await Task.Delay(50);
+            Interlocked.Decrement(ref running);
+            return StartServerResult.Started;
+        });
+        var a = new DeviceConfig { Name = "A", Serial = "emulator-5554" };
+        var b = new DeviceConfig { Name = "B", Serial = "emulator-5556" };
+
+        await Task.WhenAll(_resolver.EnsureConnectedAsync(a), _resolver.EnsureConnectedAsync(b));
+
+        Assert.Equal(1, maxRunning);
+    }
+
+    private static void InterlockedMax(ref int target, int value)
+    {
+        int current;
+        while ((current = Volatile.Read(ref target)) < value && Interlocked.CompareExchange(ref target, value, current) != current)
+        {
+        }
+    }
+
+    [Fact]
     public async Task EnsureConnectedAsync_SameDeviceCalledConcurrently_SecondWaitsForFirstToRelease()
     {
         var device = new DeviceConfig { Name = "S23+", Serial = "emulator-5554" };
@@ -230,7 +259,7 @@ public class AdbDeviceResolverTests
     }
 
     [Fact]
-    public async Task EnsureConnectedAsync_DifferentDevicesCalledConcurrently_BothProceedWithoutWaiting()
+    public async Task EnsureConnectedAsync_DifferentDevicesCalledConcurrently_SecondWaitsOnlyForTheServerStartToReturn()
     {
         var deviceA = new DeviceConfig { Name = "S23+", Serial = "emulator-5554" };
         var deviceB = new DeviceConfig { Name = "BlueStacks", Serial = "emulator-5556" };
@@ -245,12 +274,14 @@ public class AdbDeviceResolverTests
         await Task.Delay(50);
 
         var secondCall = _resolver.EnsureConnectedAsync(deviceB);
-        var wonRace = await Task.WhenAny(secondCall, Task.Delay(TimeSpan.FromSeconds(2)));
-        Assert.Same(secondCall, wonRace);
-        Assert.Equal("emulator-5556", await secondCall);
+        var wonRace = await Task.WhenAny(secondCall, Task.Delay(TimeSpan.FromMilliseconds(200)));
+        Assert.NotSame(secondCall, wonRace);
+        Assert.Equal(1, startServerCallCount);
 
         startServerGate.SetResult(StartServerResult.Started);
+
         Assert.Equal("emulator-5554", await firstCall);
+        Assert.Equal("emulator-5556", await secondCall);
     }
 
     [Fact]
