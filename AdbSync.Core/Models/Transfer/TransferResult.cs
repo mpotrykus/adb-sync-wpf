@@ -4,7 +4,7 @@ namespace AdbSync.Core.Models.Transfer;
 /// CopiedPaths/DeletedPaths carry the relative paths behind the FilesCopied/FilesDeleted counts, so a caller
 /// mirroring the same content to multiple devices can de-duplicate rather than summing per-device counts.
 /// FailedPaths names the files behind per-file Errors; an error with no matching path means the transfer as a whole
-/// is unreliable.
+/// is unreliable. SkippedUnchanged lists remote files a pull deliberately did not transfer (see <see cref="TransferPolicy.SkipPull"/>).
 /// </summary>
 public sealed record TransferResult(
     int FilesCopied,
@@ -13,7 +13,8 @@ public sealed record TransferResult(
     IReadOnlyList<string> Errors,
     IReadOnlyList<string> CopiedPaths,
     IReadOnlyList<string> DeletedPaths,
-    IReadOnlyList<string>? FailedPaths = null)
+    IReadOnlyList<string>? FailedPaths = null,
+    IReadOnlyList<FileEntry>? SkippedUnchanged = null)
 {
     public bool HasUnattributedErrors => Errors.Count > (FailedPaths?.Count ?? 0);
 

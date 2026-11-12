@@ -44,7 +44,7 @@ public static class JobMapping
                 job.FileDetailRunsKept, job.BackupConflictLosers,
                 job.ConflictPolicy switch { ConflictPolicy.Ask => "ask", ConflictPolicy.NewestWins => "newestWins", _ => null },
                 job.CheckpointRetentionDays, job.RollbackPointsToKeep, job.BandwidthThrottleKBps, job.RetryMaxAttempts,
-                job.RetryBackoffSeconds, job.PushSafetyMinimumPercent));
+                job.RetryBackoffSeconds, job.PushSafetyMinimumPercent, job.IncrementalPull, job.FullPullIntervalDays));
     }
 
     public static JobInputDto ToInput(JobDto dto) => new(
@@ -105,6 +105,8 @@ public static class JobMapping
             Add("/overrides/conflictPolicy", "Must be newestWins, ask or null.");
         if (input.Overrides?.PushSafetyMinimumPercent is < 0 or > 100)
             Add("/overrides/pushSafetyMinimumPercent", "Must be between 0 and 100.");
+        if (input.Overrides?.FullPullIntervalDays is < 0)
+            Add("/overrides/fullPullIntervalDays", "Must not be negative.");
 
         return errors;
     }
@@ -147,5 +149,7 @@ public static class JobMapping
         job.RetryMaxAttempts = o?.RetryMaxAttempts;
         job.RetryBackoffSeconds = o?.RetryBackoffSeconds;
         job.PushSafetyMinimumPercent = o?.PushSafetyMinimumPercent;
+        job.IncrementalPull = o?.IncrementalPull;
+        job.FullPullIntervalDays = o?.FullPullIntervalDays;
     }
 }

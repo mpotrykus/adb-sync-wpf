@@ -292,17 +292,45 @@ public sealed class SyncJobRunner(
                 steps.Waiting(binding.DeviceName, SyncPhase.Pull);
                 events.PhaseChanged(job.Name, SyncPhase.WaitingForDevice, binding.DeviceName);
             }
+            var policy = eff.ToTransferPolicy();
+            var incremental = false;
+            SyncManifest? baseline = null;
+            if (eff.IncrementalPull && !eff.DryRun && resumeFrom is null)
+            {
+                baseline = await manifests.TryGetAsync(job.Name, binding.DeviceName, ct);
+                if (IncrementalPullPlanner.IsEligible(baseline, eff.FullPullIntervalDays, DateTimeOffset.UtcNow))
+                {
+                    IReadOnlyDictionary<string, FileEntry> masterFiles;
+                    // Another device's merge may be writing temp files into master; scanning meanwhile can throw.
+                    await bookkeepingGate.WaitAsync(ct);
+                    try
+                    {
+                        ProjectFolders.EnsureStillAvailable(eff, masterPath);
+                        masterFiles = LocalFileTreeScanner.Scan(masterPath, new ExcludeMatcher([]))
+                            .Where(e => !e.IsDirectory)
+                            .ToDictionary(e => e.RelativePath, StringComparer.Ordinal);
+                    }
+                    finally
+                    {
+                        bookkeepingGate.Release();
+                    }
+                    policy = policy with { SkipPull = IncrementalPullPlanner.BuildSkipPredicate(baseline!, masterFiles) };
+                    incremental = true;
+                }
+            }
+
             TransferResult pullResult;
             await using (await _deviceAccessGate.AcquireAsync(binding.DeviceName, maxConcurrentPerDevice, ct))
             {
                 steps.Start(binding.DeviceName, SyncPhase.Pull);
                 events.PhaseChanged(job.Name, SyncPhase.Pull, binding.DeviceName);
-                _logger.LogInformation("Job '{Job}' pulling from '{Device}'", job.Name, binding.DeviceName);
-                pullResult = await transfer.PullMirrorAsync(serial, binding.RemotePath, stagingPath, exclude, eff.ToTransferPolicy(), ct);
+                _logger.LogInformation("Job '{Job}' pulling from '{Device}' ({Mode})", job.Name, binding.DeviceName, incremental ? "incremental" : "full");
+                pullResult = await transfer.PullMirrorAsync(serial, binding.RemotePath, stagingPath, exclude, policy, ct);
             }
+            var unchangedOnDevice = pullResult.SkippedUnchanged ?? [];
             _logger.LogInformation(
-                "Job '{Job}' pulled from '{Device}': {Copied} copied, {Deleted} deleted, {Errors} error(s)",
-                job.Name, binding.DeviceName, pullResult.FilesCopied, pullResult.FilesDeleted, pullResult.Errors.Count);
+                "Job '{Job}' pulled from '{Device}': {Copied} copied, {Deleted} deleted, {Skipped} unchanged skipped, {Errors} error(s)",
+                job.Name, binding.DeviceName, pullResult.FilesCopied, pullResult.FilesDeleted, unchangedOnDevice.Count, pullResult.Errors.Count);
 
             steps.Finish(binding.DeviceName, SyncPhase.Pull, pullResult.FilesCopied, pullResult.FilesDeleted, pullResult.BytesCopied, pullResult.Errors.Count);
             steps.AddFiles(TransferFiles(binding.DeviceName, SyncPhase.Pull, pullResult));
@@ -319,13 +347,15 @@ public sealed class SyncJobRunner(
             var fileCount = Directory.Exists(stagingPath)
                 ? Directory.EnumerateFiles(stagingPath, "*", SearchOption.AllDirectories).Count()
                 : 0;
+            fileCount += unchangedOnDevice.Count;
 
             var mergeOptions = new MergeOptions(
                 BackupConflictLosers: eff.BackupConflictLosers,
                 ConflictBackupDir: GetConflictBackupDir(projectRoot, binding.DeviceName),
                 DryRun: eff.DryRun,
                 HoldConflicts: eff.ConflictPolicy == ConflictPolicy.Ask && pendingConflicts is not null,
-                SkipPaths: failedPulls);
+                SkipPaths: failedPulls,
+                UnchangedOnDevice: unchangedOnDevice);
 
             await bookkeepingGate.WaitAsync(ct);
             try
@@ -356,7 +386,13 @@ public sealed class SyncJobRunner(
                 // once that push succeeds. Saving it now would let a failed push make the device's stale copy look
                 // like a device-side edit next run, which then overwrites the newer master.
                 if (!eff.DryRun)
+                {
+                    if (!incremental && failedPulls.Count == 0)
+                        mergeResult.UpdatedManifest.LastFullPullAtUtc = DateTimeOffset.UtcNow;
+                    else
+                        mergeResult.UpdatedManifest.LastFullPullAtUtc = baseline?.LastFullPullAtUtc ?? manifest.LastFullPullAtUtc;
                     pendingManifests[binding.DeviceName] = mergeResult.UpdatedManifest;
+                }
                 anyChange |= pullResult.AnyChange || mergeResult.AnyChange;
                 _logger.LogInformation(
                     "Job '{Job}' merge with '{Device}' completed: {Created} created, {Updated} updated, {Deleted} deleted, {Conflicts} conflict(s)",

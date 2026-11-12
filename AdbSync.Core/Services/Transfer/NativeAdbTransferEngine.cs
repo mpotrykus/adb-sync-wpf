@@ -16,6 +16,17 @@ public sealed class NativeAdbTransferEngine(IRemoteFileSystemFactory remoteFacto
         await using var connection = remote as IAsyncDisposable;
         var remoteEntries = await RemoteFileTreeScanner.ScanAsync(remote, remotePath, exclude, ct);
 
+        List<FileEntry>? skipped = null;
+        if (policy?.SkipPull is { } canSkip)
+        {
+            skipped = remoteEntries.Where(e => !e.IsDirectory && canSkip(e)).ToList();
+            if (skipped.Count > 0)
+            {
+                var skippedPaths = new HashSet<string>(skipped.Select(e => e.RelativePath), StringComparer.Ordinal);
+                remoteEntries = remoteEntries.Where(e => !skippedPaths.Contains(e.RelativePath)).ToList();
+            }
+        }
+
         Directory.CreateDirectory(localPath);
         var localEntries = LocalFileTreeScanner.Scan(localPath, exclude);
 
@@ -73,7 +84,7 @@ public sealed class NativeAdbTransferEngine(IRemoteFileSystemFactory remoteFacto
             deletedPaths.Add(entry.RelativePath);
         }
 
-        return new TransferResult(copied, deleted, bytesCopied, errors, copiedPaths, deletedPaths, failedPaths);
+        return new TransferResult(copied, deleted, bytesCopied, errors, copiedPaths, deletedPaths, failedPaths, skipped);
     }
 
     public async Task<TransferResult> PushMirrorAsync(string serial, string localPath, string remotePath, IExcludeMatcher exclude, TransferPolicy? policy = null, CancellationToken ct = default)

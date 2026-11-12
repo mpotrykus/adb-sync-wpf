@@ -25,6 +25,12 @@ public sealed class TwoWayMergeEngine : ITwoWayMergeEngine
         var staging = LocalFileTreeScanner.Scan(stagingPath, NoExclude)
             .Where(e => !e.IsDirectory)
             .ToDictionary(e => e.RelativePath, StringComparer.Ordinal);
+        if (options.UnchangedOnDevice is { Count: > 0 } unchanged)
+        {
+            foreach (var entry in unchanged)
+                staging.TryAdd(entry.RelativePath, entry);
+        }
+
         var master = LocalFileTreeScanner.Scan(masterPath, NoExclude)
             .Where(e => !e.IsDirectory)
             .ToDictionary(e => e.RelativePath, StringComparer.Ordinal);
@@ -125,6 +131,7 @@ public sealed class TwoWayMergeEngine : ITwoWayMergeEngine
         {
             Version = manifest.Version,
             LastMergedAtUtc = DateTimeOffset.UtcNow,
+            LastFullPullAtUtc = manifest.LastFullPullAtUtc,
             Entries = newEntries,
         };
 
@@ -186,7 +193,7 @@ public sealed class TwoWayMergeEngine : ITwoWayMergeEngine
         return s!.ModifiedUtc >= m!.ModifiedUtc ? DecisionKind.ConflictStagingWins : DecisionKind.ConflictMasterWins;
     }
 
-    private static bool IsUnchanged(FileEntry entry, ManifestEntry baseline) =>
+    internal static bool IsUnchanged(FileEntry entry, ManifestEntry baseline) =>
         entry.Size == baseline.Size && (entry.ModifiedUtc - baseline.ModifiedUtc).Duration() <= ModifiedTolerance;
 
     private static bool AreEqual(string stagingPath, string masterPath, FileEntry staging, FileEntry master) =>

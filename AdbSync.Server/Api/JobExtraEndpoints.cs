@@ -36,6 +36,8 @@ public static class JobExtraEndpoints
                 retryMaxAttempts = e.RetryMaxAttempts,
                 retryBackoffSeconds = (int)e.RetryBackoff.TotalSeconds,
                 pushSafetyMinimumPercent = e.PushSafetyMinimumPercent,
+                incrementalPull = e.IncrementalPull,
+                fullPullIntervalDays = e.FullPullIntervalDays,
                 dryRun = e.DryRun,
             });
         });

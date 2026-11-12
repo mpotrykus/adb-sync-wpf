@@ -1418,6 +1418,8 @@ components:
         retryMaxAttempts: { type: [integer, "null"], minimum: 1 }
         retryBackoffSeconds: { type: [integer, "null"], minimum: 0 }
         pushSafetyMinimumPercent: { type: [integer, "null"], minimum: 0, maximum: 100 }
+        incrementalPull: { type: [boolean, "null"], description: Only transfer device files that differ from the last sync. }
+        fullPullIntervalDays: { type: [integer, "null"], minimum: 0, description: Do a full pull at least this often; 0 = always. }
     JobFields:
       type: object
       properties:
@@ -1476,6 +1478,8 @@ components:
         retryMaxAttempts: { type: integer }
         retryBackoffSeconds: { type: integer }
         pushSafetyMinimumPercent: { type: integer }
+        incrementalPull: { type: boolean }
+        fullPullIntervalDays: { type: integer }
         dryRun: { type: boolean }
     Checkpoint:
       type: object
@@ -1826,6 +1830,8 @@ components:
         backupConflictLosers: { type: boolean }
         runMissedSchedules: { type: boolean }
         companionBroadcastsEnabled: { type: boolean }
+        incrementalPull: { type: boolean, default: false }
+        fullPullIntervalDays: { type: integer, minimum: 0, default: 7 }
     NotificationSettings:
       type: object
       description: Shared so every client applies the same rules. Each client does its own notifying.

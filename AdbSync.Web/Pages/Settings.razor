@@ -68,6 +68,12 @@ else
                         <MudNumericField T="int" @bind-Value="_retryBackoff" Label="Backoff (seconds)" Min="0" Variant="Variant.Outlined" />
                     </div>
                     <MudNumericField T="int?" @bind-Value="_throttle" Label="Bandwidth limit (KB/s, empty for none)" Min="1" Variant="Variant.Outlined" />
+                    <MudSwitch T="bool" @bind-Value="_incremental" Color="Color.Primary" Label="Incremental pull (only transfer changed files)" />
+                    @if (_incremental)
+                    {
+                        <MudNumericField T="int" @bind-Value="_fullPullDays" Label="Full pull at least every (days, 0 = always)" Min="0" Variant="Variant.Outlined"
+                                         HelperText="Files that match the last sync on both the phone and the project folder are not pulled again. A periodic full pull re-checks everything." />
+                    }
                 </MudStack>
             </MudPaper>
         </MudItem>
@@ -115,7 +121,8 @@ else
 @code {
     private SettingsDto? _s;
     private string _timeZone = "";
-    private bool _runMissed, _broadcasts, _backupLosers, _showInfo, _showErrors, _quietEnabled;
+    private bool _runMissed, _broadcasts, _backupLosers, _showInfo, _showErrors, _quietEnabled, _incremental;
+    private int _fullPullDays;
     private string _conflictPolicy = "newestWins";
     private string _quietStart = "22:00", _quietEnd = "07:00";
     private int _maxJobs, _maxPerDevice, _pushSafety, _retryAttempts, _retryBackoff;
@@ -156,6 +163,8 @@ else
         _rollbackKeep = s.RollbackPointsToKeep;
         _historyEntries = s.MaxRunHistoryEntries;
         _fileDetailRuns = s.FileDetailRunsKept;
+        _incremental = s.IncrementalPull;
+        _fullPullDays = s.FullPullIntervalDays;
         _showInfo = s.Notifications.ShowInfo;
         _showErrors = s.Notifications.ShowErrors;
         _quietEnabled = s.Notifications.QuietHours.Enabled;
@@ -210,6 +219,8 @@ else
                 rollbackPointsToKeep = _rollbackKeep,
                 maxRunHistoryEntries = _historyEntries,
                 fileDetailRunsKept = _fileDetailRuns,
+                incrementalPull = _incremental,
+                fullPullIntervalDays = _fullPullDays,
                 notifications = new
                 {
                     showInfo = _showInfo,

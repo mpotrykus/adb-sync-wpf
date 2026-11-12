@@ -8,7 +8,7 @@ public sealed record JobOverridesDto(
     int? ConflictRetentionDays, bool? ShowInfoNotifications, bool? ShowErrorNotifications, int? MaxRunHistoryEntries,
     int? FileDetailRunsKept, bool? BackupConflictLosers, string? ConflictPolicy, int? CheckpointRetentionDays,
     int? RollbackPointsToKeep, int? BandwidthThrottleKBps, int? RetryMaxAttempts, int? RetryBackoffSeconds,
-    int? PushSafetyMinimumPercent);
+    int? PushSafetyMinimumPercent, bool? IncrementalPull = null, int? FullPullIntervalDays = null);
 
 /// <summary>JobInput: what clients send to create a job, and what a PATCH is merged into.</summary>
 public sealed record JobInputDto(

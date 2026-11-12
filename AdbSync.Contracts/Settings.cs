@@ -9,7 +9,7 @@ public sealed record SettingsDto(
     int MaxConcurrentJobs, int MaxConcurrentPerDevice, NotificationSettingsDto Notifications, int CheckpointRetentionDays,
     int RollbackPointsToKeep, int? BandwidthThrottleKBps, int RetryMaxAttempts, int RetryBackoffSeconds, int PushSafetyMinimumPercent,
     int MaxRunHistoryEntries, int FileDetailRunsKept, string ConflictPolicy, bool BackupConflictLosers, bool RunMissedSchedules,
-    bool CompanionBroadcastsEnabled);
+    bool CompanionBroadcastsEnabled, bool IncrementalPull = false, int FullPullIntervalDays = 7);
 
 public sealed record DashboardPreferencesDto(string? SortKey, bool Descending);
 

@@ -21,7 +21,8 @@ public static class SettingsEndpoints
             new QuietHoursDto(s.QuietHoursEnabled, s.QuietHoursStart.ToString("HH:mm", CultureInfo.InvariantCulture), s.QuietHoursEnd.ToString("HH:mm", CultureInfo.InvariantCulture))),
         s.CheckpointRetentionDays, s.RollbackPointsToKeep, s.BandwidthThrottleKBps, s.RetryMaxAttempts, s.RetryBackoffSeconds,
         s.PushSafetyMinimumPercent, s.MaxRunHistoryEntries, s.FileDetailRunsKept,
-        s.ConflictPolicy == ConflictPolicy.Ask ? "ask" : "newestWins", s.BackupConflictLosers, s.RunMissedSchedules, s.CompanionBroadcastsEnabled);
+        s.ConflictPolicy == ConflictPolicy.Ask ? "ask" : "newestWins", s.BackupConflictLosers, s.RunMissedSchedules, s.CompanionBroadcastsEnabled,
+        s.IncrementalPull, s.FullPullIntervalDays);
 
     public static void MapSettingsEndpoints(this IEndpointRouteBuilder api)
     {
@@ -194,7 +195,7 @@ public static class SettingsEndpoints
                 errors[$"/notifications/quietHours/{name}"] = ["Must be HH:mm."];
         }
         foreach (var (name, value) in new[] { ("conflictRetentionDays", s.ConflictRetentionDays), ("checkpointRetentionDays", s.CheckpointRetentionDays),
-                     ("rollbackPointsToKeep", s.RollbackPointsToKeep), ("retryBackoffSeconds", s.RetryBackoffSeconds), ("fileDetailRunsKept", s.FileDetailRunsKept) })
+                     ("rollbackPointsToKeep", s.RollbackPointsToKeep), ("retryBackoffSeconds", s.RetryBackoffSeconds), ("fileDetailRunsKept", s.FileDetailRunsKept), ("fullPullIntervalDays", s.FullPullIntervalDays) })
         {
             if (value < 0)
                 errors[$"/{name}"] = ["Must not be negative."];
@@ -227,6 +228,8 @@ public static class SettingsEndpoints
         settings.BackupConflictLosers = s.BackupConflictLosers;
         settings.RunMissedSchedules = s.RunMissedSchedules;
         settings.CompanionBroadcastsEnabled = s.CompanionBroadcastsEnabled;
+        settings.IncrementalPull = s.IncrementalPull;
+        settings.FullPullIntervalDays = s.FullPullIntervalDays;
     }
 
     private static void Merge(JsonObject target, JsonObject patch)
