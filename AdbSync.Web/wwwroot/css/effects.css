@@ -524,6 +524,15 @@ body:not(.glass) .phase-line.active {
     padding: 2px 0;
 }
 
+.device-status-slot {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+}
+
 .device-dot {
     flex: none;
     width: 9px;

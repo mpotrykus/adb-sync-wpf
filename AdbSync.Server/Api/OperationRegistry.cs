@@ -18,6 +18,21 @@ public sealed class OperationRegistry(EventBus bus, ILogger<OperationRegistry> l
 {
     private static readonly TimeSpan KeepFinished = TimeSpan.FromDays(1);
     private readonly ConcurrentDictionary<string, OperationDto> _operations = new();
+    private readonly ConcurrentDictionary<string, CancellationTokenSource> _cancellations = new();
+
+    public bool CancelForJob(Guid jobId)
+    {
+        var cancelled = false;
+        foreach (var operation in _operations.Values.Where(o => o.JobId == jobId && o.Status == "running"))
+        {
+            if (_cancellations.TryGetValue(operation.Id, out var cts))
+            {
+                cts.Cancel();
+                cancelled = true;
+            }
+        }
+        return cancelled;
+    }
 
     public OperationDto? Get(string id) => _operations.GetValueOrDefault(id);
 
@@ -29,6 +44,8 @@ public sealed class OperationRegistry(EventBus bus, ILogger<OperationRegistry> l
         Prune();
         var operation = new OperationDto(Guid.NewGuid().ToString("N"), kind, "running", jobId, DateTimeOffset.UtcNow, null, null, null, null, null);
         Update(operation);
+        var cts = new CancellationTokenSource();
+        _cancellations[operation.Id] = cts;
         _ = Task.Run(async () =>
         {
             try
@@ -36,8 +53,12 @@ public sealed class OperationRegistry(EventBus bus, ILogger<OperationRegistry> l
                 var result = await work((message, fraction) => Update(_operations[operation.Id] with
                 {
                     Progress = new OperationProgressDto(message, fraction),
-                }), CancellationToken.None);
+                }), cts.Token);
                 Update(_operations[operation.Id] with { Status = "succeeded", FinishedAt = DateTimeOffset.UtcNow, Result = result });
+            }
+            catch (OperationCanceledException) when (cts.IsCancellationRequested)
+            {
+                Update(_operations[operation.Id] with { Status = "cancelled", FinishedAt = DateTimeOffset.UtcNow, Message = "Cancelled" });
             }
             catch (Exception ex)
             {
@@ -49,6 +70,11 @@ public sealed class OperationRegistry(EventBus bus, ILogger<OperationRegistry> l
                     ErrorCode = ex is OperationFailedException failed ? failed.Code : "internal_error",
                     Message = ex.Message,
                 });
+            }
+            finally
+            {
+                _cancellations.TryRemove(operation.Id, out _);
+                cts.Dispose();
             }
         });
         return operation;

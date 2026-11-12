@@ -178,13 +178,13 @@ public static class JobEndpoints
             return Results.Accepted();
         }).RequireRunJobs();
 
-        api.MapPost("/jobs/{jobId:guid}/stop", async (Guid jobId, AppConfigService configService, JobRunService runs) =>
+        api.MapPost("/jobs/{jobId:guid}/stop", async (Guid jobId, AppConfigService configService, JobRunService runs, OperationRegistry operations) =>
         {
             var config = await configService.GetAsync();
             var index = config.Jobs.FindIndex(j => j.Id == jobId);
             if (index < 0)
                 return JobNotFound();
-            return runs.CancelJob(index)
+            return runs.CancelJob(index) | operations.CancelForJob(jobId)
                 ? Results.Accepted()
                 : Problems.Create(StatusCodes.Status409Conflict, "job_not_running", "The job isn't running.");
         });

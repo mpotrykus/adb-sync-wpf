@@ -110,10 +110,16 @@ else
                     </MudCardHeader>
                     <MudCardContent Class="pt-0">
                         <div class="d-flex flex-wrap gap-2 mb-4">
-                            @if (busy)
+                            @{ var hasOp = Status.RunningOperations.Any(o => o.JobId == job.JobId); }
+                            @if (hasOp && !(job.Phase == "waitingForAppClose" || job.Devices.Any(d => d.Phase == "waitingForAppClose")))
                             {
-                                <MudChip T="string" Color="Color.Primary" Size="Size.Small" Icon="@Icons.Material.Filled.Sync">
-                                    @(job.State == "queued" ? "Queued" : "Running" + (job.Phase is { } p ? " · " + Format.Words(p) : ""))
+                            }
+                            else if (busy)
+                            {
+                                var waitingOnApp = job.Phase == "waitingForAppClose" || job.Devices.Any(d => d.Phase == "waitingForAppClose");
+                                <MudChip T="string" Color="@(waitingOnApp ? Color.Warning : Color.Primary)" Size="Size.Small"
+                                         Icon="@(waitingOnApp ? Icons.Material.Filled.HourglassTop : Icons.Material.Filled.Sync)">
+                                    @(waitingOnApp ? "Waiting · app is open" : job.State == "queued" ? "Queued" : "Running" + (job.Phase is { } p ? " · " + Format.Words(p) : ""))
                                 </MudChip>
                             }
                             else
@@ -150,7 +156,8 @@ else
                             }
                         </div>
 
-                        @foreach (var op in Status.RunningOperations.Where(o => o.JobId == job.JobId && OperationPhases.ContainsKey(o.Kind)))
+                        @{ var opGraphs = Status.RunningOperations.Where(o => o.JobId == job.JobId && OperationPhases.ContainsKey(o.Kind)).ToList(); }
+                        @foreach (var op in opGraphs)
                         {
                             var steps = OperationPhases[op.Kind];
                             <div class="phase-graph fixed-gap">
@@ -170,7 +177,7 @@ else
                             </div>
                         }
 
-                        @if (busy)
+                        @if (busy && opGraphs.Count == 0)
                         {
                             <div class="phase-graph">
                                 @for (var i = 0; i < Phases.Length; i++)
@@ -222,14 +229,16 @@ else
                                                 var deviceState = _devices.FirstOrDefault(d => d.Id == binding.DeviceId)?.Connection.State ?? "unknown";
                                                 var phase = busy ? job.Devices.FirstOrDefault(d => d.DeviceId == binding.DeviceId)?.Phase : null;
                                                 <div class="job-device-row">
-                                                    @if (phase is not null && PhaseIcon(phase) is { } icon)
-                                                    {
-                                                        <MudIcon Icon="@icon" Size="Size.Small" Class="@("device-phase " + phase)" title="@PhaseLabel(phase)" />
-                                                    }
-                                                    else
-                                                    {
-                                                        <span class="@("device-dot " + deviceState)" title="@Format.Words(deviceState)"></span>
-                                                    }
+                                                    <span class="device-status-slot">
+                                                        @if (phase is not null && PhaseIcon(phase) is { } icon)
+                                                        {
+                                                            <MudIcon Icon="@icon" Size="Size.Small" Class="@("device-phase " + phase)" title="@PhaseLabel(phase)" />
+                                                        }
+                                                        else
+                                                        {
+                                                            <span class="@("device-dot " + deviceState)" title="@Format.Words(deviceState)"></span>
+                                                        }
+                                                    </span>
                                                     <MudText Typo="Typo.body2">@_deviceNames.GetValueOrDefault(binding.DeviceId, "?")</MudText>
                                                 </div>
                                             }
