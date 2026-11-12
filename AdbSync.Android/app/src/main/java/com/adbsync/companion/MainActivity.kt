@@ -77,6 +77,7 @@ class MainActivity : Activity() {
     private lateinit var wifiDebugStatus: LinearLayout
     private lateinit var autoEnableSwitch: Switch
     private lateinit var serviceStatus: TextView
+    private lateinit var browserCard: LinearLayout
 
     private val jobs = linkedMapOf<String, RemoteJob>()
     private var feedActive: AtomicBoolean? = null
@@ -90,7 +91,7 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         actionBar?.hide()
-        window.setBackgroundDrawable(Ui.windowBackground())
+        window.setBackgroundDrawable(Ui.windowBackground(this))
         window.isNavigationBarContrastEnforced = false
         window.insetsController?.setSystemBarsAppearance(
             0, WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS,
@@ -100,7 +101,7 @@ class MainActivity : Activity() {
             isVerticalScrollBarEnabled = false
             addView(LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
-                setPadding(dp(16), dp(16), dp(16), dp(24))
+                setPadding(dp(16), dp(if (resources.configuration.screenWidthDp > resources.configuration.screenHeightDp) 10 else 16), dp(16), dp(24))
                 views.forEach { addView(it) }
             })
         }
@@ -118,7 +119,8 @@ class MainActivity : Activity() {
             setPadding(0, dp(14), 0, 0)
         }
         jobsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        jobsPage = page(title("Jobs"), pcStatus, conflictsBanner, statsContainer, jobsContainer)
+        val landscape = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        jobsPage = page(*listOfNotNull(if (landscape) null else title("Jobs"), if (landscape) null else pcStatus).toTypedArray(), conflictsBanner, statsContainer, jobsContainer)
 
         wifiDebugStatus = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         autoEnableSwitch = toggle("Turn back on when Wi-Fi connects").apply {
@@ -129,8 +131,9 @@ class MainActivity : Activity() {
         }
         serviceStatus = caption()
         setupCard = card()
+        browserCard = card()
         devicePage = page(
-            title("Device"),
+            *listOfNotNull(if (landscape) null else title("Device")).toTypedArray(),
             subSectionLabel("Wireless debugging"),
             card().apply {
                 addView(wifiDebugStatus)
@@ -141,6 +144,8 @@ class MainActivity : Activity() {
             },
             subSectionLabel("Setup"),
             setupCard,
+            subSectionLabel("Web UI"),
+            browserCard,
             subSectionLabel("Diagnostics"),
             card().apply {
                 addView(serviceStatus)
@@ -156,18 +161,44 @@ class MainActivity : Activity() {
             addView(jobsPage)
             addView(devicePage)
         }
-        tabBar = Ui.TabBar(this, listOf(R.drawable.ic_sync to "Jobs", R.drawable.ic_phone to "Device")) { showTab(it) }
-        setContentView(LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            addView(appBar)
-            addView(pages, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
-            addView(tabBar)
-            setOnApplyWindowInsetsListener { view, insets ->
-                val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
-                view.setPadding(bars.left, 0, bars.right, 0)
-                appBar.setPadding(appBar.paddingLeft, bars.top + dp(10), appBar.paddingRight, dp(10))
-                tabBar.setPadding(0, 0, 0, bars.bottom)
-                insets
+        tabBar = Ui.TabBar(this, listOf(R.drawable.ic_sync to "Jobs", R.drawable.ic_phone to "Device"), rail = landscape) { showTab(it) }
+        if (landscape) {
+            pcStatus.setPadding(dp(12), 0, dp(12), 0)
+            appBar.addView(pcStatus, 2)
+            statsContainer.setPadding(0, 0, 0, 0)
+        }
+        val verticalPad = if (landscape) dp(6) else dp(10)
+        appBar.setPadding(appBar.paddingLeft, verticalPad, appBar.paddingRight, verticalPad)
+        setContentView(if (landscape) {
+            LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                addView(tabBar, LinearLayout.LayoutParams(dp(72), MATCH_PARENT))
+                addView(LinearLayout(context).apply {
+                    orientation = LinearLayout.VERTICAL
+                    addView(appBar)
+                    addView(pages, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
+                }, LinearLayout.LayoutParams(0, MATCH_PARENT, 1f))
+                setOnApplyWindowInsetsListener { _, insets ->
+                    val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
+                    setPadding(0, 0, bars.right, bars.bottom)
+                    tabBar.setPadding(bars.left, bars.top, 0, 0)
+                    appBar.setPadding(appBar.paddingLeft, bars.top + verticalPad, appBar.paddingRight, verticalPad)
+                    insets
+                }
+            }
+        } else {
+            LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(appBar)
+                addView(pages, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
+                addView(tabBar)
+                setOnApplyWindowInsetsListener { view, insets ->
+                    val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
+                    view.setPadding(bars.left, 0, bars.right, 0)
+                    appBar.setPadding(appBar.paddingLeft, bars.top + verticalPad, appBar.paddingRight, verticalPad)
+                    tabBar.setPadding(0, 0, 0, bars.bottom)
+                    insets
+                }
             }
         })
         showTab(savedInstanceState?.getInt(STATE_TAB) ?: 0)
@@ -225,24 +256,72 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun chooseBrowser(target: String) {
+    private fun uiPrefs() = getSharedPreferences("ui", MODE_PRIVATE)
+
+    private fun browserList(): List<android.content.pm.ResolveInfo> {
         val probe = Intent(Intent.ACTION_VIEW, Uri.parse("https://example.com"))
             .addCategory(Intent.CATEGORY_BROWSABLE)
-        val browsers = packageManager.queryIntentActivities(probe, PackageManager.MATCH_ALL)
+        return packageManager.queryIntentActivities(probe, PackageManager.MATCH_ALL)
             .distinctBy { it.activityInfo.packageName }
+            .sortedBy { it.loadLabel(packageManager).toString().lowercase() }
+    }
+
+    private fun launchInBrowser(target: String, pkg: String) =
+        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(target)).setPackage(pkg))
+
+    private fun chooseBrowser(target: String) {
+        val browsers = browserList()
         if (browsers.isEmpty()) {
             Toast.makeText(this, "No browser found to open the web UI.", Toast.LENGTH_LONG).show()
             return
         }
-        AlertDialog.Builder(this)
+        val remembered = uiPrefs().getString(PREF_BROWSER, null)
+        if (remembered != null && browsers.any { it.activityInfo.packageName == remembered }) {
+            launchInBrowser(target, remembered)
+            return
+        }
+        val list = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(4), dp(16), dp(8))
+        }
+        val dialog = AlertDialog.Builder(this)
             .setTitle("Open web UI with")
-            .setItems(browsers.map { it.loadLabel(packageManager).toString() }.toTypedArray()) { _, which ->
-                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(target)).setPackage(browsers[which].activityInfo.packageName))
-            }
+            .setView(ScrollView(this).apply { addView(list) })
             .setNegativeButton("Cancel", null)
             .create()
             .styled()
-            .show()
+        browsers.forEach { browser ->
+            val pkg = browser.activityInfo.packageName
+            list.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(12), dp(10), dp(12), dp(10))
+                isClickable = true
+                background = android.graphics.drawable.RippleDrawable(
+                    android.content.res.ColorStateList.valueOf(0x33FFFFFF),
+                    Ui.glass(0x0FFFFFFF, 0x1AFFFFFF, dp(8), dp(1)),
+                    Ui.rounded(0xFFFFFFFF.toInt(), dp(8)),
+                )
+                layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(8) }
+                addView(android.widget.ImageView(context).apply {
+                    setImageDrawable(browser.loadIcon(packageManager))
+                }, LinearLayout.LayoutParams(dp(32), dp(32)).apply { marginEnd = dp(14) })
+                addView(body(browser.loadLabel(packageManager).toString(), Ui.TEXT_PRIMARY, 15f))
+                setOnClickListener {
+                    uiPrefs().edit().putString(PREF_BROWSER, pkg).apply()
+                    refreshSetup()
+                    dialog.dismiss()
+                    launchInBrowser(target, pkg)
+                }
+            })
+        }
+        list.addView(caption("Your choice is remembered. Clear it from the Device tab.").apply { setPadding(dp(4), dp(4), 0, 0) })
+        dialog.show()
+    }
+
+    private fun rememberedBrowserLabel(): String? {
+        val pkg = uiPrefs().getString(PREF_BROWSER, null) ?: return null
+        return runCatching { packageManager.getApplicationInfo(pkg, 0).loadLabel(packageManager).toString() }.getOrDefault(pkg)
     }
 
     private fun setPcStatus(text: String, color: Int) {
@@ -352,7 +431,24 @@ class MainActivity : Activity() {
             })
             return
         }
-        for (job in jobs.values) jobsContainer.addView(jobCard(job))
+        val columns = ((resources.configuration.screenWidthDp - 32) / MIN_CARD_WIDTH_DP).coerceAtLeast(1)
+        if (columns == 1) {
+            for (job in jobs.values) jobsContainer.addView(jobCard(job))
+            return
+        }
+        for (rowJobs in jobs.values.chunked(columns)) {
+            jobsContainer.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                isBaselineAligned = false
+                for (i in 0 until columns) {
+                    val cell = rowJobs.getOrNull(i)?.let { jobCard(it) } ?: View(this@MainActivity)
+                    addView(cell, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply {
+                        if (i < columns - 1) marginEnd = dp(12)
+                        bottomMargin = dp(12)
+                    })
+                }
+            })
+        }
     }
 
     private fun renderStats() {
@@ -866,6 +962,20 @@ class MainActivity : Activity() {
         autoEnableSwitch.isChecked = WirelessDebugging.autoEnable(this)
         autoEnableSwitch.isEnabled = canWrite
 
+        browserCard.removeAllViews()
+        val browser = rememberedBrowserLabel()
+        browserCard.addView(statusLine(
+            if (browser != null) "Opens in $browser" else "Asks which browser each time",
+            if (browser != null) Ui.SUCCESS else Ui.TEXT_SECONDARY, Ui.TEXT_PRIMARY,
+        ))
+        if (browser != null) {
+            browserCard.addView(View(this).apply { minimumHeight = dp(10) })
+            browserCard.addView(button("Clear remembered browser", fill = true) {
+                uiPrefs().edit().remove(PREF_BROWSER).apply()
+                refreshSetup()
+            })
+        }
+
         serviceStatus.text = if (SyncService.isRunning) "Sync service running, holding wake and Wi-Fi locks" else "Sync service idle"
     }
 
@@ -926,7 +1036,9 @@ class MainActivity : Activity() {
     }
 
     private companion object {
+        const val MIN_CARD_WIDTH_DP = 340
         const val STATE_TAB = "tab"
+        const val PREF_BROWSER = "browser"
         const val REQUEST_NOTIFICATIONS = 1
         const val MENU_DRY_RUN = 1
         const val MENU_DISCARD = 2

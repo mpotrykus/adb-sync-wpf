@@ -62,31 +62,43 @@ object Ui {
 
     fun Context.dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 
-    /** The web UI's body.glass backdrop: near-black violet with four soft colored glows. */
-    fun windowBackground(): Drawable = object : Drawable() {
-        private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-        private val glows = listOf(
-            Triple(0.12f to 0.08f, 0.60f, 0x33 shl 24 or 0x7C5CFF),
-            Triple(0.88f to 0.18f, 0.50f, 0x24 shl 24 or 0x4C6FFF),
-            Triple(0.70f to 0.95f, 0.55f, 0x1F shl 24 or 0xA855F7),
-            Triple(0.05f to 0.85f, 0.45f, 0x12 shl 24 or 0x38BDF8),
-        )
+    /** The web UI's body.glass backdrop: the same arcs image at 55% over #09061a, cropped to fill. */
+    fun windowBackground(context: Context): Drawable = object : Drawable() {
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { alpha = 140 }
+        private val image = android.graphics.BitmapFactory.decodeResource(context.resources, R.drawable.bg_arcs)
 
         override fun draw(canvas: Canvas) {
-            canvas.drawColor(BACKGROUND)
+            canvas.drawColor(0xFF09061A.toInt())
             val w = bounds.width().toFloat()
             val h = bounds.height().toFloat()
-            for ((center, radius, color) in glows) {
-                val r = radius * maxOf(w, h)
-                paint.shader = RadialGradient(center.first * w, center.second * h, r, color, color and 0x00FFFFFF, Shader.TileMode.CLAMP)
-                canvas.drawRect(bounds, paint)
-            }
+            val scale = maxOf(w / image.width, h / image.height) * 1.08f
+            canvas.save()
+            canvas.translate((w - image.width * scale) / 2, (h - image.height * scale) / 2)
+            canvas.scale(scale, scale)
+            canvas.drawBitmap(image, 0f, 0f, paint)
+            canvas.restore()
         }
 
         override fun setAlpha(alpha: Int) {}
         override fun setColorFilter(colorFilter: ColorFilter?) {}
         @Suppress("OVERRIDE_DEPRECATION")
         override fun getOpacity() = PixelFormat.OPAQUE
+    }
+
+    /** Frosted glass bar fill: a faint white gradient with a hairline on the edge that faces the content. */
+    fun frostedBar(context: Context, edgeOnTop: Boolean, edgeOnEnd: Boolean = false): Drawable {
+        val line = maxOf(1, context.resources.displayMetrics.density.toInt())
+        val frost = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0x24FFFFFF, 0x12FFFFFF))
+        val edge = GradientDrawable().apply { setColor(0x33FFFFFF) }
+        return LayerDrawable(arrayOf(frost, edge)).apply {
+            if (edgeOnEnd) {
+                setLayerGravity(1, Gravity.END or Gravity.FILL_VERTICAL)
+                setLayerWidth(1, line)
+            } else {
+                setLayerGravity(1, (if (edgeOnTop) Gravity.TOP else Gravity.BOTTOM) or Gravity.FILL_HORIZONTAL)
+                setLayerHeight(1, line)
+            }
+        }
     }
 
     /** A glass card. With [accent] it gets the web job card's colored left edge; [glow] adds a tinted border (running jobs). */
@@ -245,7 +257,7 @@ object Ui {
     fun Context.header(action: View?): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        setBackgroundColor(0xA6000000.toInt())
+        background = frostedBar(context, edgeOnTop = false)
         setPadding(dp(16), dp(10), dp(16), dp(10))
         addView(View(context).apply {
             background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(ACCENT_FROM, ACCENT_TO))
@@ -433,22 +445,26 @@ object Ui {
         return (0xFF shl 24) or (((r + m) * 255).toInt() shl 16) or (((g + m) * 255).toInt() shl 8) or ((b + m) * 255).toInt()
     }
 
-    /** Bottom navigation in the web nav rail's style: dark translucent bar, accent-colored active tab, optional alert dot. */
-    class TabBar(context: Context, tabs: List<Pair<Int, String>>, private val onSelect: (Int) -> Unit) : LinearLayout(context) {
+    /** Bottom navigation: icon-only tabs on a frosted glass bar, accent-colored active tab, optional alert dot. */
+    class TabBar(
+        context: Context,
+        tabs: List<Pair<Int, String>>,
+        private val rail: Boolean = false,
+        private val onSelect: (Int) -> Unit,
+    ) : LinearLayout(context) {
         private val icons = ArrayList<ImageView>()
-        private val labels = ArrayList<TextView>()
         private val badges = ArrayList<View>()
 
         init {
-            orientation = HORIZONTAL
-            setBackgroundColor(0xB0000000.toInt())
+            orientation = if (rail) VERTICAL else HORIZONTAL
+            if (rail) gravity = Gravity.CENTER_VERTICAL
             val d = resources.displayMetrics.density
+            background = frostedBar(context, edgeOnTop = true, edgeOnEnd = rail)
             tabs.forEachIndexed { i, (icon, label) ->
-                val tab = LinearLayout(context).apply {
-                    orientation = VERTICAL
-                    gravity = Gravity.CENTER_HORIZONTAL
-                    setPadding(0, (8 * d).toInt(), 0, (8 * d).toInt())
+                val tab = FrameLayout(context).apply {
+                    setPadding(0, (14 * d).toInt(), 0, (14 * d).toInt())
                     isClickable = true
+                    contentDescription = label
                     background = RippleDrawable(ColorStateList.valueOf(0x22FFFFFF), null, ColorDrawable(0xFFFFFFFF.toInt()))
                     setOnClickListener { select(i); onSelect(i) }
                 }
@@ -458,27 +474,18 @@ object Ui {
                     visibility = GONE
                 }
                 tab.addView(FrameLayout(context).apply {
-                    addView(image, FrameLayout.LayoutParams((24 * d).toInt(), (24 * d).toInt(), Gravity.CENTER))
-                    addView(badge, FrameLayout.LayoutParams((8 * d).toInt(), (8 * d).toInt(), Gravity.TOP or Gravity.END))
-                }, LayoutParams((40 * d).toInt(), (24 * d).toInt()))
-                val text = TextView(context).apply {
-                    this.text = label
-                    textSize = 11f
-                    typeface = context.resources.getFont(R.font.ibm_plex_sans_medium)
-                    setPadding(0, (2 * d).toInt(), 0, 0)
-                }
-                tab.addView(text)
-                addView(tab, LayoutParams(0, WRAP_CONTENT, 1f))
-                icons += image; labels += text; badges += badge
+                    addView(image, FrameLayout.LayoutParams((26 * d).toInt(), (26 * d).toInt(), Gravity.CENTER))
+                    addView(badge, FrameLayout.LayoutParams((9 * d).toInt(), (9 * d).toInt(), Gravity.TOP or Gravity.END))
+                }, FrameLayout.LayoutParams((42 * d).toInt(), (26 * d).toInt(), Gravity.CENTER))
+                addView(tab, if (rail) LayoutParams(MATCH_PARENT, WRAP_CONTENT) else LayoutParams(0, WRAP_CONTENT, 1f))
+                icons += image; badges += badge
             }
             select(0)
         }
 
         fun select(index: Int) {
             icons.indices.forEach { i ->
-                val color = if (i == index) ACCENT_FROM else TEXT_SECONDARY
-                icons[i].imageTintList = ColorStateList.valueOf(color)
-                labels[i].setTextColor(color)
+                icons[i].imageTintList = ColorStateList.valueOf(if (i == index) ACCENT_FROM else TEXT_SECONDARY)
             }
         }
 

@@ -50,7 +50,7 @@ class ConflictsActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         actionBar?.hide()
-        window.setBackgroundDrawable(Ui.windowBackground())
+        window.setBackgroundDrawable(Ui.windowBackground(this))
         window.isNavigationBarContrastEnforced = false
         window.insetsController?.setSystemBarsAppearance(
             0, WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS,
