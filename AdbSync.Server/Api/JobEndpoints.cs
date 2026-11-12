@@ -170,13 +170,13 @@ public static class JobEndpoints
                 trigger: RunTrigger.Manual, runId: runId, requestedBy: http.CurrentClientId()));
             var queued = await WaitForQueuedAsync(registry, runId);
             return Results.Accepted($"/api/v1/runs/{runId}", queued);
-        });
+        }).RequireRunJobs();
 
         api.MapPost("/jobs/run-all", async (JobRunService runs) =>
         {
             _ = Task.Run(() => runs.RunAllEnabledAsync());
             return Results.Accepted();
-        });
+        }).RequireRunJobs();
 
         api.MapPost("/jobs/{jobId:guid}/stop", async (Guid jobId, AppConfigService configService, JobRunService runs) =>
         {
@@ -216,11 +216,12 @@ public static class JobEndpoints
 
     public static void MapRunEndpoints(this IEndpointRouteBuilder api)
     {
-        api.MapGet("/runs", async (Guid? jobId, int? limit, string? cursor, AppConfigService configService, IRunHistoryStore history, RunRegistry registry, CancellationToken ct) =>
+        api.MapGet("/runs", async (Guid[]? jobId, int? limit, string? cursor, AppConfigService configService, IRunHistoryStore history, RunRegistry registry, CancellationToken ct) =>
         {
             var config = await configService.GetAsync();
-            var jobs = config.Jobs.Where(j => jobId is null || j.Id == jobId).ToList();
-            var active = registry.Active.Where(r => jobId is null || r.JobId == jobId).ToDictionary(r => r.Id);
+            var wanted = jobId is { Length: > 0 } ? jobId.ToHashSet() : null;
+            var jobs = config.Jobs.Where(j => wanted is null || wanted.Contains(j.Id)).ToList();
+            var active = registry.Active.Where(r => wanted is null || wanted.Contains(r.JobId)).ToDictionary(r => r.Id);
             var runs = new List<RunDto>();
             foreach (var job in jobs)
                 runs.AddRange((await history.ListRunsAsync(job.Name, ct)).Select(r => RunRegistry.FromHistory(r, job.Id)));

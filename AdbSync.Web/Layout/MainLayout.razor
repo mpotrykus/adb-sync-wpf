@@ -7,8 +7,9 @@
 @inject ISnackbar Snackbar
 @inject IDialogService Dialogs
 @inject IJSRuntime JS
+@inject ThemeState Theme
 
-<MudThemeProvider @ref="_themeProvider" Theme="_theme" IsDarkMode="_dark" />
+<MudThemeProvider @ref="_themeProvider" Theme="_theme" IsDarkMode="Theme.Dark" />
 <MudPopoverProvider />
 <MudDialogProvider CloseOnEscapeKey="true" />
 <MudSnackbarProvider />
@@ -30,24 +31,16 @@ else
 {
     <MudLayout>
         <MudAppBar Elevation="0">
-            <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@(() => _drawerOpen = !_drawerOpen)" />
-            <span class="brand ml-1 ml-sm-3"><span class="brand-mark"></span><MudText Typo="Typo.h6" Class="brand-text">AdbSync</MudText></span>
+            @if (_mobile)
+            {
+                <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@(() => _drawerOpen = !_drawerOpen)" />
+            }
+            <span class="brand @(_mobile ? "ml-1" : "")"><span class="brand-mark"></span><MudText Typo="Typo.h6" Class="brand-text">AdbSync</MudText></span>
             @if (Status.Snapshot?.Server.Name is { } name)
             {
                 <MudText Typo="Typo.caption" Class="ml-3 mt-1 d-none d-sm-flex" Style="opacity:.8">@name</MudText>
             }
             <MudSpacer />
-            @if (Status.Snapshot is { } snapshot)
-            {
-                <MudTooltip Text="@(snapshot.Scheduler.Paused ? "Timed runs are paused. On-change runs still start when a phone changes." : "Timed runs are on")">
-                    <MudButton Variant="Variant.Text" Color="Color.Inherit" Disabled="_schedulerBusy"
-                               StartIcon="@(snapshot.Scheduler.Paused ? Icons.Material.Filled.PauseCircle : Icons.Material.Filled.PlayCircle)"
-                               OnClick="ToggleSchedulerAsync">
-                        <span class="d-none d-sm-inline">@(snapshot.Scheduler.Paused ? "Scheduler paused" : "Scheduler on")</span>
-                    </MudButton>
-                </MudTooltip>
-            }
-            <MudIconButton Icon="@(_dark ? Icons.Material.Filled.LightMode : Icons.Material.Filled.DarkMode)" Color="Color.Inherit" OnClick="ToggleDarkAsync" />
             <MudMenu Icon="@Icons.Material.Filled.AccountCircle" Color="Color.Inherit" AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
                 <MudMenuItem Icon="@Icons.Material.Filled.QrCode2" OnClick="PairClientAsync">Pair another client</MudMenuItem>
                 <MudMenuItem Icon="@Icons.Material.Filled.Logout" OnClick="SignOutAsync">Sign out</MudMenuItem>
@@ -61,6 +54,13 @@ else
                 <MudNavLink Href="devices" Icon="@Icons.Material.Filled.PhoneAndroid">Devices</MudNavLink>
                 <MudNavLink Href="settings" Icon="@Icons.Material.Filled.Settings">Settings</MudNavLink>
             </MudNavMenu>
+            @if (!_mobile)
+            {
+                <div class="drawer-toggle">
+                    <MudIconButton Icon="@(_drawerOpen ? Icons.Material.Filled.ChevronLeft : Icons.Material.Filled.ChevronRight)"
+                                   Size="Size.Small" OnClick="@(() => _drawerOpen = !_drawerOpen)" />
+                </div>
+            }
         </MudDrawer>
         <MudMainContent>
             @if (Status.Error is { } error)
@@ -75,13 +75,9 @@ else
 }
 
 @code {
-    private const string ThemeKey = "adbsync.theme";
-
     private MudThemeProvider? _themeProvider;
-    private bool _dark;
     private bool _drawerOpen;
     private bool _mobile;
-    private bool _schedulerBusy;
     private bool _watching;
 
     private readonly MudTheme _theme = new()
@@ -133,6 +129,7 @@ else
     {
         Session.Changed += OnSessionChanged;
         Status.Changed += OnStatusChanged;
+        Theme.Changed += OnStatusChanged;
         Navigation.LocationChanged += OnLocationChanged;
         await Session.LoadAsync();
         EnsureRoute();
@@ -143,20 +140,7 @@ else
     {
         if (!firstRender || _themeProvider is null)
             return;
-        string? stored = null;
-        try
-        {
-            stored = await JS.InvokeAsync<string?>("localStorage.getItem", ThemeKey);
-        }
-        catch (JSException)
-        {
-        }
-        _dark = stored switch
-        {
-            "dark" => true,
-            "light" => false,
-            _ => true,
-        };
+        await Theme.LoadAsync();
         try
         {
             _mobile = await JS.InvokeAsync<int>("eval", "window.innerWidth") < 960;
@@ -164,19 +148,7 @@ else
         catch (JSException)
         {
         }
-        await ApplyGlassAsync();
         StateHasChanged();
-    }
-
-    private async Task ApplyGlassAsync()
-    {
-        try
-        {
-            await JS.InvokeVoidAsync("document.body.classList.toggle", "glass", _dark);
-        }
-        catch (JSException)
-        {
-        }
     }
 
     private bool OnSignInPage => Navigation.ToBaseRelativePath(Navigation.Uri).StartsWith("signin", StringComparison.OrdinalIgnoreCase);
@@ -210,40 +182,6 @@ else
 
     private void OnStatusChanged() => InvokeAsync(StateHasChanged);
 
-    private async Task ToggleSchedulerAsync()
-    {
-        if (Status.Snapshot is not { } snapshot)
-            return;
-        _schedulerBusy = true;
-        try
-        {
-            var state = await Api.PatchAsync<SchedulerStateDto>("scheduler", new { paused = !snapshot.Scheduler.Paused });
-            Snackbar.Add(state.Paused ? "Scheduler paused" : "Scheduler resumed", Severity.Info);
-            await Status.RefreshAsync();
-        }
-        catch (ApiException ex)
-        {
-            if (!ex.IsSignedOut()) Snackbar.Add(ex.Message, Severity.Error);
-        }
-        finally
-        {
-            _schedulerBusy = false;
-        }
-    }
-
-    private async Task ToggleDarkAsync()
-    {
-        _dark = !_dark;
-        await ApplyGlassAsync();
-        try
-        {
-            await JS.InvokeVoidAsync("localStorage.setItem", ThemeKey, _dark ? "dark" : "light");
-        }
-        catch (JSException)
-        {
-        }
-    }
-
     private async void OnLocationChanged(object? sender, LocationChangedEventArgs e)
     {
         if (!_drawerOpen)
@@ -259,6 +197,7 @@ else
         {
         }
     }
+
 
     private async Task PairClientAsync() =>
         await Dialogs.ShowAsync<PairingCodeDialog>("Pair another client", new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true });
@@ -281,6 +220,7 @@ else
     {
         Session.Changed -= OnSessionChanged;
         Status.Changed -= OnStatusChanged;
+        Theme.Changed -= OnStatusChanged;
         Navigation.LocationChanged -= OnLocationChanged;
         if (_watching)
             Status.Unwatch();

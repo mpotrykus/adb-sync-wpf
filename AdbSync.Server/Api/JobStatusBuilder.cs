@@ -30,7 +30,7 @@ public sealed class JobStatusBuilder(
             job.Enabled,
             State(live),
             runs.ActiveFor(job.Id)?.Id,
-            live.Running ? Contract.SyncPhase(live.Phase) : null,
+            live.Running ? JobPhase(live) : null,
             live.Devices
                 .Where(d => deviceIds.ContainsKey(d.Device) && Contract.SyncPhase(d.Phase) is not null)
                 .Select(d => new DevicePhaseDto(deviceIds[d.Device], Contract.SyncPhase(d.Phase)!))
@@ -49,6 +49,18 @@ public sealed class JobStatusBuilder(
             lastRecord?.ErrorCode == RunErrorCode.PushSafetyBlocked,
             new AvailabilityDto(unavailable is null ? "ok" : "unavailable", unavailable),
             watch.For(job, config));
+    }
+
+    private static readonly string[] PhaseOrder = ["preConnect", "waitingForDevice", "pull", "merge", "push"];
+
+    private static string? JobPhase(Core.Services.Companion.JobStatus live)
+    {
+        var jobPhase = Contract.SyncPhase(live.Phase);
+        var furthest = live.Devices
+            .Select(d => Contract.SyncPhase(d.Phase))
+            .Where(p => p is not null && Array.IndexOf(PhaseOrder, p) >= 0)
+            .MaxBy(p => Array.IndexOf(PhaseOrder, p));
+        return furthest is not null && Array.IndexOf(PhaseOrder, furthest) > Array.IndexOf(PhaseOrder, jobPhase) ? furthest : jobPhase;
     }
 
     private static string State(Core.Services.Companion.JobStatus live) => live switch

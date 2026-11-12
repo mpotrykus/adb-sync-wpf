@@ -15,6 +15,7 @@ public sealed class StatusStore(ApiClient api) : IDisposable
     private int _refreshQueued;
 
     public StatusSnapshotDto? Snapshot { get; private set; }
+    public IReadOnlyList<OperationDto> RunningOperations { get; private set; } = [];
     public string? Error { get; private set; }
     public bool StreamConnected { get; private set; }
     public event Action? Changed;
@@ -48,6 +49,7 @@ public sealed class StatusStore(ApiClient api) : IDisposable
         {
             Snapshot = await api.GetAsync<StatusSnapshotDto>("status");
             Error = null;
+            RunningOperations = (await api.GetAsync<List<OperationDto>>("operations")).Where(o => o.Status == "running").ToList();
         }
         catch (Exception ex) when (ex is ApiException or HttpRequestException)
         {
@@ -133,7 +135,7 @@ public sealed class StatusStore(ApiClient api) : IDisposable
             _lastEventId = null;
         if (type != "run.log")
             EventReceived?.Invoke(type);
-        if (type is "run.log" or "run.steps")
+        if (type == "run.log")
             return;
         if (Interlocked.Exchange(ref _refreshQueued, 1) == 0)
             _ = DebouncedRefreshAsync();

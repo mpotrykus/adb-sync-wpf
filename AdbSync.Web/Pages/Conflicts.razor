@@ -10,27 +10,27 @@
 <div class="page-head">
     <MudText Typo="Typo.h4">Conflicts</MudText>
     <MudSpacer />
-    <MudSelect T="Guid?" Value="_jobFilter" ValueChanged="OnJobFilterAsync" Label="Job" Variant="Variant.Outlined" Dense="true"
-               Margin="Margin.Dense" Clearable="true" Class="filter-select">
-        @foreach (var job in _jobs)
-        {
-            <MudSelectItem T="Guid?" Value="@((Guid?)job.Id)">@job.Name</MudSelectItem>
-        }
-    </MudSelect>
-    <MudMenu Label="Resolve all" Variant="Variant.Filled" Color="Color.Primary" Disabled="@(_conflicts.Count == 0 || _busy)" EndIcon="@Icons.Material.Filled.ArrowDropDown">
+    @if (_jobsLoaded)
+    {
+    <JobFilter Jobs="_jobs" Selected="_jobFilter" SelectedChanged="OnJobFilterAsync" />
+    }
+    <MudMenu Icon="@Icons.Material.Filled.DoneAll" Color="Color.Primary" Variant="Variant.Filled" AriaLabel="Resolve all" title="Resolve all"
+             Disabled="@(Visible.Count == 0 || _busy)">
         @foreach (var choice in Choices)
         {
             <MudMenuItem OnClick="() => ResolveAllAsync(choice.Key)">@choice.Label</MudMenuItem>
         }
     </MudMenu>
-    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Refresh" OnClick="ReloadAsync">Refresh</MudButton>
+    <MudTooltip Text="Refresh">
+        <MudIconButton Icon="@Icons.Material.Filled.Refresh" OnClick="ReloadAsync" />
+    </MudTooltip>
 </div>
 
 @if (_loading)
 {
     <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="220px" />
 }
-else if (_conflicts.Count == 0)
+else if (Visible.Count == 0)
 {
     <MudPaper Class="pa-8 d-flex flex-column align-center" Outlined="true">
         <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Large" Color="Color.Success" Class="mb-2" />
@@ -43,10 +43,10 @@ else
         These files changed on more than one side. Pick which version wins; the job's next run carries the result to every device.
     </MudText>
     <MudStack Spacing="3">
-        @foreach (var c in _conflicts)
+        @foreach (var c in Visible)
         {
             var running = _pending.Contains(c.Id);
-            <MudCard Elevation="1" @key="c.Id">
+            <MudCard Elevation="1" Class="conflict-card" @key="c.Id">
                 <MudCardContent>
                     <div class="d-flex align-center flex-wrap gap-2 mb-3">
                         <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@JobName(c.JobId)</MudChip>
@@ -58,20 +58,20 @@ else
                         <MudItem xs="12" sm="6">
                             <MudText Typo="Typo.overline">Master (server copy)</MudText>
                             <ConflictThumb ConflictId="@c.Id" Side="master" HasPreview="c.Master.HasPreview" />
-                            <MudText Typo="Typo.caption">@Describe(c.Master)</MudText>
+                            <MudText Typo="Typo.caption" Class="d-block">@Describe(c.Master)</MudText>
+                            <MudButton Class="mt-2" Variant="Variant.Outlined" Size="Size.Small" Disabled="running" OnClick='() => ResolveOneAsync(c, "master")'>Keep master</MudButton>
                         </MudItem>
                         <MudItem xs="12" sm="6">
                             <MudText Typo="Typo.overline">@DeviceName(c.DeviceId)</MudText>
                             <ConflictThumb ConflictId="@c.Id" Side="device" HasPreview="c.Device.HasPreview" />
-                            <MudText Typo="Typo.caption">@Describe(c.Device)</MudText>
+                            <MudText Typo="Typo.caption" Class="d-block">@Describe(c.Device)</MudText>
+                            <MudButton Class="mt-2" Variant="Variant.Outlined" Size="Size.Small" Disabled="running" OnClick='() => ResolveOneAsync(c, "device")'>Keep @DeviceName(c.DeviceId)</MudButton>
                         </MudItem>
                     </MudGrid>
                 </MudCardContent>
-                <MudCardActions Class="px-4 pb-3 flex-wrap gap-2">
-                    @foreach (var choice in Choices)
-                    {
-                        <MudButton Variant="Variant.Outlined" Size="Size.Small" Disabled="running" OnClick="() => ResolveOneAsync(c, choice.Key)">@choice.Label</MudButton>
-                    }
+                <MudCardActions Class="px-4 pb-3 flex-wrap gap-2 justify-center">
+                    <MudButton Variant="Variant.Outlined" Size="Size.Small" Disabled="running" OnClick='() => ResolveOneAsync(c, "both")'>Keep both</MudButton>
+                    <MudButton Variant="Variant.Outlined" Size="Size.Small" Disabled="running" OnClick='() => ResolveOneAsync(c, "newest")'>Keep newest</MudButton>
                 </MudCardActions>
             </MudCard>
         }
@@ -93,12 +93,19 @@ else
     private List<JobDto> _jobs = [];
     private Dictionary<Guid, string> _deviceNames = [];
     private readonly HashSet<string> _pending = [];
-    private Guid? _jobFilter;
+    [SupplyParameterFromQuery(Name = "job")] public Guid? JobQuery { get; set; }
+
+    private bool _jobsLoaded;
+    private IReadOnlySet<Guid> _jobFilter = new HashSet<Guid>();
+
+    private List<ConflictDto> Visible =>
+        _jobFilter.Count == 0 ? _conflicts : _conflicts.Where(c => _jobFilter.Contains(c.JobId)).ToList();
     private bool _loading = true;
     private bool _busy;
 
     protected override async Task OnInitializedAsync()
     {
+        if (JobQuery is { } queryJob) _jobFilter = new HashSet<Guid> { queryJob };
         try
         {
             _jobs = await Api.GetAsync<List<JobDto>>("jobs");
@@ -108,6 +115,7 @@ else
         {
             if (!ex.IsSignedOut()) Snackbar.Add(ex.Message, Severity.Error);
         }
+        _jobsLoaded = true;
         await ReloadAsync();
         Status.EventReceived += OnEvent;
     }
@@ -134,7 +142,7 @@ else
     {
         try
         {
-            _conflicts = await Api.GetAsync<List<ConflictDto>>("conflicts" + (_jobFilter is { } id ? $"?jobId={id}" : ""));
+            _conflicts = await Api.GetAsync<List<ConflictDto>>("conflicts");
         }
         catch (Exception ex) when (ex is ApiException or HttpRequestException)
         {
@@ -143,11 +151,7 @@ else
         _loading = false;
     }
 
-    private async Task OnJobFilterAsync(Guid? id)
-    {
-        _jobFilter = id;
-        await ReloadAsync();
-    }
+    private void OnJobFilterAsync(IReadOnlySet<Guid> selected) => _jobFilter = selected;
 
     private async Task ResolveOneAsync(ConflictDto conflict, string choice)
     {
@@ -171,16 +175,19 @@ else
     private async Task ResolveAllAsync(string choice)
     {
         var label = Choices.First(c => c.Key == choice).Label.ToLowerInvariant();
-        var scope = _jobFilter is null ? "every pending conflict" : $"every pending conflict for {JobName(_jobFilter.Value)}";
+        var visible = Visible;
+        var scope = _jobFilter.Count == 0
+            ? "every pending conflict"
+            : $"every pending conflict for {string.Join(", ", _jobFilter.Select(JobName))}";
         var confirmed = await Dialogs.ShowMessageBox("Resolve all",
-            $"Resolve {scope} ({_conflicts.Count}) with \"{label}\"?", yesText: "Resolve", cancelText: "Cancel");
+            $"Resolve {scope} ({visible.Count}) with \"{label}\"?", yesText: "Resolve", cancelText: "Cancel");
         if (confirmed != true)
             return;
         _busy = true;
         try
         {
             var result = await Api.PostAsync<ResolveResultDto>("conflicts/resolve",
-                new ResolveManyRequest(choice, _jobFilter, _conflicts.Select(c => c.Id).ToList()));
+                new ResolveManyRequest(choice, null, visible.Select(c => c.Id).ToList()));
             Snackbar.Add(result.Failed.Count == 0 ? $"Resolved {result.Resolved}" : $"Resolved {result.Resolved}, {result.Failed.Count} failed: {result.Failed[0].Detail ?? result.Failed[0].Code}",
                 result.Failed.Count == 0 ? Severity.Success : Severity.Warning);
         }

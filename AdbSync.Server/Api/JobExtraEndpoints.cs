@@ -154,7 +154,7 @@ public static class JobExtraEndpoints
             {
                 return Problems.Create(StatusCodes.Status502BadGateway, "device_unreachable", "Couldn't reach the device.", ex.Message);
             }
-        });
+        }).RequireRunJobs();
 
         api.MapPost("/jobs/{jobId:guid}/app/close-and-sync", async (
             Guid jobId, DeviceRefDto request, AppConfigService configService, AppGateService gate, OperationRegistry operations) =>
@@ -176,7 +176,7 @@ public static class JobExtraEndpoints
                 return new { runId, result = result.Result, stillOutOfSync = result.StillOutOfSync, reason = result.Reason };
             });
             return Results.Accepted($"/api/v1/operations/{operation.Id}", operation);
-        });
+        }).RequireRunJobs();
 
         api.MapGet("/jobs/{jobId:guid}/snapshots", async (Guid jobId, AppConfigService configService, JobRunService runs, CancellationToken ct) =>
         {
@@ -202,7 +202,7 @@ public static class JobExtraEndpoints
                 return created is null ? null : ToDto(created, current.Jobs[index], current);
             });
             return Results.Accepted($"/api/v1/operations/{operation.Id}", operation);
-        });
+        }).RequireRunJobs();
 
         api.MapPost("/jobs/{jobId:guid}/snapshots/{snapshotId}/restore", async (
             Guid jobId, string snapshotId, AppConfigService configService, JobRunService runs, OperationRegistry operations, CancellationToken ct) =>
@@ -224,7 +224,7 @@ public static class JobExtraEndpoints
                 return new { restoredDevices = result.DeviceCount, filesCopied = result.TotalFiles, filesDeleted = result.TotalFilesDeleted, errors = result.Errors };
             });
             return Results.Accepted($"/api/v1/operations/{operation.Id}", operation);
-        });
+        }).RequireRunJobs();
     }
 
     private static string SnapshotId(SnapshotInfo snapshot) =>

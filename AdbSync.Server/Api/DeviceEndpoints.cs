@@ -6,6 +6,7 @@ using AdbSync.Core.Services.Transfer;
 using AdbSync.Engine.Services;
 using AdbSync.Server.Events;
 using AdvancedSharpAdbClient;
+using AdvancedSharpAdbClient.Models;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
@@ -18,7 +19,7 @@ public static class DeviceEndpoints
 {
     private static readonly TimeSpan DeviceCallTimeout = TimeSpan.FromSeconds(30);
 
-    public static DeviceDto ToDto(DeviceConfig device, AppConfig config) => new(
+    public static DeviceDto ToDto(DeviceConfig device, AppConfig config, IReadOnlyList<DeviceData>? live = null) => new(
         device.Id,
         device.Name,
         Transport(device),
@@ -27,11 +28,30 @@ public static class DeviceEndpoints
         device.StaticPort,
         BoundJobs(device, config).Select(j => j.Id).ToList(),
         new DeviceConnectionDto(
-            "unknown",
+            live is null ? "unknown" : IsOnline(device, live) ? "connected" : "unreachable",
             device.CachedHostPort,
             device.CachedHostPort is null ? null : device.Ip is null ? "usb" : "mdns",
             device.CachedAt,
             null));
+
+    private static bool IsOnline(DeviceConfig device, IReadOnlyList<DeviceData> live) =>
+        live.Any(s => s.State == DeviceState.Online && (device.Ip is null
+            ? device.Serial is not null && s.Serial == device.Serial
+            : s.Serial.StartsWith($"{device.Ip}:", StringComparison.Ordinal)));
+
+    private static async Task<IReadOnlyList<DeviceData>?> TryLiveDevicesAsync(IAdbClient adb, CancellationToken ct)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(TimeSpan.FromSeconds(3));
+        try
+        {
+            return (await adb.GetDevicesAsync(timeout.Token)).ToList();
+        }
+        catch (Exception) when (!ct.IsCancellationRequested)
+        {
+            return null;
+        }
+    }
 
     private static string Transport(DeviceConfig device) => device.Ip is null && device.Serial is not null ? "usb" : "wifi";
 
@@ -93,10 +113,11 @@ public static class DeviceEndpoints
 
     public static void MapDeviceEndpoints(this IEndpointRouteBuilder api)
     {
-        api.MapGet("/devices", async (AppConfigService configService) =>
+        api.MapGet("/devices", async (AppConfigService configService, IAdbClient adb, CancellationToken ct) =>
         {
             var config = await configService.GetAsync();
-            return config.Devices.Select(d => ToDto(d, config)).ToList();
+            var live = await TryLiveDevicesAsync(adb, ct);
+            return config.Devices.Select(d => ToDto(d, config, live)).ToList();
         });
 
         api.MapGet("/devices/{deviceId:guid}", async (Guid deviceId, HttpContext http, AppConfigService configService) =>

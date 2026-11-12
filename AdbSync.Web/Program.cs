@@ -13,6 +13,7 @@ builder.Services.AddScoped(_ => new HttpClient { BaseAddress = new Uri(builder.H
 builder.Services.AddScoped<Session>();
 builder.Services.AddScoped<ApiClient>();
 builder.Services.AddScoped<StatusStore>();
+builder.Services.AddScoped<ThemeState>();
 builder.Services.AddMudServices(config =>
 {
     config.SnackbarConfiguration.PositionClass = Defaults.Classes.Position.BottomRight;

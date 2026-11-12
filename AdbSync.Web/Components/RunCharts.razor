@@ -1,0 +1,299 @@
+@using System.Globalization
+
+@if (_finished.Count > 0)
+{
+    <div class="rc-summary">
+        <div class="rc-tile"><span class="rc-tile-label">Runs</span><span class="rc-tile-value">@Runs.Count</span></div>
+        <div class="rc-tile"><span class="rc-tile-label">Success rate</span><span class="rc-tile-value">@SuccessRate</span></div>
+        <div class="rc-tile"><span class="rc-tile-label">Transferred</span><span class="rc-tile-value">@Format.Bytes(Runs.Sum(r => r.BytesCopied))</span></div>
+        <div class="rc-tile"><span class="rc-tile-label">Avg duration</span><span class="rc-tile-value">@Seconds(_timed.Count == 0 ? 0 : _timed.Average(r => r.Total))</span></div>
+    </div>
+
+    <div class="rc-grid">
+        <MudPaper Outlined="true" Class="rc-card">
+            <div class="rc-title">Duration per run</div>
+            <div class="rc-legend">
+                <span><i style="background:var(--mud-palette-primary)"></i>Pull</span>
+                <span><i style="background:var(--mud-palette-secondary)"></i>Push</span>
+                <span><i style="background:var(--rc-muted)"></i>Other</span>
+                <span><i class="rc-dot" style="background:var(--mud-palette-error)"></i>Failed</span>
+            </div>
+            @if (_timed.Count == 0)
+            {
+                <div class="rc-empty">No timing data.</div>
+            }
+            else
+            {
+                var max = NiceMax(_timed.Max(r => r.Total));
+                var slot = PlotW / _timed.Count;
+                var bar = Math.Min(slot * 0.7, 28);
+                <svg viewBox="0 0 @W @H" class="rc-svg" role="img" aria-label="Duration per run">
+                    @Grid(max, Seconds)
+                    @for (var i = 0; i < _timed.Count; i++)
+                    {
+                        var t = _timed[i];
+                        var x = Left + slot * i + (slot - bar) / 2;
+                        var yBase = Top + PlotH;
+                        var hPull = PlotH * t.Pull / max;
+                        var hPush = PlotH * t.Push / max;
+                        var hOther = PlotH * t.Other / max;
+                        <g class="rc-col">
+                            <rect x="@N(Left + slot * i)" y="@N(Top)" width="@N(slot)" height="@N(PlotH)" class="rc-hit" />
+                            <rect x="@N(x)" y="@N(yBase - hPull)" width="@N(bar)" height="@N(hPull)" fill="var(--mud-palette-primary)" />
+                            <rect x="@N(x)" y="@N(yBase - hPull - hPush)" width="@N(bar)" height="@N(hPush)" fill="var(--mud-palette-secondary)" />
+                            <rect x="@N(x)" y="@N(yBase - hPull - hPush - hOther)" width="@N(bar)" height="@N(hOther)" fill="var(--rc-muted)" rx="2" />
+                            <circle cx="@N(x + bar / 2)" cy="@N(yBase + 8)" r="2" fill="@StatusColor(t.Run.Status)" />
+                            <title>@Tip(t.Run)&#10;Pull @Seconds(t.Pull) · Push @Seconds(t.Push) · Total @Seconds(t.Total)</title>
+                        </g>
+                    }
+                </svg>
+            }
+        </MudPaper>
+
+        <MudPaper Outlined="true" Class="rc-card">
+            <div class="rc-title">Data transferred</div>
+            @{
+                var series = _finished.TakeLast(MaxBars).ToList();
+                var maxBytes = NiceMax(series.Max(r => (double)r.BytesCopied));
+                var step = series.Count > 1 ? PlotW / (series.Count - 1) : 0;
+                string X(int i) => N(series.Count > 1 ? Left + step * i : Left + PlotW / 2);
+                string Y(RunDto r) => N(Top + PlotH - PlotH * r.BytesCopied / maxBytes);
+                var line = string.Join(" ", series.Select((r, i) => $"{(i == 0 ? "M" : "L")}{X(i)},{Y(r)}"));
+                var area = series.Count > 1
+                    ? $"{line} L{X(series.Count - 1)},{N(Top + PlotH)} L{X(0)},{N(Top + PlotH)} Z"
+                    : "";
+            }
+            <svg viewBox="0 0 @W @H" class="rc-svg" role="img" aria-label="Data transferred per run">
+                <defs>
+                    <linearGradient id="rc-area" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stop-color="var(--mud-palette-primary)" stop-opacity="0.45" />
+                        <stop offset="100%" stop-color="var(--mud-palette-primary)" stop-opacity="0.02" />
+                    </linearGradient>
+                </defs>
+                @Grid(maxBytes, v => Format.Bytes((long)v))
+                @if (series.Count > 1)
+                {
+                    <path d="@area" fill="url(#rc-area)" />
+                    <path d="@line" fill="none" stroke="var(--mud-palette-primary)" stroke-width="2" stroke-linejoin="round" />
+                }
+                @for (var i = 0; i < series.Count; i++)
+                {
+                    var r = series[i];
+                    <g class="rc-pt">
+                        <circle cx="@X(i)" cy="@Y(r)" r="10" class="rc-hit" />
+                        <circle cx="@X(i)" cy="@Y(r)" r="3.5" fill="@StatusColor(r.Status)" stroke="var(--rc-surface)" stroke-width="1.5" />
+                        <title>@Tip(r)&#10;@Format.Bytes(r.BytesCopied) · @r.FilesCopied copied · @r.FilesDeleted deleted</title>
+                    </g>
+                }
+            </svg>
+        </MudPaper>
+
+        <MudPaper Outlined="true" Class="rc-card rc-outcomes">
+            <div class="rc-title">Outcomes</div>
+            @{
+                var groups = Runs.Where(r => r.Status is not ("queued" or "running"))
+                    .GroupBy(r => r.Status)
+                    .Select(g => (Label: Format.RunLabel(g.Key), Count: g.Count(), Color: Shade(g.Key)))
+                    .OrderByDescending(g => g.Count).ToList();
+                var total = groups.Sum(g => g.Count);
+                const double radius = 42, stroke = 16;
+                var circ = 2 * Math.PI * radius;
+                var offset = 0.0;
+            }
+            <div class="rc-donut-wrap">
+                <div class="rc-donut-box">
+                <svg viewBox="0 0 120 120" class="rc-donut" role="img" aria-label="Run outcomes">
+                    <circle cx="60" cy="60" r="@N(radius)" fill="none" stroke="var(--rc-grid)" stroke-width="@N(stroke)" />
+                    @foreach (var g in groups)
+                    {
+                        var len = circ * g.Count / total;
+                        <circle cx="60" cy="60" r="@N(radius)" fill="none" stroke="@g.Color" stroke-width="@N(stroke)"
+                                stroke-dasharray="@N(Math.Max(len - 1.5, 0.5)) @N(circ)" stroke-dashoffset="@N(-offset)"
+                                transform="rotate(-90 60 60)" class="rc-seg">
+                            <title>@g.Label: @g.Count</title>
+                        </circle>
+                        offset += len;
+                    }
+                    @Txt(60, 58, "middle", "rc-donut-num", total.ToString(CultureInfo.InvariantCulture))
+                    @Txt(60, 74, "middle", "rc-donut-sub", "runs")
+                </svg>
+                </div>
+                <div class="rc-donut-legend">
+                    @foreach (var g in groups)
+                    {
+                        <div><i style="background:@g.Color"></i>@g.Label <b>@g.Count</b></div>
+                    }
+                </div>
+            </div>
+        </MudPaper>
+
+        <MudPaper Outlined="true" Class="rc-card">
+            <div class="rc-title">Runs per day</div>
+            <div class="rc-legend">
+                <span><i style="background:var(--mud-palette-success)"></i>OK</span>
+                <span><i style="background:var(--mud-palette-error)"></i>Failed</span>
+                <span><i style="background:var(--mud-palette-warning)"></i>Other</span>
+            </div>
+            @{
+                var today = DateTime.Now.Date;
+                var days = Enumerable.Range(0, 14).Select(i => today.AddDays(i - 13)).ToList();
+                var perDay = days.Select(d =>
+                {
+                    var rs = _finished.Where(r => (r.StartedAt ?? r.QueuedAt).LocalDateTime.Date == d).ToList();
+                    return (Day: d, Ok: rs.Count(r => Kind(r.Status) == 0), Fail: rs.Count(r => Kind(r.Status) == 1), Other: rs.Count(r => Kind(r.Status) == 2));
+                }).ToList();
+                var maxDay = Math.Max(NiceMaxInt(perDay.Max(d => d.Ok + d.Fail + d.Other)), 1);
+                var daySlot = PlotW / days.Count;
+                var dayBar = daySlot * 0.66;
+            }
+            <svg viewBox="0 0 @W @H" class="rc-svg" role="img" aria-label="Runs per day">
+                @Grid(maxDay, v => ((int)v).ToString(CultureInfo.InvariantCulture))
+                @for (var i = 0; i < perDay.Count; i++)
+                {
+                    var d = perDay[i];
+                    var x = Left + daySlot * i + (daySlot - dayBar) / 2;
+                    var yBase = Top + PlotH;
+                    var hOk = PlotH * d.Ok / maxDay;
+                    var hFail = PlotH * d.Fail / maxDay;
+                    var hOther = PlotH * d.Other / maxDay;
+                    <g class="rc-col">
+                        <rect x="@N(Left + daySlot * i)" y="@N(Top)" width="@N(daySlot)" height="@N(PlotH)" class="rc-hit" />
+                        <rect x="@N(x)" y="@N(yBase - hOk)" width="@N(dayBar)" height="@N(hOk)" fill="var(--mud-palette-success)" />
+                        <rect x="@N(x)" y="@N(yBase - hOk - hFail)" width="@N(dayBar)" height="@N(hFail)" fill="var(--mud-palette-error)" />
+                        <rect x="@N(x)" y="@N(yBase - hOk - hFail - hOther)" width="@N(dayBar)" height="@N(hOther)" fill="var(--mud-palette-warning)" rx="2" />
+                        @if (i % 2 == (days.Count - 1) % 2)
+                        {
+                            @Txt(Left + daySlot * i + daySlot / 2, yBase + 13, "middle", "rc-axis", d.Day.ToString("M/d", CultureInfo.CurrentCulture))
+                        }
+                        <title>@d.Day.ToString("ddd MMM d", CultureInfo.CurrentCulture)&#10;@d.Ok ok · @d.Fail failed · @d.Other other</title>
+                    </g>
+                }
+            </svg>
+        </MudPaper>
+    </div>
+}
+
+@code {
+    private const double W = 400, H = 85, Left = 42, Top = 6, Right = 8, Bottom = 20;
+    private const int MaxBars = 40;
+    private static double PlotW => W - Left - Right;
+    private static double PlotH => H - Top - Bottom;
+
+    private sealed record Timed(RunDto Run, double Pull, double Push, double Other)
+    {
+        public double Total => Pull + Push + Other;
+    }
+
+    [Parameter] public IReadOnlyList<RunDto> Runs { get; set; } = [];
+
+    private List<RunDto> _finished = [];
+    private List<Timed> _timed = [];
+
+    private string SuccessRate
+    {
+        get
+        {
+            var done = _finished.Where(r => Kind(r.Status) != 2).ToList();
+            if (done.Count == 0) return "–";
+            return (100.0 * done.Count(r => Kind(r.Status) == 0) / done.Count).ToString("0", CultureInfo.InvariantCulture) + "%";
+        }
+    }
+
+    protected override void OnParametersSet()
+    {
+        _finished = Runs.Where(r => r.Status is not ("queued" or "running"))
+            .OrderBy(r => r.StartedAt ?? r.QueuedAt).ToList();
+        _timed = _finished.Where(r => r.StartedAt is not null && r.FinishedAt is not null).TakeLast(MaxBars)
+            .Select(r =>
+            {
+                var total = Math.Max((r.FinishedAt!.Value - r.StartedAt!.Value).TotalSeconds, 0);
+                var pull = Math.Min(r.PullSeconds ?? 0, total);
+                var push = Math.Min(r.PushSeconds ?? 0, total - pull);
+                return new Timed(r, pull, push, total - pull - push);
+            }).ToList();
+    }
+
+    private static RenderFragment Txt(double x, double y, string anchor, string cls, string content) => builder =>
+    {
+        builder.OpenElement(0, "text");
+        builder.AddAttribute(1, "x", N(x));
+        builder.AddAttribute(2, "y", N(y));
+        builder.AddAttribute(3, "text-anchor", anchor);
+        builder.AddAttribute(4, "class", cls);
+        builder.AddContent(5, content);
+        builder.CloseElement();
+    };
+
+    private RenderFragment Grid(double max, Func<double, string> label) => builder =>
+    {
+        var seq = 0;
+        for (var i = 0; i <= 4; i++)
+        {
+            var v = max * i / 4;
+            var y = Top + PlotH - PlotH * i / 4;
+            builder.OpenElement(seq++, "line");
+            builder.AddAttribute(seq++, "x1", N(Left));
+            builder.AddAttribute(seq++, "x2", N(W - Right));
+            builder.AddAttribute(seq++, "y1", N(y));
+            builder.AddAttribute(seq++, "y2", N(y));
+            builder.AddAttribute(seq++, "class", "rc-grid-line");
+            builder.CloseElement();
+            builder.OpenElement(seq++, "text");
+            builder.AddAttribute(seq++, "x", N(Left - 6));
+            builder.AddAttribute(seq++, "y", N(y + 3.5));
+            builder.AddAttribute(seq++, "text-anchor", "end");
+            builder.AddAttribute(seq++, "class", "rc-axis");
+            builder.AddContent(seq++, label(v));
+            builder.CloseElement();
+        }
+    };
+
+    private static int Kind(string status) => status switch
+    {
+        "completed" or "completedNoChanges" or "dryRunCompleted" => 0,
+        "failed" => 1,
+        _ => 2,
+    };
+
+    private static string StatusColor(string status) => Kind(status) switch
+    {
+        0 => "var(--mud-palette-success)",
+        1 => "var(--mud-palette-error)",
+        _ => "var(--mud-palette-warning)",
+    };
+
+    private static string Shade(string status)
+    {
+        var main = StatusColor(status);
+        return status switch
+        {
+            "completedNoChanges" or "skipped" => $"color-mix(in srgb, {main} 60%, white)",
+            "dryRunCompleted" or "skippedAppRunning" => $"color-mix(in srgb, {main} 65%, black)",
+            _ => main,
+        };
+    }
+
+    private static string Tip(RunDto r) =>
+        $"{Format.Local(r.StartedAt ?? r.QueuedAt)} · {r.JobName} · {Format.RunLabel(r.Status)}";
+
+    private static string N(double v) => v.ToString("0.##", CultureInfo.InvariantCulture);
+
+    private static string Seconds(double s) => s switch
+    {
+        < 1 => "0s",
+        < 90 => $"{s.ToString("0", CultureInfo.InvariantCulture)}s",
+        < 5400 => $"{(s / 60).ToString("0.#", CultureInfo.InvariantCulture)}m",
+        _ => $"{(s / 3600).ToString("0.#", CultureInfo.InvariantCulture)}h",
+    };
+
+    private static double NiceMax(double v)
+    {
+        if (v <= 0) return 1;
+        var pow = Math.Pow(10, Math.Floor(Math.Log10(v)));
+        foreach (var m in new[] { 1.0, 2, 4, 8, 10 })
+            if (m * pow >= v) return m * pow;
+        return 10 * pow;
+    }
+
+    private static double NiceMaxInt(int v) => v <= 4 ? 4 : Math.Ceiling(v / 4.0) * 4;
+}

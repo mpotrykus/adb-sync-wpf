@@ -59,7 +59,7 @@ public static class ConflictEndpoints
                     : Problems.Create(StatusCodes.Status409Conflict, failure.Code, "The conflict wasn't resolved.", failure.Detail);
             await QueueFollowUpRunsAsync([outcome.JobName!], configService, runs);
             return Results.Ok(new ResolveResultDto(1, []));
-        });
+        }).RequireRunJobs();
 
         api.MapPost("/conflicts/resolve", async (
             ResolveManyRequest request, AppConfigService configService, IPendingConflictStore pending,
@@ -85,7 +85,7 @@ public static class ConflictEndpoints
             }
             await QueueFollowUpRunsAsync(jobs, configService, runs);
             return Results.Ok(new ResolveResultDto(ids.Count - failed.Count, failed));
-        });
+        }).RequireRunJobs();
     }
 
     private static async Task<(string? JobName, ResolveFailure? Failure)> ResolveOneAsync(

@@ -11,105 +11,161 @@
         {
             <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@_error</MudAlert>
         }
-        <MudStack Spacing="3">
-            <MudTextField @bind-Value="_name" Label="Name" Variant="Variant.Outlined" Required="true"
-                          HelperText="@(Job is null ? "Also the project folder's name." : "Renaming moves the project folder.")" />
-            <MudTextField @bind-Value="_appPackage" Label="Android app package (optional)" Variant="Variant.Outlined"
-                          Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.Apps" AdornmentAriaLabel="Pick an installed app"
-                          OnAdornmentClick="PickPackageAsync"
-                          HelperText="Lets the job skip while the app is open, e.g. com.stephaneginier.nomad" />
+        <MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pt-4 pb-4" KeepPanelsAlive="true">
+            <MudTabPanel Text="General">
+                <MudStack Spacing="3">
+                    <MudTextField @bind-Value="_name" Label="Name" Variant="Variant.Outlined" Required="true"
+                                  HelperText="@(Job is null ? "Also the project folder's name." : "Renaming moves the project folder.")" />
+                    <MudTextField @bind-Value="_appPackage" Label="Android app package (optional)" Variant="Variant.Outlined"
+                                  Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.Apps" AdornmentAriaLabel="Pick an installed app"
+                                  OnAdornmentClick="PickPackageAsync"
+                                  HelperText="Skips the job while the app is open, e.g. com.stephaneginier.nomad" />
 
-            <MudText Typo="Typo.subtitle2">Devices</MudText>
-            @if (Devices.Count == 0)
-            {
-                <MudAlert Severity="Severity.Info" Dense="true">Pair a device first.</MudAlert>
-            }
-            @foreach (var device in Devices)
-            {
-                var binding = _bindings[device.Id];
-                <div class="d-flex align-center gap-3">
-                    <MudCheckBox T="bool" @bind-Value="binding.Selected" Label="@device.Name" Style="min-width:160px" />
-                    <MudTextField @bind-Value="binding.RemotePath" Label="Folder on the phone" Variant="Variant.Outlined" Margin="Margin.Dense"
-                                  Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.FolderOpen" AdornmentAriaLabel="Browse the phone"
-                                  OnAdornmentClick="() => PickFolderAsync(device, binding)"
-                                  Disabled="!binding.Selected" Class="mono-input" />
-                </div>
-            }
+                    <MudText Typo="Typo.overline" Class="mud-text-secondary mt-2">Devices</MudText>
+                    @if (Devices.Count == 0)
+                    {
+                        <MudAlert Severity="Severity.Info" Dense="true">Pair a device first.</MudAlert>
+                    }
+                    @foreach (var device in Devices)
+                    {
+                        var binding = _bindings[device.Id];
+                        <MudPaper Outlined="true" Class="pa-3">
+                            <MudCheckBox T="bool" @bind-Value="binding.Selected" Label="@device.Name" Class="ml-n2" />
+                            @if (binding.Selected)
+                            {
+                                <MudTextField @bind-Value="binding.RemotePath" Label="Folder on the phone" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                              Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.FolderOpen" AdornmentAriaLabel="Browse the phone"
+                                              OnAdornmentClick="() => PickFolderAsync(device, binding)" Class="mono-input mt-1" />
+                            }
+                        </MudPaper>
+                    }
+                </MudStack>
+            </MudTabPanel>
 
-            <MudSelect T="string" @bind-Value="_kind" Label="Runs" Variant="Variant.Outlined">
-                <MudSelectItem Value="@("onChange")">When a phone changes</MudSelectItem>
-                <MudSelectItem Value="@("interval")">On an interval</MudSelectItem>
-                <MudSelectItem Value="@("dailyAt")">Daily at set times</MudSelectItem>
-                <MudSelectItem Value="@("manual")">Only when I start it</MudSelectItem>
-            </MudSelect>
-            @if (_kind == "interval")
-            {
-                <MudNumericField T="int" @bind-Value="_intervalMinutes" Label="Every (minutes)" Min="1" Variant="Variant.Outlined" />
-            }
-            @if (_kind == "dailyAt")
-            {
-                <MudTextField @bind-Value="_dailyTimes" Label="Times (HH:mm, comma separated)" Variant="Variant.Outlined" Placeholder="03:00, 15:30" />
-            }
-            @if (_kind == "onChange")
-            {
-                <MudNumericField T="int" @bind-Value="_debounceSeconds" Label="Wait after the last change (seconds)" Min="0" Variant="Variant.Outlined" />
-            }
+            <MudTabPanel Text="Schedule">
+                <MudStack Spacing="3">
+                    <MudSwitch T="bool" @bind-Value="_enabled" Color="Color.Primary" Label="Enabled" Class="ml-n2" />
+                    <MudSelect T="string" @bind-Value="_kind" Label="Runs" Variant="Variant.Outlined">
+                        <MudSelectItem Value="@("onChange")">When a phone changes</MudSelectItem>
+                        <MudSelectItem Value="@("interval")">On an interval</MudSelectItem>
+                        <MudSelectItem Value="@("dailyAt")">Daily at set times</MudSelectItem>
+                        <MudSelectItem Value="@("manual")">Only when I start it</MudSelectItem>
+                    </MudSelect>
+                    @if (_kind == "interval")
+                    {
+                        <MudNumericField T="int" @bind-Value="_intervalMinutes" Label="Every (minutes)" Min="1" Variant="Variant.Outlined" />
+                    }
+                    @if (_kind == "dailyAt")
+                    {
+                        <MudTextField @bind-Value="_dailyTimes" Label="Times (HH:mm, comma separated)" Variant="Variant.Outlined" Placeholder="03:00, 15:30" />
+                    }
+                    @if (_kind == "onChange")
+                    {
+                        <MudNumericField T="int" @bind-Value="_debounceSeconds" Label="Wait after the last change (seconds)" Min="0" Variant="Variant.Outlined" />
+                    }
+                    <MudText Typo="Typo.body2" Class="mb-n1">Exclude patterns (one per line)</MudText>
+                    <MudTextField @bind-Value="_exclude" Variant="Variant.Outlined" Lines="4" AutoGrow="true" Class="exclude-input" />
+                </MudStack>
+            </MudTabPanel>
 
-            <MudTextField @bind-Value="_exclude" Label="Exclude patterns (one per line)" Variant="Variant.Outlined" Lines="3" AutoGrow="true" />
-            <MudSwitch T="bool" @bind-Value="_enabled" Color="Color.Primary" Label="Enabled" />
+            <MudTabPanel Text="Advanced">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">Anything left empty uses the global value from Settings.</MudText>
 
-            <MudExpansionPanels Elevation="0" Outlined="true" Class="mt-1">
-                <MudExpansionPanel Text="Advanced" Dense="true">
-                    <MudStack Spacing="3">
-                        <MudTextField @bind-Value="_projectDir" Label="Project folder (optional)" Variant="Variant.Outlined" Class="mono-input"
-                                      HelperText="A full path on the server. Empty uses the projects directory from Settings." />
-                        <MudSwitch T="bool" @bind-Value="_dryRun" Color="Color.Primary" Label="Always a dry run (never writes anything)" />
-                        <MudText Typo="Typo.caption" Class="mud-text-secondary">
-                            Overrides: anything left empty uses the global value from Settings.
-                        </MudText>
-                        <MudSelect T="string" @bind-Value="_conflictPolicy" Label="When a file changed on two sides" Variant="Variant.Outlined" Margin="Margin.Dense">
-                            <MudSelectItem Value="@("")">Use the global setting</MudSelectItem>
-                            <MudSelectItem Value="@("newestWins")">Newest wins</MudSelectItem>
-                            <MudSelectItem Value="@("ask")">Ask me</MudSelectItem>
-                        </MudSelect>
-                        <MudSelect T="string" @bind-Value="_backupLosers" Label="Keep a copy of the losing version" Variant="Variant.Outlined" Margin="Margin.Dense">
-                            <MudSelectItem Value="@("")">Use the global setting</MudSelectItem>
-                            <MudSelectItem Value="@("yes")">Yes</MudSelectItem>
-                            <MudSelectItem Value="@("no")">No</MudSelectItem>
-                        </MudSelect>
-                        <div class="d-flex gap-3">
-                            <MudSelect T="string" @bind-Value="_showInfo" Label="Info notifications" Variant="Variant.Outlined" Margin="Margin.Dense">
-                                <MudSelectItem Value="@("")">Global</MudSelectItem>
+                <MudText Typo="Typo.subtitle2" Class="mt-6 mb-3 d-block section-header">Storage</MudText>
+                <MudStack Spacing="3">
+                    <div>
+                        <MudText Typo="Typo.body2" Class="mb-1">Project folder</MudText>
+                        <MudTextField @bind-Value="_projectDir" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mono-input"
+                                      HelperText="Full path on the server. Empty uses the projects directory." />
+                    </div>
+                    <MudSwitch T="bool" @bind-Value="_dryRun" Color="Color.Primary" Label="Always a dry run (never writes anything)" Class="ml-n2" />
+                </MudStack>
+
+                <MudText Typo="Typo.subtitle2" Class="mt-8 mb-3 d-block section-header">Conflicts</MudText>
+                <MudGrid Spacing="3">
+                    <MudItem xs="12" sm="6">
+                            <MudText Typo="Typo.body2" Class="mb-1">When a file changed on both sides</MudText>
+                            <MudSelect T="string" @bind-Value="_conflictPolicy" Variant="Variant.Outlined" Margin="Margin.Dense">
+                                <MudSelectItem Value="@("")">Global setting</MudSelectItem>
+                                <MudSelectItem Value="@("newestWins")">Newest wins</MudSelectItem>
+                                <MudSelectItem Value="@("ask")">Ask me</MudSelectItem>
+                            </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                            <MudText Typo="Typo.body2" Class="mb-1">Keep a copy of the losing version</MudText>
+                            <MudSelect T="string" @bind-Value="_backupLosers" Variant="Variant.Outlined" Margin="Margin.Dense">
+                                <MudSelectItem Value="@("")">Global setting</MudSelectItem>
+                                <MudSelectItem Value="@("yes")">Yes</MudSelectItem>
+                                <MudSelectItem Value="@("no")">No</MudSelectItem>
+                            </MudSelect>
+                    </MudItem>
+                </MudGrid>
+
+                <MudText Typo="Typo.subtitle2" Class="mt-8 mb-3 d-block section-header">Notifications</MudText>
+                <MudGrid Spacing="3">
+                    <MudItem xs="12" sm="6">
+                            <MudText Typo="Typo.body2" Class="mb-1">Info notifications</MudText>
+                            <MudSelect T="string" @bind-Value="_showInfo" Variant="Variant.Outlined" Margin="Margin.Dense">
+                                <MudSelectItem Value="@("")">Global setting</MudSelectItem>
                                 <MudSelectItem Value="@("yes")">Show</MudSelectItem>
                                 <MudSelectItem Value="@("no")">Hide</MudSelectItem>
                             </MudSelect>
-                            <MudSelect T="string" @bind-Value="_showErrors" Label="Error notifications" Variant="Variant.Outlined" Margin="Margin.Dense">
-                                <MudSelectItem Value="@("")">Global</MudSelectItem>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                            <MudText Typo="Typo.body2" Class="mb-1">Error notifications</MudText>
+                            <MudSelect T="string" @bind-Value="_showErrors" Variant="Variant.Outlined" Margin="Margin.Dense">
+                                <MudSelectItem Value="@("")">Global setting</MudSelectItem>
                                 <MudSelectItem Value="@("yes")">Show</MudSelectItem>
                                 <MudSelectItem Value="@("no")">Hide</MudSelectItem>
                             </MudSelect>
-                        </div>
-                        <div class="d-flex gap-3">
-                            <MudNumericField T="int?" @bind-Value="_pushSafety" Label="Push safety minimum (%)" Min="0" Max="100" Variant="Variant.Outlined" Margin="Margin.Dense" />
-                            <MudNumericField T="int?" @bind-Value="_throttle" Label="Bandwidth limit (KB/s)" Min="1" Variant="Variant.Outlined" Margin="Margin.Dense" />
-                        </div>
-                        <div class="d-flex gap-3">
-                            <MudNumericField T="int?" @bind-Value="_retryAttempts" Label="Retry attempts" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" />
-                            <MudNumericField T="int?" @bind-Value="_retryBackoff" Label="Backoff (seconds)" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" />
-                        </div>
-                        <div class="d-flex gap-3">
-                            <MudNumericField T="int?" @bind-Value="_retentionDays" Label="Conflict copies (days)" Min="1" Variant="Variant.Outlined" Margin="Margin.Dense" />
-                            <MudNumericField T="int?" @bind-Value="_checkpointDays" Label="Checkpoints (days)" Min="1" Variant="Variant.Outlined" Margin="Margin.Dense" />
-                        </div>
-                        <div class="d-flex gap-3">
-                            <MudNumericField T="int?" @bind-Value="_rollbackKeep" Label="Rollback points kept" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" />
-                            <MudNumericField T="int?" @bind-Value="_historyEntries" Label="Runs kept" Min="1" Variant="Variant.Outlined" Margin="Margin.Dense" />
-                            <MudNumericField T="int?" @bind-Value="_fileDetailRuns" Label="Runs with file detail" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" />
-                        </div>
-                    </MudStack>
-                </MudExpansionPanel>
-            </MudExpansionPanels>
-        </MudStack>
+                    </MudItem>
+                </MudGrid>
+
+                <MudText Typo="Typo.subtitle2" Class="mt-8 mb-3 d-block section-header">Safety and retries</MudText>
+                <MudGrid Spacing="3">
+                    <MudItem xs="6" sm="3">
+                            <MudText Typo="Typo.body2" Class="mb-1">Push safety minimum (%)</MudText>
+                            <MudNumericField T="int?" @bind-Value="_pushSafety" Min="0" Max="100" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </MudItem>
+                    <MudItem xs="6" sm="3">
+                            <MudText Typo="Typo.body2" Class="mb-1">Bandwidth limit (KB/s)</MudText>
+                            <MudNumericField T="int?" @bind-Value="_throttle" Min="1" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </MudItem>
+                    <MudItem xs="6" sm="3">
+                            <MudText Typo="Typo.body2" Class="mb-1">Retry attempts</MudText>
+                            <MudNumericField T="int?" @bind-Value="_retryAttempts" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </MudItem>
+                    <MudItem xs="6" sm="3">
+                            <MudText Typo="Typo.body2" Class="mb-1">Backoff (seconds)</MudText>
+                            <MudNumericField T="int?" @bind-Value="_retryBackoff" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </MudItem>
+                </MudGrid>
+
+                <MudText Typo="Typo.subtitle2" Class="mt-8 mb-3 d-block section-header">Retention</MudText>
+                <MudGrid Spacing="3">
+                    <MudItem xs="6" sm="4">
+                            <MudText Typo="Typo.body2" Class="mb-1">Conflict copies (days)</MudText>
+                            <MudNumericField T="int?" @bind-Value="_retentionDays" Min="1" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </MudItem>
+                    <MudItem xs="6" sm="4">
+                            <MudText Typo="Typo.body2" Class="mb-1">Checkpoints (days)</MudText>
+                            <MudNumericField T="int?" @bind-Value="_checkpointDays" Min="1" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </MudItem>
+                    <MudItem xs="6" sm="4">
+                            <MudText Typo="Typo.body2" Class="mb-1">Rollback points kept</MudText>
+                            <MudNumericField T="int?" @bind-Value="_rollbackKeep" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </MudItem>
+                    <MudItem xs="6" sm="4">
+                            <MudText Typo="Typo.body2" Class="mb-1">Runs kept</MudText>
+                            <MudNumericField T="int?" @bind-Value="_historyEntries" Min="1" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </MudItem>
+                    <MudItem xs="6" sm="4">
+                            <MudText Typo="Typo.body2" Class="mb-1">Runs with file detail</MudText>
+                            <MudNumericField T="int?" @bind-Value="_fileDetailRuns" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </MudItem>
+                </MudGrid>
+            </MudTabPanel>
+        </MudTabs>
     </DialogContent>
     <DialogActions>
         @if (Job is not null)

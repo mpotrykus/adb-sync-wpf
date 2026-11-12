@@ -15,7 +15,8 @@ public sealed class DeviceSnapshotService(
     private const string TimestampFormat = "yyyy-MM-dd_HH-mm-ss";
 
     public async Task<SnapshotResult> CreateSnapshotAsync(
-        SyncJobConfig job, IReadOnlyList<DeviceConfig> devices, GlobalSettings settings, CancellationToken ct = default)
+        SyncJobConfig job, IReadOnlyList<DeviceConfig> devices, GlobalSettings settings, CancellationToken ct = default,
+        Action<SyncPhase, string>? onDevicePhase = null)
     {
         var eff = job.Resolve(settings);
         var checkpointsRoot = GetCheckpointsRoot(job, eff);
@@ -31,10 +32,12 @@ public sealed class DeviceSnapshotService(
         {
             var device = devices.FirstOrDefault(d => d.Name == binding.DeviceName)
                 ?? throw new InvalidOperationException($"Device '{binding.DeviceName}' referenced by job '{job.Name}' was not found.");
+            onDevicePhase?.Invoke(SyncPhase.PreConnect, binding.DeviceName);
             var serial = await deviceResolver.EnsureConnectedAsync(device, ct);
 
             var destination = Path.Combine(snapshotRoot, ConfigNames.Segment(binding.DeviceName));
             Directory.CreateDirectory(destination);
+            onDevicePhase?.Invoke(SyncPhase.Pull, binding.DeviceName);
             var result = await transfer.PullMirrorAsync(serial, binding.RemotePath, destination, exclude, eff.ToTransferPolicy(), ct);
             totalFiles += result.FilesCopied;
             totalBytes += result.BytesCopied;
@@ -73,7 +76,8 @@ public sealed class DeviceSnapshotService(
     }
 
     public async Task<SnapshotResult> RestoreSnapshotAsync(
-        SyncJobConfig job, IReadOnlyList<DeviceConfig> devices, GlobalSettings settings, string snapshotPath, CancellationToken ct = default)
+        SyncJobConfig job, IReadOnlyList<DeviceConfig> devices, GlobalSettings settings, string snapshotPath, CancellationToken ct = default,
+        Action<SyncPhase, string>? onDevicePhase = null)
     {
         if (!Directory.Exists(snapshotPath))
             throw new InvalidOperationException($"Checkpoint '{snapshotPath}' no longer exists.");
@@ -100,8 +104,10 @@ public sealed class DeviceSnapshotService(
 
             var device = devices.FirstOrDefault(d => d.Name == binding.DeviceName)
                 ?? throw new InvalidOperationException($"Device '{binding.DeviceName}' referenced by job '{job.Name}' was not found.");
+            onDevicePhase?.Invoke(SyncPhase.PreConnect, binding.DeviceName);
             var serial = await deviceResolver.EnsureConnectedAsync(device, ct);
 
+            onDevicePhase?.Invoke(SyncPhase.Push, binding.DeviceName);
             var result = await transfer.PushMirrorAsync(serial, deviceDir, binding.RemotePath, exclude, eff.ToTransferPolicy(), ct);
             totalFilesCopied += result.FilesCopied;
             totalFilesDeleted += result.FilesDeleted;

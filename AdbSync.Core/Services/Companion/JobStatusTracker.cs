@@ -72,6 +72,28 @@ public sealed class JobStatusTracker : ISyncEventSink
             return true;
         });
 
+    /// <summary>Marks the job busy with a device-level operation (snapshot, restore) that isn't a sync run, so it
+    /// reports phases without ever writing a last result.</summary>
+    public void OperationPhaseChanged(string jobName, SyncPhase phase, string deviceName) =>
+        Update(jobName, s =>
+        {
+            s.Running = true;
+            s.Phase = phase.ToString();
+            s.Devices[deviceName] = phase.ToString();
+            return true;
+        });
+
+    public void OperationEnded(string jobName) =>
+        Update(jobName, s =>
+        {
+            if (!s.Running)
+                return false;
+            s.Running = false;
+            s.Phase = null;
+            s.Devices.Clear();
+            return true;
+        });
+
     public void JobQueued(string jobName, string reason) =>
         Update(jobName, s =>
         {

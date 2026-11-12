@@ -10,14 +10,13 @@
 <div class="page-head">
     <MudText Typo="Typo.h4">Run history</MudText>
     <MudSpacer />
-    <MudSelect T="Guid?" Value="_jobFilter" ValueChanged="OnJobFilterAsync" Label="Job" Variant="Variant.Outlined" Dense="true"
-               Margin="Margin.Dense" Clearable="true" Class="filter-select">
-        @foreach (var job in _jobs)
-        {
-            <MudSelectItem T="Guid?" Value="@((Guid?)job.Id)">@job.Name</MudSelectItem>
-        }
-    </MudSelect>
-    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Refresh" OnClick="ReloadAsync">Refresh</MudButton>
+    @if (_jobsLoaded)
+    {
+    <JobFilter Jobs="_jobs" Selected="_jobFilter" SelectedChanged="OnJobFilterAsync" />
+    }
+    <MudTooltip Text="Refresh">
+        <MudIconButton Icon="@Icons.Material.Filled.Refresh" OnClick="ReloadAsync" />
+    </MudTooltip>
 </div>
 
 @if (_loading)
@@ -33,6 +32,7 @@ else if (_runs.Count == 0)
 }
 else
 {
+    <RunCharts Runs="_runs" />
     <MudTable Items="_runs" Hover="true" Dense="true" Elevation="1" OnRowClick="@((TableRowClickEventArgs<RunDto> e) => OpenAsync(e.Item!))" T="RunDto" RowStyle="cursor:pointer" Breakpoint="Breakpoint.Xs" Class="runs-table">
         <HeaderContent>
             <MudTh>Started</MudTh>
@@ -77,13 +77,17 @@ else
     private List<RunDto> _runs = [];
     private List<JobDto> _jobs = [];
     private Dictionary<Guid, string> _deviceNames = [];
-    private Guid? _jobFilter;
+    [SupplyParameterFromQuery(Name = "job")] public Guid? JobQuery { get; set; }
+
+    private bool _jobsLoaded;
+    private IReadOnlySet<Guid> _jobFilter = new HashSet<Guid>();
     private string? _next;
     private bool _loading = true;
     private bool _loadingMore;
 
     protected override async Task OnInitializedAsync()
     {
+        if (JobQuery is { } queryJob) _jobFilter = new HashSet<Guid> { queryJob };
         try
         {
             _jobs = await Api.GetAsync<List<JobDto>>("jobs");
@@ -93,6 +97,7 @@ else
         {
             if (!ex.IsSignedOut()) Snackbar.Add(ex.Message, Severity.Error);
         }
+        _jobsLoaded = true;
         await ReloadAsync();
         Status.EventReceived += OnEvent;
     }
@@ -108,7 +113,7 @@ else
     }
 
     private string Query(string? cursor) =>
-        "runs?limit=50" + (_jobFilter is { } id ? $"&jobId={id}" : "") + (cursor is null ? "" : $"&cursor={cursor}");
+        "runs?limit=50" + string.Concat(_jobFilter.Select(id => $"&jobId={id}")) + (cursor is null ? "" : $"&cursor={cursor}");
 
     private async Task ReloadAsync()
     {
@@ -142,9 +147,9 @@ else
         _loadingMore = false;
     }
 
-    private async Task OnJobFilterAsync(Guid? id)
+    private async Task OnJobFilterAsync(IReadOnlySet<Guid> selected)
     {
-        _jobFilter = id;
+        _jobFilter = selected;
         await ReloadAsync();
     }
 

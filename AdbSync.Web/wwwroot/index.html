@@ -14,6 +14,13 @@
 </head>
 
 <body>
+    <script>
+        (function () {
+            var dark = true;
+            try { dark = localStorage.getItem("adbsync.theme") !== "light"; } catch (e) { }
+            document.body.classList.toggle("glass", dark);
+        })();
+    </script>
     <div id="app">
         <div class="boot">
             <div class="boot-spinner"></div>

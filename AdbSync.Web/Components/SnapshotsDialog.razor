@@ -82,7 +82,32 @@
     private string? _result;
     private bool _resultOk;
 
-    protected override Task OnInitializedAsync() => LoadAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        await ResumeRunningAsync();
+    }
+
+    private async Task ResumeRunningAsync()
+    {
+        try
+        {
+            var running = (await Api.GetAsync<List<OperationDto>>("operations"))
+                .FirstOrDefault(o => o.JobId == JobId && o.Status == "running");
+            if (running is null)
+                return;
+            _busy = running.Progress?.Message ?? (running.Kind == "restoreSnapshot" ? "Restoring snapshot…" : "Creating snapshot…");
+            var op = await RunOperationAsync(running);
+            _resultOk = op.Status == "succeeded";
+            _result = _resultOk ? "Operation finished." : op.Message ?? "The operation failed.";
+            await LoadAsync();
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException)
+        {
+            if (!ex.IsSignedOut()) _error = ex.Message;
+        }
+        _busy = null;
+    }
 
     private async Task LoadAsync()
     {

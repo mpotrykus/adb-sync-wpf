@@ -1,0 +1,38 @@
+<MudMenu Icon="@(Selected.Count > 0 ? Icons.Material.Filled.FilterAlt : Icons.Material.Filled.FilterList)"
+         Color="@(Selected.Count > 0 ? Color.Primary : Color.Default)" AriaLabel="Filter by job" Dense="true"
+         title="@Title">
+    @foreach (var job in Jobs)
+    {
+        var id = job.Id;
+        var on = Selected.Contains(id);
+        <MudMenuItem AutoClose="false" OnClick="() => ToggleAsync(id)"
+                     Icon="@(on ? Icons.Material.Filled.CheckBox : Icons.Material.Filled.CheckBoxOutlineBlank)"
+                     IconColor="@(on ? Color.Primary : Color.Default)">
+            @job.Name
+        </MudMenuItem>
+    }
+    @if (Selected.Count > 0)
+    {
+        <MudDivider />
+        <MudMenuItem OnClick="ClearAsync" Icon="@Icons.Material.Filled.Clear">Clear filter</MudMenuItem>
+    }
+</MudMenu>
+
+@code {
+    [Parameter] public IReadOnlyList<JobDto> Jobs { get; set; } = [];
+    [Parameter] public IReadOnlySet<Guid> Selected { get; set; } = new HashSet<Guid>();
+    [Parameter] public EventCallback<IReadOnlySet<Guid>> SelectedChanged { get; set; }
+
+    private string Title => Selected.Count == 0
+        ? "Filter by job"
+        : "Jobs: " + string.Join(", ", Jobs.Where(j => Selected.Contains(j.Id)).Select(j => j.Name));
+
+    private Task ToggleAsync(Guid id)
+    {
+        var next = Selected.ToHashSet();
+        if (!next.Remove(id)) next.Add(id);
+        return SelectedChanged.InvokeAsync(next);
+    }
+
+    private Task ClearAsync() => SelectedChanged.InvokeAsync(new HashSet<Guid>());
+}
