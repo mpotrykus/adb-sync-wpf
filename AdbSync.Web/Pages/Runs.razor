@@ -7,11 +7,11 @@
 
 <PageTitle>Run history · AdbSync</PageTitle>
 
-<div class="d-flex align-center flex-wrap gap-3 mb-6">
+<div class="page-head">
     <MudText Typo="Typo.h4">Run history</MudText>
     <MudSpacer />
     <MudSelect T="Guid?" Value="_jobFilter" ValueChanged="OnJobFilterAsync" Label="Job" Variant="Variant.Outlined" Dense="true"
-               Margin="Margin.Dense" Clearable="true" Style="min-width:200px">
+               Margin="Margin.Dense" Clearable="true" Class="filter-select">
         @foreach (var job in _jobs)
         {
             <MudSelectItem T="Guid?" Value="@((Guid?)job.Id)">@job.Name</MudSelectItem>
@@ -33,7 +33,7 @@ else if (_runs.Count == 0)
 }
 else
 {
-    <MudTable Items="_runs" Hover="true" Dense="true" Elevation="1" OnRowClick="@((TableRowClickEventArgs<RunDto> e) => OpenAsync(e.Item!))" T="RunDto" RowStyle="cursor:pointer">
+    <MudTable Items="_runs" Hover="true" Dense="true" Elevation="1" OnRowClick="@((TableRowClickEventArgs<RunDto> e) => OpenAsync(e.Item!))" T="RunDto" RowStyle="cursor:pointer" Breakpoint="Breakpoint.Xs" Class="runs-table">
         <HeaderContent>
             <MudTh>Started</MudTh>
             <MudTh>Job</MudTh>
@@ -46,23 +46,23 @@ else
             <MudTh>Duration</MudTh>
         </HeaderContent>
         <RowTemplate>
-            <MudTd Style="white-space:nowrap">
+            <MudTd DataLabel="Started" Style="white-space:nowrap">
                 <span title="@Format.Local(context.StartedAt ?? context.QueuedAt)">@Format.Ago(context.StartedAt ?? context.QueuedAt)</span>
             </MudTd>
-            <MudTd>@context.JobName</MudTd>
-            <MudTd>
+            <MudTd DataLabel="Job">@context.JobName</MudTd>
+            <MudTd DataLabel="Status">
                 <MudChip T="string" Size="Size.Small" Color="Format.RunColor(context.Status)">@Format.RunLabel(context.Status)</MudChip>
                 @if (context.Mode != "normal")
                 {
                     <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@Format.Words(context.Mode)</MudChip>
                 }
             </MudTd>
-            <MudTd>@Format.Words(context.Trigger)</MudTd>
-            <MudTd Style="text-align:right">@context.FilesCopied</MudTd>
-            <MudTd Style="text-align:right">@context.FilesDeleted</MudTd>
-            <MudTd Style="text-align:right">@context.ErrorCount</MudTd>
-            <MudTd Style="text-align:right;white-space:nowrap">@Format.Bytes(context.BytesCopied)</MudTd>
-            <MudTd Style="white-space:nowrap">@Format.Duration(context.StartedAt ?? context.QueuedAt, context.FinishedAt)</MudTd>
+            <MudTd DataLabel="Trigger">@Format.Words(context.Trigger)</MudTd>
+            <MudTd DataLabel="Copied" Style="text-align:right">@context.FilesCopied</MudTd>
+            <MudTd DataLabel="Deleted" Style="text-align:right">@context.FilesDeleted</MudTd>
+            <MudTd DataLabel="Errors" Style="text-align:right">@context.ErrorCount</MudTd>
+            <MudTd DataLabel="Transferred" Style="text-align:right;white-space:nowrap">@Format.Bytes(context.BytesCopied)</MudTd>
+            <MudTd DataLabel="Duration" Style="white-space:nowrap">@Format.Duration(context.StartedAt ?? context.QueuedAt, context.FinishedAt)</MudTd>
         </RowTemplate>
     </MudTable>
     @if (_next is not null)

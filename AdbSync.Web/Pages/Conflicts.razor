@@ -7,11 +7,11 @@
 
 <PageTitle>Conflicts · AdbSync</PageTitle>
 
-<div class="d-flex align-center flex-wrap gap-3 mb-6">
+<div class="page-head">
     <MudText Typo="Typo.h4">Conflicts</MudText>
     <MudSpacer />
     <MudSelect T="Guid?" Value="_jobFilter" ValueChanged="OnJobFilterAsync" Label="Job" Variant="Variant.Outlined" Dense="true"
-               Margin="Margin.Dense" Clearable="true" Style="min-width:200px">
+               Margin="Margin.Dense" Clearable="true" Class="filter-select">
         @foreach (var job in _jobs)
         {
             <MudSelectItem T="Guid?" Value="@((Guid?)job.Id)">@job.Name</MudSelectItem>

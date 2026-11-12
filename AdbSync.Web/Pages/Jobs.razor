@@ -7,11 +7,11 @@
 
 <PageTitle>Jobs · AdbSync</PageTitle>
 
-<div class="d-flex align-center mb-6">
+<div class="page-head">
     <MudText Typo="Typo.h4">Jobs</MudText>
     <MudSpacer />
     <MudSelect T="string" Value="_sortKey" ValueChanged="SetSortKeyAsync" Label="Sort by" Variant="Variant.Outlined" Margin="Margin.Dense"
-               Style="width:160px" Class="mr-1">
+               Class="sort-select">
         <MudSelectItem Value="@("order")">Order</MudSelectItem>
         <MudSelectItem Value="@("name")">Name</MudSelectItem>
         <MudSelectItem Value="@("lastRun")">Last run</MudSelectItem>
@@ -20,9 +20,9 @@
     </MudSelect>
     <MudTooltip Text="@(_sortDescending ? "Descending" : "Ascending")">
         <MudIconButton Icon="@(_sortDescending ? Icons.Material.Filled.ArrowDownward : Icons.Material.Filled.ArrowUpward)"
-                       OnClick="ToggleSortDirectionAsync" Class="mr-2" />
+                       OnClick="ToggleSortDirectionAsync" />
     </MudTooltip>
-    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Refresh" OnClick="RefreshAsync" Class="mr-2">Refresh</MudButton>
+    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Refresh" OnClick="RefreshAsync">Refresh</MudButton>
     <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="() => EditAsync(null)">New job</MudButton>
 </div>
 
@@ -145,7 +145,7 @@ else
                             </div>
                         }
 
-                        <MudSimpleTable Dense="true" Elevation="0" Style="background:transparent">
+                        <MudSimpleTable Dense="true" Elevation="0" Class="job-info" Style="background:transparent">
                             <tbody>
                                 <tr>
                                     <td style="width:110px"><MudText Typo="Typo.body2" Class="mud-text-secondary">Last run</MudText></td>
@@ -187,7 +187,7 @@ else
                             <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-3">@message</MudAlert>
                         }
                     </MudCardContent>
-                    <MudCardActions Class="px-4 pb-4">
+                    <MudCardActions Class="px-4 pb-4 job-actions">
                         @if (busy)
                         {
                             <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Filled.Stop"

@@ -442,3 +442,462 @@ img.app-icon {
 .app-icon.generic .mud-icon-root {
     font-size: 1.4rem;
 }
+
+.page-head {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 24px;
+}
+
+.page-head > .mud-spacer {
+    flex: 1 1 0;
+}
+
+.sort-select {
+    width: 160px;
+}
+
+.filter-select {
+    min-width: 200px;
+}
+
+html {
+    -webkit-text-size-adjust: 100%;
+}
+
+.mud-button-root,
+.mud-nav-link,
+.mud-list-item {
+    touch-action: manipulation;
+}
+
+@media (max-width: 599.98px) {
+    .page-container {
+        padding-left: 12px;
+        padding-right: 12px;
+        padding-top: 16px !important;
+    }
+
+    .mud-typography-h4 {
+        font-size: 1.5rem;
+    }
+
+    .page-head {
+        margin-bottom: 16px;
+    }
+
+    .page-head > .mud-typography-h4 {
+        flex: 1 1 100%;
+    }
+
+    .page-head > .mud-spacer {
+        display: none;
+    }
+
+    .page-head > .mud-input-control,
+    .page-head > .mud-select,
+    .sort-select,
+    .filter-select {
+        flex: 1 1 100%;
+        width: 100%;
+        min-width: 0;
+    }
+
+    .page-head > .mud-button-root,
+    .page-head > .mud-menu {
+        flex: 1 1 auto;
+    }
+
+    .page-head > .mud-menu .mud-button-root {
+        width: 100%;
+    }
+
+    .mud-icon-button {
+        padding: 10px;
+    }
+
+    .mud-dialog {
+        margin: 0;
+        width: 100vw !important;
+        max-width: 100vw !important;
+        max-height: 100dvh;
+        height: 100dvh;
+        border-radius: 0 !important;
+    }
+
+    .mud-dialog-container .mud-dialog-content {
+        flex: 1 1 auto;
+        overflow-y: auto;
+    }
+
+    .mud-dialog .mud-dialog-actions {
+        padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+        flex-wrap: wrap;
+    }
+
+    .mud-dialog .mud-tabs-toolbar .mud-tab {
+        min-width: 0;
+        padding: 6px 12px;
+    }
+
+    .mud-table-toolbar {
+        flex-wrap: wrap;
+        height: auto;
+        padding: 8px 12px;
+        gap: 4px;
+    }
+
+    .mud-table-pagination-toolbar {
+        flex-wrap: wrap;
+        justify-content: center;
+        height: auto;
+    }
+
+    .mud-table-pagination-spacer {
+        display: none;
+    }
+
+    .mud-table-container {
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .mud-table-root .mud-table-body .mud-table-row td.mud-table-cell {
+        word-break: break-word;
+    }
+
+    .qr-box {
+        width: min(260px, 100%);
+    }
+
+    .log-view {
+        max-height: 50dvh;
+    }
+
+    .mud-snackbar-location-bottom-right,
+    .mud-snackbar-location-bottom-center {
+        left: 8px;
+        right: 8px;
+        bottom: calc(8px + env(safe-area-inset-bottom));
+    }
+
+    .mud-snackbar {
+        min-width: 0;
+        width: 100%;
+    }
+}
+
+@media (max-width: 959.98px) {
+    .mud-drawer.mud-drawer-temporary {
+        width: min(280px, 85vw);
+    }
+
+    body.glass .mud-drawer-temporary {
+        background: rgba(20, 15, 36, 0.96);
+    }
+
+    .mud-main-content {
+        padding-bottom: env(safe-area-inset-bottom);
+    }
+}
+
+@media (max-width: 599.98px) {
+    .mud-grid {
+        width: calc(100% + 16px);
+        margin-left: -16px;
+    }
+
+    .mud-grid.mud-grid-spacing-xs-6 > .mud-grid-item,
+    .mud-grid.mud-grid-spacing-xs-3 > .mud-grid-item,
+    .mud-grid.mud-grid-spacing-xs-2 > .mud-grid-item {
+        padding-left: 16px;
+        padding-top: 12px;
+    }
+
+    .page-container {
+        padding-left: 8px;
+        padding-right: 8px;
+    }
+
+    .mud-card-header {
+        padding: 12px 12px 8px;
+    }
+
+    .mud-card-content {
+        padding: 8px 12px;
+    }
+
+    .job-card .mud-card-header-content .mud-typography-h6 {
+        font-size: 1.05rem;
+        overflow-wrap: anywhere;
+    }
+
+    .job-card .mud-card-header-content .mud-typography-caption {
+        overflow-wrap: anywhere;
+    }
+
+    .job-card .job-info table,
+    .job-card .job-info tbody {
+        display: block !important;
+        width: 100%;
+    }
+
+    .job-card .job-info tr {
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 4px;
+        padding: 12px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+    }
+
+    .job-info tr:last-child {
+        border-bottom: 0;
+    }
+
+    .job-info td:first-child .mud-typography {
+        font-size: 0.7rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+    }
+
+    .job-info td:last-child .mud-typography,
+    .job-info td:last-child .mud-link {
+        font-size: 0.95rem;
+        line-height: 1.45;
+    }
+
+    .job-card .job-info tr {
+        padding-left: 14px !important;
+        padding-right: 14px !important;
+    }
+
+    .job-card .job-info td {
+        display: block !important;
+        width: auto !important;
+        padding: 0 !important;
+        border: 0 !important;
+        height: auto !important;
+    }
+
+    .job-actions {
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 4px 12px 12px !important;
+    }
+
+    .job-actions .mud-button-root:not(.mud-icon-button) {
+        flex: 1 1 auto;
+        margin-left: 0 !important;
+    }
+
+    .job-actions .mud-tooltip-root {
+        flex: 1 1 auto;
+        display: flex;
+    }
+
+    .job-actions .mud-tooltip-root .mud-button-root {
+        width: 100%;
+    }
+
+    .job-actions .mud-spacer {
+        display: none;
+    }
+
+    .phase-graph {
+        margin: 0 0 12px;
+    }
+
+    .phase-node {
+        width: 28px;
+        height: 28px;
+    }
+
+    .mud-dialog .mud-dialog-title {
+        padding: 12px 16px;
+    }
+
+    .mud-dialog .mud-dialog-content {
+        padding: 8px 16px;
+    }
+
+    .mud-paper.pa-8 {
+        padding: 20px !important;
+    }
+}
+
+@media (max-width: 599.98px) {
+    .stat-strip {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        margin-bottom: 16px;
+    }
+
+    .stat-tile {
+        padding: 10px 12px 8px;
+    }
+
+    .stat-tile .stat-value {
+        font-size: 1.6rem;
+    }
+
+    .stat-tile .stat-label {
+        font-size: 0.62rem;
+        letter-spacing: 0.06em;
+    }
+
+    .stat-strip .stat-tile:last-child:nth-child(odd) {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (max-width: 599.98px) {
+    body.glass .mud-table.runs-table,
+    .mud-table.runs-table {
+        background: transparent;
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+        border: 0;
+        box-shadow: none;
+    }
+
+    .runs-table .mud-table-container {
+        overflow: visible;
+    }
+
+    .runs-table .mud-table-body {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .runs-table tr.mud-table-row {
+        display: block;
+        padding: 6px 14px;
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(255, 255, 255, 0.07);
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+    }
+
+    .runs-table tr.mud-table-row td.mud-table-cell {
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        padding-left: 0;
+        padding-right: 0;
+    }
+
+    .runs-table tr.mud-table-row td.mud-table-cell:last-child {
+        border-bottom: 0;
+    }
+}
+
+@media (max-width: 599.98px) {
+    .device-card .mud-card-header {
+        flex-wrap: wrap;
+        row-gap: 8px;
+        padding-bottom: 4px;
+    }
+
+    .device-card .mud-card-header-content {
+        min-width: 0;
+        flex: 1 1 0;
+    }
+
+    .device-card .mud-card-header-content .mud-typography-h6 {
+        font-size: 1.05rem;
+    }
+
+    .device-card .mud-card-header-content .mud-typography-caption {
+        display: block;
+        overflow-wrap: anywhere;
+    }
+
+    .device-card .mud-card-header-actions {
+        flex: 1 1 100%;
+        margin: 0;
+        padding-left: 2px;
+        align-self: flex-start;
+        display: flex;
+        order: 3;
+    }
+
+    .device-card .mud-card-content {
+        padding: 8px 14px 12px;
+    }
+
+    .device-card .device-meta {
+        line-height: 1.6;
+        overflow-wrap: anywhere;
+    }
+
+    .device-card .mud-alert {
+        margin-top: 12px;
+    }
+
+    .device-actions {
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 4px 12px 12px !important;
+    }
+
+    .device-actions .mud-button-root:not(.mud-icon-button) {
+        flex: 1 1 auto;
+        margin-left: 0 !important;
+    }
+
+    .device-actions .mud-spacer {
+        display: none;
+    }
+}
+
+@media (max-width: 599.98px) {
+    .page-head > .flex-grow-1:empty,
+    .job-actions > .flex-grow-1:empty,
+    .device-actions > .flex-grow-1:empty {
+        display: none;
+    }
+
+    .device-actions {
+        flex-wrap: nowrap;
+        gap: 6px;
+    }
+
+    .device-actions .mud-button-root:not(.mud-icon-button) {
+        flex: 1 1 0;
+        min-width: 0;
+        padding-left: 8px;
+        padding-right: 8px;
+        white-space: nowrap;
+        font-size: 0.8rem;
+    }
+
+    .device-actions .mud-button-root .mud-button-icon-start {
+        margin-right: 4px;
+        margin-left: 0;
+    }
+
+    .device-actions .mud-tooltip-root {
+        flex: 0 0 auto;
+    }
+}
+
+@media (max-width: 599.98px) {
+    .device-actions > .mud-button-root:first-child {
+        flex: 0 0 auto;
+    }
+
+    .device-actions .mud-tooltip-root + .mud-tooltip-root {
+        flex: 0 0 auto;
+    }
+
+    .device-actions > .mud-button-outlined {
+        flex: 1 1 auto !important;
+    }
+
+    .device-actions .mud-button-outlined {
+        padding-left: 6px;
+        padding-right: 6px;
+        font-size: 0.74rem;
+        letter-spacing: 0;
+    }
+}

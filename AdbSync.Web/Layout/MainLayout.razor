@@ -31,7 +31,7 @@ else
     <MudLayout>
         <MudAppBar Elevation="0">
             <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@(() => _drawerOpen = !_drawerOpen)" />
-            <span class="brand ml-3"><span class="brand-mark"></span><MudText Typo="Typo.h6" Class="brand-text">AdbSync</MudText></span>
+            <span class="brand ml-1 ml-sm-3"><span class="brand-mark"></span><MudText Typo="Typo.h6" Class="brand-text">AdbSync</MudText></span>
             @if (Status.Snapshot?.Server.Name is { } name)
             {
                 <MudText Typo="Typo.caption" Class="ml-3 mt-1 d-none d-sm-flex" Style="opacity:.8">@name</MudText>
@@ -53,7 +53,7 @@ else
                 <MudMenuItem Icon="@Icons.Material.Filled.Logout" OnClick="SignOutAsync">Sign out</MudMenuItem>
             </MudMenu>
         </MudAppBar>
-        <MudDrawer @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="0" Variant="DrawerVariant.Mini" OpenMiniOnHover="true">
+        <MudDrawer @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="0" Variant="@(_mobile ? DrawerVariant.Temporary : DrawerVariant.Mini)" OpenMiniOnHover="true">
             <MudNavMenu Class="mt-2">
                 <MudNavLink Href="" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Sync">Jobs</MudNavLink>
                 <MudNavLink Href="runs" Icon="@Icons.Material.Filled.History">Run history</MudNavLink>
@@ -67,7 +67,7 @@ else
             {
                 <MudAlert Severity="Severity.Warning" Square="true" Dense="true">Can't reach the server: @error</MudAlert>
             }
-            <MudContainer MaxWidth="MaxWidth.Large" Class="py-6">
+            <MudContainer MaxWidth="MaxWidth.Large" Class="py-6 page-container">
                 @Body
             </MudContainer>
         </MudMainContent>
@@ -80,6 +80,7 @@ else
     private MudThemeProvider? _themeProvider;
     private bool _dark;
     private bool _drawerOpen;
+    private bool _mobile;
     private bool _schedulerBusy;
     private bool _watching;
 
@@ -132,6 +133,7 @@ else
     {
         Session.Changed += OnSessionChanged;
         Status.Changed += OnStatusChanged;
+        Navigation.LocationChanged += OnLocationChanged;
         await Session.LoadAsync();
         EnsureRoute();
         UpdateWatch();
@@ -155,6 +157,13 @@ else
             "light" => false,
             _ => true,
         };
+        try
+        {
+            _mobile = await JS.InvokeAsync<int>("eval", "window.innerWidth") < 960;
+        }
+        catch (JSException)
+        {
+        }
         await ApplyGlassAsync();
         StateHasChanged();
     }
@@ -235,6 +244,22 @@ else
         }
     }
 
+    private async void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        if (!_drawerOpen)
+            return;
+        try
+        {
+            _mobile = await JS.InvokeAsync<int>("eval", "window.innerWidth") < 960;
+            if (_mobile)
+                _drawerOpen = false;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+        {
+        }
+    }
+
     private async Task PairClientAsync() =>
         await Dialogs.ShowAsync<PairingCodeDialog>("Pair another client", new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true });
 
@@ -256,6 +281,7 @@ else
     {
         Session.Changed -= OnSessionChanged;
         Status.Changed -= OnStatusChanged;
+        Navigation.LocationChanged -= OnLocationChanged;
         if (_watching)
             Status.Unwatch();
     }

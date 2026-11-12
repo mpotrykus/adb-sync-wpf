@@ -5,10 +5,10 @@
 
 <PageTitle>Devices · AdbSync</PageTitle>
 
-<div class="d-flex align-center mb-6">
+<div class="page-head">
     <MudText Typo="Typo.h4">Devices</MudText>
     <MudSpacer />
-    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Refresh" OnClick="LoadAsync" Class="mr-2">Refresh</MudButton>
+    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Refresh" OnClick="LoadAsync">Refresh</MudButton>
     <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="() => EditAsync(null)">New device</MudButton>
 </div>
 
@@ -36,7 +36,7 @@ else
             var test = _tests.GetValueOrDefault(device.Id);
             var state = test is null ? device.Connection.State : test.Connected ? "connected" : "unreachable";
             <MudItem xs="12" md="6">
-                <MudCard Elevation="1">
+                <MudCard Elevation="1" Class="device-card">
                     <MudCardHeader>
                         <CardHeaderAvatar>
                             <MudAvatar Color="StateColor(state)" Variant="Variant.Outlined">
@@ -54,7 +54,7 @@ else
                         </CardHeaderActions>
                     </MudCardHeader>
                     <MudCardContent Class="pt-0">
-                        <MudText Typo="Typo.body2">
+                        <MudText Typo="Typo.body2" Class="device-meta">
                             Used by @device.UsedByJobIds.Count job@(device.UsedByJobIds.Count == 1 ? "" : "s")
                             @if ((test?.Endpoint ?? device.Connection.Endpoint) is { } endpoint)
                             {
@@ -69,7 +69,7 @@ else
                             </MudAlert>
                         }
                     </MudCardContent>
-                    <MudCardActions Class="px-4 pb-4">
+                    <MudCardActions Class="px-4 pb-4 device-actions">
                         <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Link"
                                    OnClick="() => PairAsync(device)">Pair</MudButton>
                         <MudButton Variant="Variant.Outlined" Color="Color.Primary" Class="ml-2" StartIcon="@Icons.Material.Filled.NetworkCheck"
