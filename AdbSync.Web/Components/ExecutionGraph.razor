@@ -87,30 +87,19 @@
 
     private static List<(string? Icon, string Text, string Tip)> Items(RunStepDto step)
     {
-        var items = new List<(string?, string, string)>();
-        var elapsed = step.StartedAt is null ? null : Format.Duration(step.StartedAt, step.EndedAt);
-        switch (step.Status)
-        {
-            case "pending": return [(null, "pending", "Pending")];
-            case "skipped": return [(null, "skipped", "Skipped")];
-            case "waiting": return [(Icons.Material.Filled.HourglassEmpty, "device", "Waiting for device")];
-        }
+        const string none = "-";
+        var started = step.StartedAt is not null;
         var touched = step.FilesCopied + step.FilesDeleted;
+        var items = new List<(string?, string, string)>();
         if (step.Phase is "pull" or "push" or "merge")
-            items.Add((Icons.Material.Filled.InsertDriveFile, touched.ToString(), step.Phase == "merge" ? "Files changed" : "Files copied or deleted"));
-        if (step.Phase is "pull" or "push" && step.BytesCopied > 0)
-            items.Add((Icons.Material.Filled.Storage, Format.Bytes(step.BytesCopied), "Bytes copied"));
-        if (step.Conflicts > 0)
-            items.Add((Icons.Material.Filled.CompareArrows, step.Conflicts.ToString(), "Conflicts"));
-        if (step.Errors > 0)
-            items.Add((Icons.Material.Filled.ErrorOutline, step.Errors.ToString(), "Errors"));
-        if (step.Status == "running")
-            items.Add((Icons.Material.Filled.Timer, elapsed ?? "0 s", "Elapsed"));
-        else if (elapsed is not null)
-            items.Add((Icons.Material.Filled.Timer, elapsed, "Duration"));
-        else if (step.Status == "cancelled")
-            items.Add((null, "stopped", "Stopped"));
-        return items.Count == 0 ? [(null, step.Status, step.Status)] : items;
+            items.Add((Icons.Material.Filled.InsertDriveFile, started && touched > 0 ? touched.ToString() : none, step.Phase == "merge" ? "Files changed" : "Files copied or deleted"));
+        if (step.Phase is "pull" or "push")
+            items.Add((Icons.Material.Filled.Storage, step.BytesCopied > 0 ? Format.Bytes(step.BytesCopied) : none, "Bytes copied"));
+        if (step.Phase == "merge")
+            items.Add((Icons.Material.Filled.CompareArrows, step.Conflicts > 0 ? step.Conflicts.ToString() : none, "Conflicts"));
+        items.Add((Icons.Material.Filled.ErrorOutline, step.Errors > 0 ? step.Errors.ToString() : none, "Errors"));
+        items.Add((Icons.Material.Filled.Timer, started ? Format.Duration(step.StartedAt, step.EndedAt) : none, step.Status == "running" ? "Elapsed" : "Duration"));
+        return items;
     }
 
     private static string Detail(RunStepDto step)
