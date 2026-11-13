@@ -21,7 +21,7 @@
 
 @if (_loading)
 {
-    <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="320px" />
+    <div class="page-loading"><SyncMark Size="64" /></div>
 }
 else if (_runs.Count == 0)
 {

@@ -418,6 +418,24 @@ body:not(.glass) .job-card:hover {
     margin: 16px 32px 24px;
 }
 
+.phase-graph {
+    transition: opacity 0.35s ease, transform 0.35s ease;
+    animation: phase-graph-in 0.35s ease;
+}
+
+.phase-graph.hidden {
+    opacity: 0;
+    transform: translateY(-6px);
+    pointer-events: none;
+}
+
+@keyframes phase-graph-in {
+    from {
+        opacity: 0;
+        transform: translateY(-6px);
+    }
+}
+
 .phase-node-wrap {
     flex: 0 0 auto;
     display: flex;
@@ -616,4 +634,198 @@ body.glass .job-card {
 
 @media (prefers-reduced-motion: reduce) {
     .page-head, .device-card, .conflict-card, .runs-table, .settings-card { animation: none !important; }
+}
+
+.sync-mark {
+    display: inline-flex;
+    flex: none;
+    width: var(--sz, 18px);
+    height: var(--sz, 18px);
+    vertical-align: middle;
+}
+
+.sync-mark svg {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+
+.sync-mark .glow {
+    opacity: 0.3;
+}
+
+.sync-mark .ang,
+.sync-mark .rad,
+.sync-mark .unang,
+.sync-mark .ring,
+.sync-mark .core {
+    transform-origin: 0 0;
+}
+
+.sync-mark .rad {
+    transform: translateX(13px);
+}
+
+.sync-mark .ring {
+    opacity: 0;
+}
+
+.sync-mark .core {
+    opacity: 0.3;
+}
+
+.sync-mark .ang {
+    animation: sm-ang 4.8s linear infinite;
+}
+
+.sync-mark .unang {
+    animation: sm-unang 4.8s linear infinite;
+}
+
+.sync-mark .rad {
+    animation: sm-rad 4.8s infinite;
+}
+
+.sync-mark .ring {
+    animation: sm-ring 4.8s linear infinite;
+}
+
+.sync-mark .core {
+    animation: sm-core 4.8s ease-in-out infinite;
+}
+
+.mud-chip .sync-mark {
+    margin-right: 6px;
+}
+
+@keyframes sm-ang {
+    to {
+        transform: rotate(720deg);
+    }
+}
+
+@keyframes sm-unang {
+    to {
+        transform: rotate(-720deg);
+    }
+}
+
+@keyframes sm-rad {
+    0%,
+    38% {
+        transform: translateX(13px) scale(1);
+        animation-timing-function: cubic-bezier(0.55, 0, 0.9, 0.6);
+    }
+    60% {
+        transform: translateX(0) scale(1.08);
+        animation-timing-function: ease-out;
+    }
+    65% {
+        transform: translateX(0) scale(1.16);
+        animation-timing-function: cubic-bezier(0.1, 0.5, 0.3, 1);
+    }
+    88%,
+    100% {
+        transform: translateX(13px) scale(1);
+    }
+}
+
+@keyframes sm-ring {
+    0%,
+    58% {
+        opacity: 0;
+        transform: scale(0.3);
+    }
+    61% {
+        opacity: 0.95;
+        transform: scale(0.6);
+    }
+    66% {
+        opacity: 0.75;
+        transform: scale(1.7);
+    }
+    72% {
+        opacity: 0.35;
+        transform: scale(2.2);
+    }
+    80%,
+    100% {
+        opacity: 0;
+        transform: scale(2.5);
+    }
+}
+
+@keyframes sm-core {
+    0%,
+    40%,
+    82%,
+    100% {
+        opacity: 0.3;
+        transform: scale(0.8);
+    }
+    62% {
+        opacity: 1;
+        transform: scale(2);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .sync-mark .ang,
+    .sync-mark .unang,
+    .sync-mark .rad,
+    .sync-mark .ring,
+    .sync-mark .core {
+        animation: none;
+    }
+}
+
+.brand-slot {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    margin-right: -14px;
+}
+
+.brand-slot .brand-mark {
+    transition: opacity 0.45s ease;
+}
+
+.brand-slot.syncing .brand-mark {
+    opacity: 0;
+}
+
+.brand-sync {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.45s ease;
+}
+
+.brand-sync.out {
+    opacity: 0;
+}
+
+.boot .sync-mark .ang,
+.boot .sync-mark .unang,
+.boot .sync-mark .rad,
+.boot .sync-mark .ring,
+.boot .sync-mark .core,
+.page-loading .sync-mark .ang,
+.page-loading .sync-mark .unang,
+.page-loading .sync-mark .rad,
+.page-loading .sync-mark .ring,
+.page-loading .sync-mark .core {
+    animation-duration: 2.4s;
+}
+
+.page-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 40vh;
 }

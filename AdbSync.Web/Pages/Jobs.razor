@@ -40,12 +40,7 @@
 
 @if (Status.Snapshot is not { } snapshot)
 {
-    <MudGrid>
-        @for (var i = 0; i < 3; i++)
-        {
-            <MudItem xs="12" md="6" lg="4"><MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="220px" /></MudItem>
-        }
-    </MudGrid>
+    <div class="page-loading"><SyncMark Size="64" /></div>
 }
 else if (snapshot.Jobs.Count == 0)
 {
@@ -118,7 +113,11 @@ else
                             {
                                 var waitingOnApp = job.Phase == "waitingForAppClose" || job.Devices.Any(d => d.Phase == "waitingForAppClose");
                                 <MudChip T="string" Color="@(waitingOnApp ? Color.Warning : Color.Primary)" Size="Size.Small"
-                                         Icon="@(waitingOnApp ? Icons.Material.Filled.HourglassTop : Icons.Material.Filled.Sync)">
+                                         Icon="@(waitingOnApp ? Icons.Material.Filled.HourglassTop : job.State == "queued" ? Icons.Material.Filled.Sync : null)">
+                                    @if (!waitingOnApp && job.State != "queued")
+                                    {
+                                        <SyncMark Size="18" />
+                                    }
                                     @(waitingOnApp ? "Waiting · app is open" : job.State == "queued" ? "Queued" : "Running" + (job.Phase is { } p ? " · " + Format.Words(p) : ""))
                                 </MudChip>
                             }
@@ -129,8 +128,9 @@ else
                             @foreach (var op in Status.RunningOperations.Where(o => o.JobId == job.JobId))
                             {
                                 <MudTooltip Text="Click to open">
-                                    <MudChip T="string" Color="Color.Primary" Size="Size.Small" Icon="@Icons.Material.Filled.Sync"
+                                    <MudChip T="string" Color="Color.Primary" Size="Size.Small"
                                              OnClick="() => OpenOperationAsync(job, op)">
+                                        <SyncMark Size="18" />
                                         @(op.Kind switch { "restoreSnapshot" => "Restoring snapshot", "createSnapshot" => "Creating snapshot", "closeAndSync" => "Closing app and syncing", _ => Format.Words(op.Kind) })@(op.Progress is { Message: { Length: > 0 } m } ? " · " + m : "")
                                     </MudChip>
                                 </MudTooltip>
@@ -177,13 +177,13 @@ else
                             </div>
                         }
 
-                        @if (busy && opGraphs.Count == 0)
+                        @if (opGraphs.Count == 0)
                         {
-                            <div class="phase-graph">
+                            <div class="@("phase-graph " + (busy ? "shown" : "hidden"))" aria-hidden="@(!busy ? "true" : null)">
                                 @for (var i = 0; i < Phases.Length; i++)
                                 {
                                     var (key, label, icon) = Phases[i];
-                                    var state = PhaseClass(job.Phase, key);
+                                    var state = busy ? PhaseClass(job.Phase, key) : "";
                                     <MudTooltip Text="@($"{label} · {PhaseText(state)}")" RootClass="phase-node-wrap">
                                         <div class="phase-node @state" title="@($"{label} · {PhaseText(state)}")">
                                             <MudIcon Icon="@(state == "done" ? Icons.Material.Filled.Check : icon)" />

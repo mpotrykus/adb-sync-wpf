@@ -18,12 +18,7 @@
 
 @if (_devices is null)
 {
-    <MudGrid>
-        @for (var i = 0; i < 2; i++)
-        {
-            <MudItem xs="12" md="6"><MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="180px" /></MudItem>
-        }
-    </MudGrid>
+    <div class="page-loading"><SyncMark Size="64" /></div>
 }
 else if (_devices.Count == 0)
 {

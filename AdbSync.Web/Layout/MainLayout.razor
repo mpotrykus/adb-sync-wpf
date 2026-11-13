@@ -16,7 +16,7 @@
 
 @if (!Session.Loaded)
 {
-    <div class="boot"><div class="boot-spinner"></div></div>
+    <div class="boot"><SyncMark Size="64" /></div>
 }
 else if (!Session.SignedIn)
 {
@@ -35,7 +35,7 @@ else
             {
                 <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@(() => _drawerOpen = !_drawerOpen)" />
             }
-            <span class="brand @(_mobile ? "ml-1" : "")"><span class="brand-mark"></span><MudText Typo="Typo.h6" Class="brand-text">AdbSync</MudText></span>
+            <span class="brand @(_mobile ? "ml-1" : "")"><span class="brand-slot @(_brandSync && !_brandOut ? "syncing" : "")"><span class="brand-mark"></span>@if (_brandSync) { <span class="brand-sync @(_brandOut ? "out" : "")" @ref="_brandEl"><SyncMark Size="40" /></span> }</span><MudText Typo="Typo.h6" Class="brand-text">AdbSync</MudText></span>
             @if (Status.Snapshot?.Server.Name is { } name)
             {
                 <MudText Typo="Typo.caption" Class="ml-3 mt-1 d-none d-sm-flex" Style="opacity:.8">@name</MudText>
@@ -81,6 +81,11 @@ else
     private bool _drawerOpen;
     private bool _mobile;
     private bool _watching;
+    private bool _brandSync;
+    private bool _brandOut;
+    private bool _brandSettling;
+    private int _brandGen;
+    private ElementReference _brandEl;
 
     private readonly MudTheme _theme = new()
     {
@@ -182,7 +187,67 @@ else
         InvokeAsync(StateHasChanged);
     }
 
-    private void OnStatusChanged() => InvokeAsync(StateHasChanged);
+    private void OnStatusChanged() => InvokeAsync(() =>
+    {
+        UpdateBrand();
+        StateHasChanged();
+    });
+
+    private bool AnyRunning => Status.Snapshot?.Jobs.Any(j => j.State != "idle") == true;
+
+    private void UpdateBrand()
+    {
+        if (AnyRunning)
+        {
+            if (_brandSettling)
+            {
+                _brandGen++;
+                _brandSettling = false;
+                _ = ResumeBrandAsync();
+            }
+            _brandSync = true;
+            _brandOut = false;
+        }
+        else if (_brandSync && !_brandSettling)
+        {
+            _ = SettleBrandAsync();
+        }
+    }
+
+    private async Task ResumeBrandAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("adbsyncResumeMark", _brandEl);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException or InvalidOperationException)
+        {
+        }
+    }
+
+    private async Task SettleBrandAsync()
+    {
+        _brandSettling = true;
+        var gen = ++_brandGen;
+        try
+        {
+            await JS.InvokeVoidAsync("adbsyncSettleMark", _brandEl);
+            if (gen != _brandGen)
+                return;
+            _brandOut = true;
+            await InvokeAsync(StateHasChanged);
+            await Task.Delay(500);
+            if (gen != _brandGen)
+                return;
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException or InvalidOperationException)
+        {
+        }
+        _brandSync = false;
+        _brandOut = false;
+        _brandSettling = false;
+        await InvokeAsync(StateHasChanged);
+    }
 
     private async void OnLocationChanged(object? sender, LocationChangedEventArgs e)
     {
