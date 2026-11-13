@@ -386,6 +386,8 @@ class PcClient(private val config: PcConfig) {
 
     fun runSteps(job: String, runId: String): List<RemoteStep> = parseSteps(getText("/api/v1/runs/$runId"))
 
+    fun activeRunId(job: String): String? = statusFor(job)?.optStringOrNull("activeRunId")
+
     /** The in-progress run's steps; empty when the job isn't running. */
     fun liveSteps(job: String): List<RemoteStep> {
         val active = statusFor(job)?.optStringOrNull("activeRunId") ?: return emptyList()
