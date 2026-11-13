@@ -9,6 +9,7 @@ public static class Contract
     {
         Core.Models.Orchestration.SyncPhase.PreConnect => "preConnect",
         Core.Models.Orchestration.SyncPhase.Pull => "pull",
+        Core.Models.Orchestration.SyncPhase.Snapshot => "snapshot",
         Core.Models.Orchestration.SyncPhase.Merge => "merge",
         Core.Models.Orchestration.SyncPhase.Push => "push",
         Core.Models.Orchestration.SyncPhase.WaitingForAppClose => "waitingForAppClose",

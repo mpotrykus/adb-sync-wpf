@@ -7,7 +7,7 @@ namespace AdbSync.Core.Services.Orchestration;
 /// <summary>Collects one run's per-device/per-phase steps and mirrors every change to the live sink.</summary>
 internal sealed class RunStepRecorder(string jobName, ILiveRunStepSink? liveSink)
 {
-    public static readonly SyncPhase[] GraphPhases = [SyncPhase.PreConnect, SyncPhase.Pull, SyncPhase.Merge, SyncPhase.Push];
+    public static readonly SyncPhase[] GraphPhases = [SyncPhase.PreConnect, SyncPhase.Pull, SyncPhase.Snapshot, SyncPhase.Merge, SyncPhase.Push];
 
     private readonly List<RunStepRecord> _steps = [];
     private readonly List<RunFileChange> _files = [];

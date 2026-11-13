@@ -51,7 +51,7 @@ public sealed class JobStatusBuilder(
             watch.For(job, config));
     }
 
-    private static readonly string[] PhaseOrder = ["preConnect", "waitingForDevice", "pull", "merge", "push"];
+    private static readonly string[] PhaseOrder = ["preConnect", "waitingForDevice", "pull", "snapshot", "merge", "push"];
 
     private static string? JobPhase(Core.Services.Companion.JobStatus live)
     {

@@ -47,9 +47,10 @@
         "waitingForDevice" => 0,
         "waitingForAppClose" => 0,
         "pull" => 1,
-        "merge" => 2,
-        "push" => 3,
-        _ => 4,
+        "snapshot" => 2,
+        "merge" => 3,
+        "push" => 4,
+        _ => 5,
     };
 
     private static string Title(string phase) => phase switch
@@ -57,6 +58,7 @@
         "preConnect" => "Connect",
         "waitingForDevice" => "Waiting for device",
         "waitingForAppClose" => "Waiting for app",
+        "snapshot" => "Rollback point",
         _ => Format.Words(phase),
     };
 
@@ -79,6 +81,7 @@
         _ => step.Phase switch
         {
             "pull" => Icons.Material.Filled.Download,
+            "snapshot" => Icons.Material.Filled.Backup,
             "merge" => Icons.Material.Filled.CallMerge,
             "push" => Icons.Material.Filled.Upload,
             _ => Icons.Material.Filled.Link,
@@ -120,6 +123,8 @@
                 parts.Add($"{touched} file{(touched == 1 ? "" : "s")}");
                 if (step.BytesCopied > 0)
                     parts.Add(Format.Bytes(step.BytesCopied));
+                break;
+            case "snapshot":
                 break;
             case "merge":
                 parts.Add($"{touched} changed");

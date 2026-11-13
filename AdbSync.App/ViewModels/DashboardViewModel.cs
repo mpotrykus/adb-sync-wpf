@@ -79,6 +79,7 @@ public sealed class DashboardViewModel : ISyncEventSink
                 {
                     SyncPhase.WaitingForAppClose => ("Waiting for app to close on ", ""),
                     SyncPhase.WaitingForDevice => ("Waiting for ", " (in use by another job)"),
+                    SyncPhase.Snapshot => ("Saving rollback point @ ", ""),
                     _ => ($"{phase} @ ", ""),
                 };
                 vm.SetDevicePhase(deviceName, prefix, suffix);

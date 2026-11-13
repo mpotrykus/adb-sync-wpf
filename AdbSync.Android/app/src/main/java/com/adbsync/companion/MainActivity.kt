@@ -686,6 +686,7 @@ class MainActivity : Activity() {
         val order = listOf(
             Triple("PreConnect", "Connect", R.drawable.ic_link),
             Triple("Pull", "Pull", R.drawable.ic_download),
+            Triple("Snapshot", "Rollback", R.drawable.ic_save),
             Triple("Merge", "Merge", R.drawable.ic_merge),
             Triple("Push", "Push", R.drawable.ic_upload),
         )

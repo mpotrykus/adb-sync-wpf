@@ -30,7 +30,7 @@ Structure: `AdbSync.slnx` with `AdbSync.Core` (net8.0), `AdbSync.App` (WPF, net8
 
 Progress model:
 - The only progress abstraction is `ISyncEventSink` (`AdbSync.Core/Services/Orchestration/ISyncEventSink.cs`), keyed by job name: `PhaseChanged(jobName, SyncPhase, deviceName?)`, `JobQueued/Skipped/Completed/Failed/Cancelled`, `MergeConflictsDetected`, `WatchStarted/Degraded/Stopped`, `ChangeDetected`.
-- `SyncPhase`: PreConnect, Pull, Push, WaitingForAppClose, Merge, WaitingForDevice.
+- `SyncPhase`: PreConnect, Pull, Push, WaitingForAppClose, Merge, WaitingForDevice, Snapshot.
 - No per-file or byte-level progress exists. `TransferResult` only reports totals after completion, and `IAdbTransferEngine.PullMirrorAsync/PushMirrorAsync` take no progress callback. Real percent progress needs a new hook through `NativeAdbTransferEngine`, `MirrorPlanApplier`, `AdbSyncRemoteFileSystem`.
 - `DashboardViewModel` (`AdbSync.App/ViewModels/`) is the sole registered sink (resolved in `App.xaml.cs`). `ILiveRunLogSink` (`Core/Services/Logging/`) exposes pollable in-progress log text per job via `TryGet`.
 - `JobRunService` (`AdbSync.App/Services/`) runs jobs and exposes `CancelAllRunning`.

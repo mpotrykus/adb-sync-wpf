@@ -374,7 +374,14 @@ public sealed class SyncJobRunner(
 
                 await pushSafety.RecordDeviceSnapshotAsync(job.Name, binding.DeviceName, fileCount, ct);
 
-                rollback?.CaptureBeforeMerge(binding.DeviceName, stagingPath);
+                if (rollback is not null)
+                {
+                    steps.Start(binding.DeviceName, SyncPhase.Snapshot);
+                    events.PhaseChanged(job.Name, SyncPhase.Snapshot, binding.DeviceName);
+                    _logger.LogInformation("Job '{Job}' capturing rollback point for '{Device}'", job.Name, binding.DeviceName);
+                    rollback.CaptureBeforeMerge(binding.DeviceName, stagingPath);
+                    steps.Finish(binding.DeviceName, SyncPhase.Snapshot);
+                }
 
                 steps.Start(binding.DeviceName, SyncPhase.Merge);
                 events.PhaseChanged(job.Name, SyncPhase.Merge, binding.DeviceName);

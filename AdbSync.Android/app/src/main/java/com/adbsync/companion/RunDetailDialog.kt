@@ -617,6 +617,7 @@ class RunDetailDialog(
         "Skipped" -> R.drawable.ic_remove
         else -> when (step.phase) {
             "Pull" -> R.drawable.ic_download
+            "Snapshot" -> R.drawable.ic_save
             "Merge" -> R.drawable.ic_merge
             "Push" -> R.drawable.ic_upload
             else -> R.drawable.ic_link
@@ -651,6 +652,7 @@ class RunDetailDialog(
         "PreConnect" -> "Connect"
         "WaitingForDevice" -> "Waiting for device"
         "WaitingForAppClose" -> "Waiting for app"
+        "Snapshot" -> "Rollback point"
         else -> Fmt.words(phase)
     }
 
@@ -659,9 +661,10 @@ class RunDetailDialog(
     private fun phaseOrder(phase: String) = when (phase) {
         "PreConnect", "WaitingForDevice", "WaitingForAppClose" -> 0
         "Pull" -> 1
-        "Merge" -> 2
-        "Push" -> 3
-        else -> 4
+        "Snapshot" -> 2
+        "Merge" -> 3
+        "Push" -> 4
+        else -> 5
     }
 
     private companion object {

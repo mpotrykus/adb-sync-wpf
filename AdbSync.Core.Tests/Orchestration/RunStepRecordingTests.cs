@@ -76,10 +76,12 @@ public class RunStepRecordingTests : IDisposable
         var record = Assert.Single(await store.ListRunsAsync(job.Name));
         var steps = await store.GetRunStepsAsync(record.RunId);
 
-        Assert.Equal(8, steps.Count);
-        Assert.All(steps, s => Assert.Equal(RunStepStatus.Succeeded, s.Status));
-        Assert.All(steps, s => Assert.NotNull(s.StartedAt));
-        Assert.All(steps, s => Assert.NotNull(s.EndedAt));
+        Assert.Equal(10, steps.Count);
+        Assert.All(steps.Where(s => s.Phase == SyncPhase.Snapshot), s => Assert.Equal(RunStepStatus.Skipped, s.Status));
+        var ran = steps.Where(s => s.Phase != SyncPhase.Snapshot).ToList();
+        Assert.All(ran, s => Assert.Equal(RunStepStatus.Succeeded, s.Status));
+        Assert.All(ran, s => Assert.NotNull(s.StartedAt));
+        Assert.All(ran, s => Assert.NotNull(s.EndedAt));
         Assert.Equal(1, steps.Single(s => s.DeviceName == "DeviceA" && s.Phase == SyncPhase.Pull).FilesCopied);
         Assert.False(liveSteps.TryGet(job.Name, out _));
     }

@@ -352,6 +352,7 @@ else
     [
         ("preConnect", "Connect", Icons.Material.Filled.Link),
         ("pull", "Pull", Icons.Material.Filled.Download),
+        ("snapshot", "Rollback", Icons.Material.Filled.Backup),
         ("merge", "Merge", Icons.Material.Filled.CallMerge),
         ("push", "Push", Icons.Material.Filled.Upload),
     ];
@@ -496,6 +497,7 @@ else
         "pull" => Icons.Material.Filled.CloudDownload,
         "push" => Icons.Material.Filled.CloudUpload,
         "merge" => Icons.Material.Filled.MergeType,
+        "snapshot" => Icons.Material.Filled.Backup,
         "waitingForAppClose" => Icons.Material.Filled.HourglassTop,
         "waitingForDevice" => Icons.Material.Filled.PhonelinkOff,
         _ => null,
@@ -507,6 +509,7 @@ else
         "pull" => "Pulling",
         "push" => "Pushing",
         "merge" => "Merging",
+        "snapshot" => "Saving rollback point",
         "waitingForAppClose" => "Waiting for app to close",
         "waitingForDevice" => "Waiting for device",
         _ => Format.Words(phase),

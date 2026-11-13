@@ -456,12 +456,13 @@ public partial class RunGraph : UserControl
     {
         SyncPhase.PreConnect => 0,
         SyncPhase.Pull => 1,
-        SyncPhase.Merge => 2,
-        SyncPhase.Push => 3,
-        _ => 4,
+        SyncPhase.Snapshot => 2,
+        SyncPhase.Merge => 3,
+        SyncPhase.Push => 4,
+        _ => 5,
     };
 
-    private static string PhaseTitle(SyncPhase phase) => phase == SyncPhase.PreConnect ? "Connect" : phase.ToString();
+    private static string PhaseTitle(SyncPhase phase) => phase switch { SyncPhase.PreConnect => "Connect", SyncPhase.Snapshot => "Rollback point", _ => phase.ToString() };
 
     private static string StatusGlyph(RunStepStatus status) => status switch
     {

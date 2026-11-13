@@ -576,7 +576,8 @@ body:not(.glass) .phase-line.active {
 }
 
 .device-phase.pull,
-.device-phase.push {
+.device-phase.push,
+.device-phase.snapshot {
     animation: device-phase-pulse 1.2s ease-in-out infinite;
 }
 
@@ -786,7 +787,7 @@ body.glass .job-card {
     justify-content: center;
     width: 40px;
     height: 40px;
-    margin-right: -14px;
+    margin-right: -8px;
 }
 
 .brand-slot .brand-mark {
