@@ -376,11 +376,18 @@ public sealed class SyncJobRunner(
 
                 if (rollback is not null)
                 {
-                    steps.Start(binding.DeviceName, SyncPhase.Snapshot);
-                    events.PhaseChanged(job.Name, SyncPhase.Snapshot, binding.DeviceName);
-                    _logger.LogInformation("Job '{Job}' capturing rollback point for '{Device}'", job.Name, binding.DeviceName);
-                    rollback.CaptureBeforeMerge(binding.DeviceName, stagingPath);
-                    steps.Finish(binding.DeviceName, SyncPhase.Snapshot);
+                    if (await WillMergeChangeAsync(job.Name, binding.DeviceName, stagingPath, masterPath, manifest, mergeOptions, ct))
+                    {
+                        steps.Start(binding.DeviceName, SyncPhase.Snapshot);
+                        events.PhaseChanged(job.Name, SyncPhase.Snapshot, binding.DeviceName);
+                        _logger.LogInformation("Job '{Job}' capturing rollback point for '{Device}'", job.Name, binding.DeviceName);
+                        rollback.CaptureBeforeMerge(binding.DeviceName, stagingPath);
+                        steps.Finish(binding.DeviceName, SyncPhase.Snapshot);
+                    }
+                    else
+                    {
+                        rollback.Defer(binding.DeviceName, stagingPath);
+                    }
                 }
 
                 steps.Start(binding.DeviceName, SyncPhase.Merge);
@@ -388,7 +395,7 @@ public sealed class SyncJobRunner(
                 _logger.LogInformation("Job '{Job}' merge with '{Device}' started", job.Name, binding.DeviceName);
                 var mergeResult = await merge.MergeAsync(stagingPath, masterPath, manifest, mergeOptions, ct);
                 if (mergeResult.AnyChange)
-                    rollback?.MarkChanged();
+                    rollback?.MarkChanged(binding.DeviceName);
                 // The merged manifest describes the device as it will be after the push, so it is only committed
                 // once that push succeeds. Saving it now would let a failed push make the device's stale copy look
                 // like a device-side edit next run, which then overwrites the newer master.
@@ -576,14 +583,37 @@ public sealed class SyncJobRunner(
     private static string GetConflictBackupDir(string projectRoot, string deviceName) =>
         Path.Combine(projectRoot, ".sync_conflicts", ConfigNames.Segment(deviceName));
 
-    /// <summary>Lazily creates one rollback point per run, the first time a device is about to merge (so master is
-    /// still untouched), and drops it again at the end if no merge changed anything - an idle schedule tick must
-    /// not push real rollback points out of the keep-last-N window. A failure to copy never fails the sync.</summary>
+    private async Task<bool> WillMergeChangeAsync(
+        string jobName, string deviceName, string stagingPath, string masterPath, SyncManifest manifest, MergeOptions options, CancellationToken ct)
+    {
+        try
+        {
+            return (await merge.MergeAsync(stagingPath, masterPath, manifest, options with { DryRun = true }, ct)).AnyChange;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Job '{Job}' could not pre-check the merge with '{Device}' - capturing a rollback point to be safe", jobName, deviceName);
+            return true;
+        }
+    }
+
+    /// <summary>Lazily creates one rollback point per run, the first time a device is about to merge a change (so
+    /// master is still untouched), and drops it again at the end if no merge changed anything - an idle schedule
+    /// tick must not copy anything or push real rollback points out of the keep-last-N window. Devices that merged
+    /// nothing before the point exists are deferred and captured with it, because the push still gives them the new
+    /// master. A failure to copy never fails the sync.</summary>
     private sealed class RollbackSession(RollbackPointStore store, string projectRoot, string masterPath, int keep, ILogger logger)
     {
+        private readonly List<(string Device, string Staging)> _deferred = [];
         private string? _point;
         private bool _failed;
         private bool _changed;
+
+        public void Defer(string deviceName, string stagingPath)
+        {
+            if (!_failed && _point is null)
+                _deferred.Add((deviceName, stagingPath));
+        }
 
         public void CaptureBeforeMerge(string deviceName, string stagingPath)
         {
@@ -596,6 +626,9 @@ public sealed class SyncJobRunner(
                 {
                     _point = store.Create(projectRoot);
                     store.CaptureMaster(_point, masterPath);
+                    foreach (var (device, staging) in _deferred)
+                        store.CaptureDevice(_point, device, staging);
+                    _deferred.Clear();
                 }
                 store.CaptureDevice(_point, deviceName, stagingPath);
             }
@@ -607,7 +640,12 @@ public sealed class SyncJobRunner(
             }
         }
 
-        public void MarkChanged() => _changed = true;
+        public void MarkChanged(string deviceName)
+        {
+            if (_point is null && !_failed)
+                logger.LogWarning("Merge with '{Device}' changed files that the pre-check did not predict - no rollback point exists for this run", deviceName);
+            _changed = true;
+        }
 
         public void Finish()
         {

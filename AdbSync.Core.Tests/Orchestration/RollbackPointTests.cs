@@ -1,4 +1,5 @@
 using AdbSync.Core.Models.Config;
+using AdbSync.Core.Models.Merge;
 using AdbSync.Core.Models.Orchestration;
 using AdbSync.Core.Services.Config;
 using AdbSync.Core.Services.Merge;
@@ -42,8 +43,8 @@ public class RollbackPointTests : IDisposable
 
     private FakeAdbTransferEngine Transfer => new(new Dictionary<string, string> { ["DeviceA"] = DeviceFolder });
 
-    private SyncJobRunner CreateRunner() => new(
-        new FakeDeviceResolver(), new FakeAppRunningGuard(), new SyncLockManager(), Transfer, new TwoWayMergeEngine(),
+    private SyncJobRunner CreateRunner(ITwoWayMergeEngine? merge = null) => new(
+        new FakeDeviceResolver(), new FakeAppRunningGuard(), new SyncLockManager(), Transfer, merge ?? new TwoWayMergeEngine(),
         new ManifestStore(_appPaths), new PushSafetyGuard(_appPaths), new CheckpointManager(_appPaths),
         NullSyncEventSink.Instance, new RunHistoryStore(_appPaths), rollbackPoints: _store);
 
@@ -79,6 +80,69 @@ public class RollbackPointTests : IDisposable
         await CreateRunner().RunAsync(_job, 0, _devices, _settings, resumeFrom: null);
 
         Assert.Equal(before, _store.List(ProjectRoot).Count);
+    }
+
+    [Fact]
+    public async Task RunAsync_SyncWithNothingToDo_CopiesNothingIntoTheRollbackFolder()
+    {
+        WriteDeviceFile("a.txt", "v1");
+        await CreateRunner().RunAsync(_job, 0, _devices, _settings, resumeFrom: null);
+        Directory.Delete(RollbackPointStore.RootFor(ProjectRoot), recursive: true);
+
+        await CreateRunner().RunAsync(_job, 0, _devices, _settings, resumeFrom: null);
+
+        Assert.False(Directory.Exists(RollbackPointStore.RootFor(ProjectRoot)));
+    }
+
+    [Fact]
+    public async Task RunAsync_PreCheckFails_StillCapturesARollbackPoint()
+    {
+        WriteDeviceFile("old.txt", "v1");
+        await CreateRunner().RunAsync(_job, 0, _devices, _settings, resumeFrom: null);
+
+        WriteDeviceFile("new.txt", "v2");
+        await CreateRunner(new FailingDryRunMergeEngine()).RunAsync(_job, 0, _devices, _settings, resumeFrom: null);
+
+        Assert.Equal(1, _store.List(ProjectRoot).Count(p => File.Exists(Path.Combine(p.Path, "devices", "DeviceA", "new.txt"))));
+    }
+
+    [Fact]
+    public async Task RunAsync_IdleDeviceBeforeChangingDevice_IsCapturedWithThePoint()
+    {
+        var folderB = Path.Combine(_root, "devices", "DeviceB");
+        var devices = new List<DeviceConfig> { new() { Name = "DeviceA", Serial = "DeviceA" }, new() { Name = "DeviceB", Serial = "DeviceB" } };
+        var job = new SyncJobConfig
+        {
+            Name = "Job",
+            Devices =
+            [
+                new JobDeviceBinding { DeviceName = "DeviceA", RemotePath = "/sdcard/app" },
+                new JobDeviceBinding { DeviceName = "DeviceB", RemotePath = "/sdcard/app" },
+            ],
+        };
+        SyncJobRunner Runner() => new(
+            new FakeDeviceResolver(), new FakeAppRunningGuard(), new SyncLockManager(),
+            new FakeAdbTransferEngine(new Dictionary<string, string> { ["DeviceA"] = DeviceFolder, ["DeviceB"] = folderB }),
+            new TwoWayMergeEngine(), new ManifestStore(_appPaths), new PushSafetyGuard(_appPaths), new CheckpointManager(_appPaths),
+            NullSyncEventSink.Instance, new RunHistoryStore(_appPaths), rollbackPoints: _store);
+        WriteDeviceFile("shared.txt", "v1");
+        Directory.CreateDirectory(folderB);
+        File.WriteAllText(Path.Combine(folderB, "shared.txt"), "v1");
+        await Runner().RunAsync(job, 0, devices, _settings, resumeFrom: null);
+
+        File.WriteAllText(Path.Combine(folderB, "only-b.txt"), "v2");
+        await Runner().RunAsync(job, 0, devices, _settings, resumeFrom: null);
+
+        var newest = _store.List(ProjectRoot).First();
+        Assert.Equal(["DeviceA", "DeviceB"], newest.DeviceNames);
+    }
+
+    private sealed class FailingDryRunMergeEngine : ITwoWayMergeEngine
+    {
+        private readonly TwoWayMergeEngine _inner = new();
+
+        public Task<MergeResult> MergeAsync(string stagingPath, string masterPath, SyncManifest manifest, MergeOptions options, CancellationToken ct = default) =>
+            options.DryRun ? throw new IOException("pre-check boom") : _inner.MergeAsync(stagingPath, masterPath, manifest, options, ct);
     }
 
     [Fact]
