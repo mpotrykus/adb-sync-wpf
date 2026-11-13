@@ -38,6 +38,7 @@ import com.adbsync.companion.Ui.subSectionLabel
 import com.adbsync.companion.Ui.title
 import com.adbsync.companion.Ui.chip
 import com.adbsync.companion.Ui.statTile
+import com.adbsync.companion.Ui.syncChip
 import com.adbsync.companion.Ui.statStrip
 import com.adbsync.companion.Ui.phaseGraph
 import com.adbsync.companion.Ui.infoRow
@@ -521,7 +522,7 @@ class MainActivity : Activity() {
             val waiting = job.phase == "WaitingForAppClose" || job.devices.any { it.second == "WaitingForAppClose" }
             when {
                 waiting -> chips.addView(chip("Waiting · app is open", Ui.WARNING))
-                job.running -> chips.addView(chip(
+                job.running -> chips.addView(syncChip(
                     "Running" + (job.phase?.let { " · " + Protocol.phaseLabel(it) } ?: ""), Ui.ACCENT_FROM,
                 ))
                 else -> chips.addView(chip(if (job.enabled) "Idle" else "Disabled", Ui.TEXT_SECONDARY))

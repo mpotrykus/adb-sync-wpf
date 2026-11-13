@@ -285,6 +285,14 @@ object Ui {
         if (onClick != null) setOnClickListener { onClick() }
     }
 
+    fun Context.syncChip(text: String, color: Int) = chip(text, color).apply {
+        setPadding(dp(8), dp(4), dp(10), dp(4))
+        compoundDrawablePadding = dp(6)
+        val mark = SyncMarkDrawable().apply { setBounds(0, 0, dp(18), dp(18)) }
+        setCompoundDrawablesRelative(mark, null, null, null)
+        mark.start()
+    }
+
     /** One tile of the stat strip: big value over an uppercase label with a dot in the tile's color. */
     fun Context.statTile(value: String, label: String, color: Int, onClick: (() -> Unit)? = null) = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
