@@ -28,11 +28,13 @@ public sealed class AppRunningGuard(IAdbClient adbClient, TimeSpan? pollInterval
             await Task.Delay(_pollInterval, ct);
     }
 
+    // pidof alone reports frozen cached processes that have no activities left, which are not "open".
     private async Task<bool> IsRunningAsync(string appPackage, string serial, CancellationToken ct)
     {
         var receiver = new ConsoleOutputReceiver();
         var device = new DeviceData { Serial = serial, State = DeviceState.Online };
-        await adbClient.ExecuteRemoteCommandAsync($"pidof {appPackage}", device, receiver, Encoding.UTF8, ct);
+        var command = $"pidof {appPackage} >/dev/null && dumpsys activity activities 2>/dev/null | grep -q 'ActivityRecord{{[^}}]* u[0-9]* {appPackage}/' && echo open";
+        await adbClient.ExecuteRemoteCommandAsync(command, device, receiver, Encoding.UTF8, ct);
         return !string.IsNullOrWhiteSpace(receiver.ToString());
     }
 }

@@ -71,7 +71,7 @@ public class AppRunningGuardTests
     }
 
     [Fact]
-    public async Task WaitUntilStoppedAsync_PollsWithShortPidofCallsUntilAppExits()
+    public async Task WaitUntilStoppedAsync_PollsUntilAppExits()
     {
         var outputs = new Queue<string?>(["111", "111", null]);
         _adbClient
@@ -88,7 +88,7 @@ public class AppRunningGuardTests
         await _guard.WaitUntilStoppedAsync("com.example.app", "device-a");
 
         await _adbClient.Received(3).ExecuteRemoteCommandAsync(
-            "pidof com.example.app",
+            Arg.Is<string>(c => c.StartsWith("pidof com.example.app ") && c.Contains("dumpsys activity activities")),
             Arg.Is<DeviceData>(d => d.Serial == "device-a"),
             Arg.Any<IShellOutputReceiver>(),
             Arg.Any<Encoding>(),

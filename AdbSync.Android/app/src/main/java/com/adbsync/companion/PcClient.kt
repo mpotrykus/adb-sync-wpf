@@ -40,6 +40,8 @@ data class RemoteJob(
     val folderProblem: String? = null,
     val canForcePush: Boolean = false,
 ) {
+    fun isSyncingOn(device: String) = running && (devices.isEmpty() || devices.any { it.first == device })
+
     val isPushing get() = phase == "Push" || devices.any { it.second == "Push" }
 
     fun statusText(): String = when {
