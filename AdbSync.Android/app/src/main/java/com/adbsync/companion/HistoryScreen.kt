@@ -48,6 +48,10 @@ class HistoryScreen(host: MainActivity) : Screen(host) {
     private var loadingMore = false
     private var generation = 0
 
+    init {
+        list.addView(loader())
+    }
+
     override fun onShow() {
         if (stale) reload()
     }
@@ -99,10 +103,12 @@ class HistoryScreen(host: MainActivity) : Screen(host) {
         val cursor = next ?: return
         if (loadingMore) return
         loadingMore = true
+        render()
         val token = generation
         async({ it.runsPage(selected.toSet(), cursor) }) { result ->
             loadingMore = false
             if (token != generation) return@async
+            if (result.isFailure) render()
             result.onSuccess { page ->
                 val known = runs.map { it.run.runId }.toSet()
                 runs.addAll(page.items.filter { it.run.runId !in known })
@@ -143,7 +149,7 @@ class HistoryScreen(host: MainActivity) : Screen(host) {
 
         runs.forEach { list.addView(runCard(it)) }
         if (next != null) {
-            list.addView(host.button("Load more", fill = true) { loadMore() })
+            list.addView(if (loadingMore) loader(32) else host.button("Load more", fill = true) { loadMore() })
         }
     }
 

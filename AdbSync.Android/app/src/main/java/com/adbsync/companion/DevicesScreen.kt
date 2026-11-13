@@ -61,7 +61,7 @@ class DevicesScreen(host: MainActivity) : Screen(host) {
         list.removeAllViews()
         val items = devices
         if (items == null) {
-            list.addView(card().apply { addView(caption("Loading…")) })
+            list.addView(loader())
             return
         }
         if (items.isEmpty()) {

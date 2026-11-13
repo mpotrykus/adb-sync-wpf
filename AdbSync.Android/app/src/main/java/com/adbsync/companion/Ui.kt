@@ -623,6 +623,20 @@ object Ui {
         layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(4) }
     }
 
+    /** The orbit-merge sync mark, centered, for loading states. It only animates while attached. */
+    fun Context.loader(sizeDp: Int = 48) = FrameLayout(this).apply {
+        val mark = SyncMarkDrawable()
+        addView(View(context).apply { background = mark }, FrameLayout.LayoutParams(dp(sizeDp), dp(sizeDp), Gravity.CENTER))
+        layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
+            topMargin = dp(16)
+            bottomMargin = dp(16)
+        }
+        addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(v: View) = mark.start()
+            override fun onViewDetachedFromWindow(v: View) = mark.stop()
+        })
+    }
+
     /** A scrolling page of [views] with the app's standard padding. */
     fun Context.page(vararg views: View): ScrollView = ScrollView(this).apply {
         isVerticalScrollBarEnabled = false

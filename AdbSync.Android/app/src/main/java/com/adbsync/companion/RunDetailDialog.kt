@@ -19,6 +19,7 @@ import com.adbsync.companion.Ui.body
 import com.adbsync.companion.Ui.caption
 import com.adbsync.companion.Ui.button
 import com.adbsync.companion.Ui.dp
+import com.adbsync.companion.Ui.loader
 import com.adbsync.companion.Ui.styled
 import java.time.Duration
 import java.time.LocalDateTime
@@ -89,6 +90,7 @@ class RunDetailDialog(
 
     private lateinit var graph: LinearLayout
     private lateinit var hint: TextView
+    private lateinit var spinner: View
     private lateinit var logView: TextView
     private lateinit var filesView: LinearLayout
     private var files: RunFiles? = null
@@ -101,7 +103,8 @@ class RunDetailDialog(
             orientation = LinearLayout.VERTICAL
             setPadding(activity.dp(20), activity.dp(4), activity.dp(20), activity.dp(8))
         }
-        hint = activity.caption("Loading...").apply { setPadding(0, 0, 0, activity.dp(10)) }
+        hint = activity.caption("").apply { setPadding(0, 0, 0, activity.dp(10)) }
+        spinner = activity.loader()
         graph = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
         logView = TextView(activity).apply {
             textSize = 11f
@@ -112,6 +115,7 @@ class RunDetailDialog(
         }
         filesView = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
         root.addView(hint)
+        root.addView(spinner)
         root.addView(graph)
         if (!live) root.addView(filesView)
         root.addView(logView)
@@ -159,6 +163,7 @@ class RunDetailDialog(
 
     private fun apply(newSteps: List<RemoteStep>, newLog: String, newError: String?) {
         loaded = true
+        spinner.visibility = View.GONE
         error = newError
         if (newError == null) {
             if (live && newSteps.isEmpty() && steps.isNotEmpty()) {
@@ -177,7 +182,7 @@ class RunDetailDialog(
         hint.text = when {
             error != null -> error
             finished -> "Run finished - open History for its result"
-            !loaded -> "Loading..."
+            !loaded -> ""
             steps.isEmpty() -> if (live) "Waiting for the run to start..." else "No step data was recorded for this run."
             selectedDevice != null -> "Log filtered to ${selectionLabel()} - tap again to clear"
             else -> "Tap a device or step to filter the log"
@@ -215,7 +220,7 @@ class RunDetailDialog(
         filesView.setPadding(0, activity.dp(14), 0, 0)
         when (filesState) {
             FilesState.Idle -> filesView.addView(activity.button("Show changed files") { loadFiles() })
-            FilesState.Loading -> filesView.addView(activity.caption("Loading files..."))
+            FilesState.Loading -> filesView.addView(activity.loader(32))
             FilesState.Failed -> filesView.addView(activity.button("Couldn't load files - retry") { loadFiles() })
             FilesState.Loaded -> {
                 val loaded = files ?: return

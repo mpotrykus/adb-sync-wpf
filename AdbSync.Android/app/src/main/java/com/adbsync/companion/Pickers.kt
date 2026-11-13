@@ -14,6 +14,7 @@ import com.adbsync.companion.Ui.body
 import com.adbsync.companion.Ui.caption
 import com.adbsync.companion.Ui.dp
 import com.adbsync.companion.Ui.input
+import com.adbsync.companion.Ui.loader
 import com.adbsync.companion.Ui.styled
 
 /** List pickers backed by a device: folders to sync and installed apps. */
@@ -47,7 +48,7 @@ object Pickers {
 
         fun load(target: String) {
             list.removeAllViews()
-            list.addView(activity.caption("Loading $target…").apply { setPadding(activity.dp(8), activity.dp(8), 0, 0) })
+            list.addView(activity.loader())
             Backend.async(activity, { it.browse(deviceId, target) }) { result ->
                 list.removeAllViews()
                 result.onSuccess { listing ->
@@ -112,7 +113,7 @@ object Pickers {
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             override fun afterTextChanged(s: Editable?) = render()
         })
-        list.addView(activity.caption("Loading the phone's apps…").apply { setPadding(activity.dp(8), activity.dp(8), 0, 0) })
+        list.addView(activity.loader())
         dialog.show()
         Backend.async(activity, { it.packages(deviceId) }) { result ->
             result.onSuccess {

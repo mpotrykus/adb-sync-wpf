@@ -42,6 +42,7 @@ abstract class Screen(protected val host: MainActivity) {
     protected fun card(accent: Int? = null, glow: Boolean = false) = with(Ui) { host.card(accent, glow) }
     protected fun chip(text: String, color: Int, onClick: (() -> Unit)? = null) = with(Ui) { host.chip(text, color, onClick) }
     protected fun statusLine(text: CharSequence, color: Int, textColor: Int = color) = with(Ui) { host.statusLine(text, color, textColor) }
+    protected fun loader(sizeDp: Int = 48) = with(Ui) { host.loader(sizeDp) }
     protected fun indeterminateBar() = with(Ui) { host.indeterminateBar() }
     protected fun divider() = with(Ui) { host.divider() }
     protected fun spacer(heightDp: Int) = with(Ui) { host.spacer(heightDp) }

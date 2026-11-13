@@ -51,6 +51,7 @@ import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import com.adbsync.companion.Ui.header
 import com.adbsync.companion.Ui.toggle
 import com.adbsync.companion.Ui.page
+import com.adbsync.companion.Ui.loader
 import com.adbsync.companion.Ui.spacer
 import java.util.concurrent.ExecutorService
 import android.text.TextUtils
@@ -89,6 +90,7 @@ class MainActivity : Activity() {
     private lateinit var tabBar: Ui.TabBar
     private lateinit var brandMark: Ui.BrandMark
     private var schedulerPaused: Boolean? = null
+    private var jobsLoaded = false
     private var jobMeta: Map<String, JobMeta> = emptyMap()
     private var deviceStates: Map<String, String> = emptyMap()
     private var knownRunning = emptySet<String>()
@@ -405,6 +407,7 @@ class MainActivity : Activity() {
             override fun onConnected() = ui { if (active.get()) setPcStatus("Connected to ${config.pcName}", Ui.SUCCESS) }
             override fun onSnapshot(pc: String, jobs: List<RemoteJob>) = ui {
                 if (!active.get()) return@ui
+                jobsLoaded = true
                 this@MainActivity.jobs.clear()
                 jobs.forEach { this@MainActivity.jobs[it.name] = it }
                 setPcStatus("Connected to $pc", Ui.SUCCESS)
@@ -504,6 +507,10 @@ class MainActivity : Activity() {
         renderConflictsBanner()
         renderStats()
         jobsContainer.removeAllViews()
+        if (jobs.isEmpty() && PcConfig.load(this) != null && !jobsLoaded) {
+            jobsContainer.addView(loader())
+            return
+        }
         if (jobs.isEmpty()) {
             jobsContainer.addView(card().apply {
                 addView(caption(if (PcConfig.load(this@MainActivity) == null) "Jobs appear here once the PC is connected." else "No jobs configured on the PC."))

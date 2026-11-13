@@ -20,7 +20,7 @@ class SettingsScreen(host: MainActivity) : Screen(host) {
     private val collectors = ArrayList<(JSONObject) -> Unit>()
 
     init {
-        content.addView(card().apply { addView(caption("Loading…")) })
+        content.addView(loader())
     }
 
     override fun onShow() {

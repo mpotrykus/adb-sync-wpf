@@ -16,6 +16,7 @@ import com.adbsync.companion.Ui.chip
 import com.adbsync.companion.Ui.divider
 import com.adbsync.companion.Ui.dp
 import com.adbsync.companion.Ui.indeterminateBar
+import com.adbsync.companion.Ui.loader
 import com.adbsync.companion.Ui.styled
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -25,6 +26,7 @@ import java.time.format.FormatStyle
 class SnapshotsDialog(private val activity: Activity, private val jobName: String, private val running: Boolean) {
     private val list = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
     private val progress = activity.caption("").apply { visibility = View.GONE; setPadding(0, activity.dp(8), 0, 0) }
+    private val loading = activity.loader()
     private val bar = activity.indeterminateBar().apply { visibility = View.GONE }
     private lateinit var dialog: AlertDialog
     private lateinit var jobId: String
@@ -40,6 +42,7 @@ class SnapshotsDialog(private val activity: Activity, private val jobName: Strin
             ))
             addView(bar)
             addView(progress)
+            addView(loading)
             addView(list)
         }
         dialog = AlertDialog.Builder(activity)
@@ -58,12 +61,17 @@ class SnapshotsDialog(private val activity: Activity, private val jobName: Strin
             result.onSuccess {
                 jobId = it
                 load()
-            }.onFailure { list.addView(activity.body(errorText(it), Ui.DANGER, 13f)) }
+            }.onFailure {
+                loading.visibility = View.GONE
+                list.addView(activity.body(errorText(it), Ui.DANGER, 13f))
+            }
         }
     }
 
     private fun load() {
+        loading.visibility = View.VISIBLE
         Backend.async(activity, { it.snapshots(jobId) }) { result ->
+            loading.visibility = View.GONE
             list.removeAllViews()
             result.onSuccess { items ->
                 if (items.isEmpty()) {

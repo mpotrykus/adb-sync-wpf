@@ -23,6 +23,7 @@ import com.adbsync.companion.Ui.dp
 import com.adbsync.companion.Ui.field
 import com.adbsync.companion.Ui.frostedBar
 import com.adbsync.companion.Ui.input
+import com.adbsync.companion.Ui.loader
 import com.adbsync.companion.Ui.picker
 import com.adbsync.companion.Ui.sectionLabel
 import com.adbsync.companion.Ui.spacer
@@ -95,7 +96,7 @@ class JobEditActivity : Activity() {
                 insets
             }
         })
-        content.addView(caption("Loading…"))
+        content.addView(loader())
         Backend.async(this, { client ->
             val configs = jobId?.let { client.jobConfig(it) }
             configs to client.devices()

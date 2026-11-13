@@ -135,7 +135,7 @@ class ConflictsScreen(host: MainActivity) : Screen(host) {
         ).apply { setPadding(0, dp(6), 0, dp(16)) })
 
         if (!loaded) {
-            content.addView(card().apply { addView(caption("Loading…")) })
+            content.addView(loader())
             return
         }
         if (conflicts.isEmpty()) {
