@@ -1,0 +1,198 @@
+# Plan: Move AdbSync engine to the Linux server
+
+## Goal
+
+Syncing must keep working when the user's Windows PC is off. The user has an always-on Linux server.
+
+Approach: move the backend (orchestration, logic, persistence) to the Linux server as a headless service. A web UI on the server is the desktop client. The Android companion app talks to the server instead of the PC. The WPF app stays as a standalone Windows edition that runs the same engine locally, for setups without a server.
+
+Explicitly rejected:
+- Peer-to-peer / Syncthing-style client-to-client sync. It needs a distributed conflict model (version vectors, tombstones) and a rewrite of the sync core, which is far more than the goal requires.
+- Windows containers. They need a Windows host and the server is Linux.
+- Big-bang full port to Linux. The WPF UI is Windows-only and the ADB/USB flows need a machine with phones attached.
+
+## Target architecture
+
+- **Server (Linux, Docker or systemd):** job definitions, scheduler, runner, manifests, run history, conflict state, database. Exposes an authenticated HTTP API plus a push channel (SignalR or websockets) for live run progress and the execution graph.
+- **Shared engine library (`AdbSync.Engine`, net8.0):** the hosting services that live in `AdbSync.App` today (run service, scheduler, change watch, app gate, companion broadcaster, and the v1 API endpoints if feasible). Used by both the server and the WPF desktop edition.
+- **Web UI:** the desktop client of the server, served by the server. Required before the cut-over.
+- **Android companion app:** talks to the server API directly (phone initiates, HTTPS). Does not depend on the PC being on.
+- **WPF desktop edition (Windows):** runs the engine in-process, with no server. Not a client of the server. See [WPF desktop edition](#wpf-desktop-edition).
+- **PC agent:** optional and not planned. Decision 1 (wireless ADB from the server) removes the need for it, and no current job uses USB. The `/agents` API prefix stays reserved.
+
+## Phases
+
+Each phase should ship and be testable independently. Do not start a phase until the previous one is verified.
+
+### Phase 0: Audit (read-only, no code changes)
+
+Produce a short report (`docs/server-migration-audit.md`) covering:
+1. **Core portability.** What in `AdbSync.Core` is Windows-specific: P/Invoke, registry, Windows paths and path-separator assumptions, file-attribute and ReadOnly handling (see `DeleteRecursive`), `JsonFileIo` locking, ADB binary location and process spawning, anything WPF/Dispatcher-bound. Can it target plain `net*` and run under Linux unchanged? List each blocker with file and line.
+2. **WPF to service coupling.** Which view models/services call Core directly, which rely on in-process events or shared mutable state, which assume synchronous results. This sizes the API-contract work, which is expected to be the largest part of the project.
+3. **Persistence.** What is stored where (JSON files, project folders, manifests, history, settings), and how concurrent access is handled today.
+4. **Companion app transport.** How the phone currently talks to the PC (protocol, discovery, auth), and what changes if it targets the server.
+5. **Job classification.** Which jobs depend on (a) USB/ADB-attached devices, (b) PC-local folders such as the Google Drive projects dir, (c) neither, i.e. could run purely server-side.
+
+Exit criteria: user has read the audit and agreed on the open decisions below.
+
+### Phase 1: Define the API
+
+- Resources: jobs, runs (with execution graph and per-file change history), devices, conflicts and resolutions, manifests, rollback points, settings, projects directory.
+- Push channel for run progress, device attach/detach, and conflict prompts ("Ask me" policy).
+- Auth: token-based, designed to sit behind Tailscale/WireGuard. Never expose raw to the internet.
+- Version the API from day one, since the phone and the PC will not always update in lockstep.
+- Deliverable: written contract (OpenAPI plus event schemas) and review before implementation.
+
+### Phase 2: Host Core behind the API on Linux
+
+- Extract or abstract the Windows-specific pieces found in Phase 0 behind interfaces.
+- Create a headless host project (ASP.NET Core) that wires up Core and serves the Phase 1 API.
+- Dockerfile and a compose file; Docker is the primary deployment (audit decision 5). Persist data on a mounted volume.
+- Consider SQLite in place of raw JSON files for transactions and concurrent access. This is also the right place to harden against the empty-master / stale-manifest class of bugs (see memory: nomad_empty_master_stale_manifest).
+- Migration path for existing data from the PC to the server.
+- Tests run on Linux in CI. The existing flaky 2-device runner tests (see memory) need to be understood before relying on them.
+
+Order (agreed 2026-11-11). Core stays shared with the WPF desktop edition, so every step keeps `AdbSync.App` building and working. One commit per step; review stops after steps 7 and 9.
+
+Stage A, Core groundwork (testable on Windows, no server yet):
+1. Linux CI job running `Core.Tests`; understand the flaky 2-device runner tests.
+2. Name validation (audit A13, A14).
+3. Paths from configuration: data root, adb path, `ANDROID_USER_HOME`; reject paths that aren't fully qualified (A1, A2, A3, A6).
+4. Project folder availability and the `.adbsync-root` marker (decision 2). The root is never created on the fly. On upgrade, the marker is written automatically only if the root already contains at least one configured job's folder; otherwise it is set up explicitly.
+5. SQLite engine state:
+   - 5a: schema, single-writer `.instance.lock`, one-time JSON import that keeps a backup of the JSON files.
+   - 5b: config with stable ids, bindings by `deviceId`, runtime state split out of config, persisted scheduler pause.
+   - 5c: manifests (recording root id and master path, refusing on mismatch), checkpoints, pending conflicts, push-safety.
+6. Runner contract: run id at queue time, typed `ErrorCode`, locks without PIDs (A4), cancellation at file boundaries (A18), safe snapshot restore (audit §3.3 #6).
+7. Remaining portability fixes: A7, A8 (`timeZone` setting), A9, A10, A12, A15, A16, A17.
+
+Stage B, the server:
+
+8. `AdbSync.Engine` library: move the hosting services out of `AdbSync.App`; the Windows-only hooks (`SystemEvents`) go behind an interface. The WPF app uses it in-process.
+9. `AdbSync.Server` skeleton with `/info` and `/health`, then the Dockerfile and compose file, verified early on the arm64 target.
+10. Auth and pairing: certificate with mode 0600, hashed per-client tokens, pairing codes, `adbsync-server pair`. Required before listening beyond localhost.
+11. Event bus: `seq`, replay buffer, `/status` and `/events`.
+12. API slices: jobs and runs, devices, conflicts with ImageSharp thumbnails, settings/scheduler/preferences, long-running operations, folder browsing, job rename and delete.
+13. Data migration from the PC: export with Windows path remap, import on the server, dry run against real data.
+
+The installed WPF exe is only updated from this branch at checkpoints the user chooses.
+
+Stage A notes (done 2026-11-11, steps 1-7):
+
+- **Deviations from the order above.**
+  - Manifests, checkpoints, push-safety and pending conflicts are keyed by job and device *name* (case-insensitive), not id. Callers such as the runner tests work with unsaved jobs whose ids are all empty. With everything in one database, a job rename updates these rows in the same transaction as the config change.
+  - No configurable adb path: AdvancedSharpAdbClient starts `adb` from `PATH` on Linux (checked), so the image only needs platform-tools on `PATH`.
+  - `staleLockHours` is gone from the contract: the project lock is now an exclusive open file that the OS releases on exit, so there's nothing to time out.
+- **Moved to Stage B.**
+  - `ANDROID_USER_HOME` (persisting adb keys) belongs to the server host only. The WPF app keeps `~/.android` so phones stay authorised.
+  - SIGTERM cancelling runs (A18): the engines already stop at file boundaries; the host has to wire `ApplicationStopping` into run cancellation.
+  - The in-memory models still carry runtime fields (`LastRunAt`, `CachedHostPort`). The database keeps them separate; the models split when the engine library is extracted.
+- **Behaviour changes in the WPF app** once a build from this branch is installed:
+  - The `adbsync` CLI exits with code 2 while the app is running (single writer).
+  - Config and state move into `adbsync.db`; the JSON files move to `json-backup/`. Going back to `wpf-v1` means restoring them from there by hand.
+  - The first run writes `.adbsync-root` into the projects folder.
+  - The scheduler pause survives restarts.
+
+Stage B notes (done 2026-11-11, steps 8-12):
+
+- **What was built.**
+  - Step 8: `AdbSync.Engine` (net8.0) holds `JobRunService`, the scheduler, change watchers, `AppGateService`, the companion broadcast and `AppConfigService`. Windows sleep/wake/logoff hooks sit behind `IHostPowerEvents`. The WPF app keeps its legacy `/api/*` companion server, tray, autostart and thumbnails.
+  - Step 9: `AdbSync.Server` (`adbsync-server`) with `AddAdbSyncEngine` shared by both hosts, and a Dockerfile on Ubuntu 24.04 (`aspnet:8.0-noble`) with apt's arm64 adb 34.0.4, because Google's platform-tools zip is x86-64 only. Also `compose.yaml` (host networking, PUID/PGID, `/data` volume, `/projects` bind mount with rslave) and `docs/server-docker.md`. adb keys live in `/data` (`ANDROID_USER_HOME`). SIGTERM cancels runs at the next file boundary. The image was built natively on the Pi (369 MB), reported healthy and wrote files as uid 1000.
+  - Step 10: HTTPS only, with the self-signed certificate (0600, pinned by fingerprint) or PEM files. Per-client tokens and one-time pairing codes are stored as SHA-256 hashes (migration 4). `/auth/pair` is limited to 5 requests a minute per address. `adbsync-server pair` runs next to the server without taking its lock.
+  - Step 11: `EventBus` with a 2,000-event / 15-minute replay buffer. `seq` starts at the server's start time in Unix ms, so a stale `Last-Event-ID` after a restart always gets `resync`. Also `/events` (SSE), `/status` and `/scheduler`, and `client.revoked` closes the client's streams.
+  - Step 12: every contract operation, in six slices: jobs and runs, devices, conflicts with ImageSharp thumbnails, settings/preferences/projects-directory move/operations/server-fs browse, snapshots/app actions/watch/manifests/effective settings, and the remaining run events. Each slice was checked end to end on Linux (WSL) with smoke scripts.
+- **Deviations from the contract or the order.**
+  - **A device can only be renamed while no job uses it.** Sync state is keyed by device name (see Stage A notes), and a rename across all of it isn't implemented. A device a job uses gets `device_in_use`.
+  - **Job rename rewrites run history.** Old runs show the new job name, so the history stays attached to the job (`JobStateRenamer` moves the folder, the name-keyed state and the history rows together, and undoes the move if the config save fails).
+  - Devices get an extra `staticPort` setting for networks where mDNS can't reach the server. The resolver tries it before mDNS.
+  - `close-and-sync` is a 202 + Operation whose result carries the run id, not a request held open for up to 25 minutes.
+  - The v1 endpoints live in `AdbSync.Server`, not `AdbSync.Engine`, so the WPF desktop edition doesn't serve v1. Its companion app keeps using the legacy `/api/*` (see the open item under "WPF desktop edition").
+  - New runs are held during a projects-directory move (`JobRunService.HoldNewRuns`), including on-change runs.
+- **Known gaps.**
+  - No real adb in WSL, so device calls (test, pair, browse, packages, and runs against phones) were only checked failing cleanly. The first real phone run against the server happens in step 13 / Phase 3.
+  - On the Pi only the step 9 image was run. Steps 10-12 were tested on WSL x64, not in the arm64 container.
+  - The companion app still speaks the legacy API (Phase 3). The web UI doesn't exist yet (Phase 4).
+  - None of Stage A or B is in the installed WPF exe.
+  - Pausing the scheduler only stops timed runs, as in the WPF app. On-change watchers still start runs once a device is reachable. `pausedAt` isn't stored and is always `null`.
+
+Step 13 notes (2026-11-11, data migration rehearsal):
+
+- **No import tool needed.** The engine imports the legacy JSON on its first database open, so migrating means copying the PC data folder with a few changes. Only `projectsDirectory` holds a Windows path; job folder overrides would too, but none are set. Manifests, run file lists, pending conflicts and push-safety records hold relative paths only. Old run logs keep their Windows paths as history.
+- **Changes made to the copy:** `projectsDirectory` → `/projects`; `timeZone` set to the PC's zone (`America/Chicago`), since the Pi runs on Europe/London; cached phone ports cleared; `companionBroadcastsEnabled` off until Phase 3, because the broadcast service pushes a server URL to the companion app over adb and would point it away from the PC. Dropped: the legacy companion server token and port, `startAtLogin`, the PC certificate, WPF logs and sort state, a leftover legacy `.sync_checkpoint.json`, and a temp file from an interrupted save.
+- **Pre-imported with the scheduler paused.** The copy is imported once off the Pi, the scheduler paused through the API and the temporary client revoked, so the server starts paused and with no clients, certificate or adb keys from elsewhere.
+- **Project folders** go to `/mnt/usb2/AdbSync Projects` with rsync (from WSL, through Windows' `ssh.exe`), keeping modification times and skipping `.sync_staging`. Times must survive within the merge's 2 s tolerance, or every master file looks changed and the first run pushes everything to the phones. Checked by comparing size and time of every file.
+- **The phones are the gate.** The server's adb key is new and wireless debugging rejects unpaired keys, so until a phone is paired with the server, the server can't read or write it, whatever the scheduler or watchers do.
+
+Cut-over runbook (Phase 5, after the companion app speaks v1 and the web UI MVP exists):
+
+1. PC: pause the scheduler, wait until nothing runs, quit the tray app, turn off start at login, and confirm no `AdbSync` process is left.
+2. Re-stage the data from the stopped PC (`tools/migration/stage_pc_data.py`, then pre-import with the scheduler paused), so the manifests match the masters exactly.
+3. rsync the project folders again with `--delete` (excluding `.adbsync-root`) and compare size and time of every file.
+4. Replace the server's data folder with the new copy and start the container. Pair a client with `docker exec adbsync adbsync-server pair`.
+5. Pair each phone with the server (Wireless debugging → Pair device with pairing code, then `POST /devices/{id}/pair`), dry-run each job and check it reports no changes or only expected ones, then unpause the scheduler.
+6. Rollback: stop the container and start the PC app. The PC's data and project folders are left untouched throughout.
+
+### Phase 3: Companion app targets the server
+
+- Point the phone at the server API. This is the first phase that delivers the user's goal (sync with the PC off).
+- Auth/pairing flow, behaviour on flaky mobile networks, background execution within Android's limits.
+- Preserve existing companion features: conflict picker, job sort order following the PC sort, run history graph.
+
+### Phase 4: Web UI
+
+- Consumes the same API, served by the server.
+- MVP before the cut-over: status, run and stop, run history with logs and steps, conflicts, and job, device and settings editing.
+- Then the rest of the dashboard: execution graph, snapshots and rollback, projects-directory move, device browse and packages.
+- Stack (decided 2026-11-11): **Blazor WebAssembly + MudBlazor 8**, in `AdbSync.Web`, served by `adbsync-server` from the same origin. The API records live in `AdbSync.Contracts`, shared by server and UI.
+
+Slice 1 (2026-11-11), pulled ahead of Phase 3 so the cut-over could be finished from a browser:
+
+- Sign-in with a pairing code, token in localStorage, sign out revokes the token, "pair another client" shows a code.
+- Jobs: state, enable switch, last run, availability, conflicts, checkpoint; run, dry run, stop. The run dialog follows a live run (steps, files, log).
+- Devices: test connection, and pairing with the phone's wireless-debugging code (the pairing port is found over mDNS).
+- Scheduler pause and dark mode in the app bar. Status is polled; SSE is a later slice.
+- Gotcha: the server's reference to `AdbSync.Web` uses `GlobalPropertiesToRemove="RuntimeIdentifier;SelfContained"`, otherwise `publish -a arm64` makes the UI build for linux-arm64 and fails with WASM0005.
+- Still missing for the MVP: run history list, conflicts, and job/device/settings editing.
+
+### Phase 5: Cut-over
+
+- Import the PC's data on the server, pair the companion apps against v1, and stop the WPF app's engine on the PC.
+- The previous plan's "PC agent and WPF as API client" phase is dropped (decided 2026-11-11). Converting the WPF code-behind into an API client would be roughly a rewrite and duplicate the web UI.
+
+## WPF desktop edition
+
+Decided 2026-11-11: the WPF app is kept as an option, not as a client of the server.
+
+- `wpf-v1` tags the last WPF-only version (`main` at 2d08e65) so it can always be rebuilt as it was.
+- `AdbSync.App` stays in the repo and runs the engine in-process through `AdbSync.Engine`, so it gets every Core fix.
+- **No new features.** It only has to keep building and working on the current Core. New UI work goes to the web UI.
+- If keeping it working ever needs more than small adaptations, it is dropped back to the `wpf-v1` tag.
+- Open: the companion app talks to the v1 API after the cut-over. Preferably the v1 endpoints live in `AdbSync.Engine` so the desktop edition serves them too; check this when the engine library is extracted.
+
+## To-do
+
+- **Rename the GitHub repo** from `adb-sync-wpf` (for example to `adb-sync`). The repo is kept rather than replaced, because Core, the tests, the Android app, history and PR #4 all carry over. GitHub redirects the old URL; update local remotes afterwards. Nothing in the repo refers to the old name.
+- Decide whether `AdbSync.Cli` stays as a separate tool or folds into `adbsync-server`.
+
+## Open decisions for the user
+
+1. Must USB/ADB-attached-phone flows keep working, or can everything go through the companion app? (Decides whether the PC agent is required or optional.)
+2. Should PC-local folders (e.g. Google Drive projects dir) be synced through the agent, or should that data move to the server?
+3. SQLite vs. keep JSON files for the server database.
+4. Remote access model: Tailscale/WireGuard only, or also a public endpoint with mTLS.
+
+## Risks
+
+- **API surface is the bulk of the work**, not the Linux port. In-process assumptions in the view models will surface late.
+- **Wireless ADB is unreliable for unattended use** (drops on reboot, needs re-pairing). Do not make the server depend on it. Prefer the companion-app HTTPS path.
+- **Server becomes the single source of truth.** Manifest and conflict-state correctness matters more, not less.
+- **Security:** the API can read and write the user's files. Auth must be in place before it listens on anything other than localhost.
+- Several recent UI areas have never been eyeballed (conflict picker, run history polish, projects dir migration, rollback points UI restore). Verify their behaviour before building the API on top of them, or note them as known-unverified.
+
+## Working agreements for the implementer
+
+- `main` is branch-protected: PR + build-and-test + linear history. Work on a feature branch per phase.
+- Do not add Claude as author or co-author on commits or PR descriptions.
+- Do not add code comments except for non-obvious workarounds or gotchas.
+- Never inject input on the S23+ without a screenshot confirming the companion app is on top.
+- Start with Phase 0 only and stop for review before Phase 1.

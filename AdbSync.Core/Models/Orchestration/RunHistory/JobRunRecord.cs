@@ -12,4 +12,8 @@ public sealed record JobRunRecord(
     int ErrorCount,
     long BytesCopied,
     TimeSpan? PullDuration,
-    TimeSpan? PushDuration);
+    TimeSpan? PushDuration,
+    RunErrorCode? ErrorCode = null,
+    string? Mode = null,
+    string? Trigger = null,
+    Guid? RequestedBy = null);

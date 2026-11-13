@@ -17,7 +17,12 @@ public interface IManifestStore
     Task SaveAsync(string jobName, string deviceName, SyncManifest manifest, CancellationToken ct = default);
 
     /// <summary>Discards every device manifest for the job. Returns how many were removed.</summary>
-    int Clear(string jobName);
+    Task<int> ClearAsync(string jobName, CancellationToken ct = default);
+
+    /// <summary>The projects root (its <c>.adbsync-root</c> id) and master the job's manifests were built against, if recorded.</summary>
+    Task<ManifestRoot?> GetRootAsync(string jobName, CancellationToken ct = default);
+
+    Task SetRootAsync(string jobName, ManifestRoot root, CancellationToken ct = default);
 
     /// <summary>True when at least one persisted manifest for the job records files.</summary>
     Task<bool> AnyEntriesAsync(string jobName, CancellationToken ct = default);

@@ -1,21 +1,26 @@
 using AdbSync.Core.Services.Common;
+using AdbSync.Core.Services.Config;
 using AdbSync.Core.Models.Config;
 using AdbSync.Core.Models.Orchestration;
 using AdbSync.Core.Services.Devices;
+using AdbSync.Core.Services.Merge;
 using AdbSync.Core.Services.Transfer;
 using System.Globalization;
 
 namespace AdbSync.Core.Services.Orchestration;
 
-public sealed class DeviceSnapshotService(IAdbDeviceResolver deviceResolver, IAdbTransferEngine transfer) : IDeviceSnapshotService
+public sealed class DeviceSnapshotService(
+    IAdbDeviceResolver deviceResolver, IAdbTransferEngine transfer, ISyncLockManager lockManager, IManifestStore manifests) : IDeviceSnapshotService
 {
     private const string TimestampFormat = "yyyy-MM-dd_HH-mm-ss";
 
     public async Task<SnapshotResult> CreateSnapshotAsync(
-        SyncJobConfig job, IReadOnlyList<DeviceConfig> devices, GlobalSettings settings, CancellationToken ct = default)
+        SyncJobConfig job, IReadOnlyList<DeviceConfig> devices, GlobalSettings settings, CancellationToken ct = default,
+        Action<SyncPhase, string>? onDevicePhase = null)
     {
         var eff = job.Resolve(settings);
         var checkpointsRoot = GetCheckpointsRoot(job, eff);
+        await using var @lock = await AcquireAsync(job, eff, ct);
         var snapshotRoot = Path.Combine(checkpointsRoot, DateTimeOffset.Now.ToString(TimestampFormat));
         var exclude = new ExcludeMatcher(job.Exclude);
 
@@ -27,10 +32,12 @@ public sealed class DeviceSnapshotService(IAdbDeviceResolver deviceResolver, IAd
         {
             var device = devices.FirstOrDefault(d => d.Name == binding.DeviceName)
                 ?? throw new InvalidOperationException($"Device '{binding.DeviceName}' referenced by job '{job.Name}' was not found.");
+            onDevicePhase?.Invoke(SyncPhase.PreConnect, binding.DeviceName);
             var serial = await deviceResolver.EnsureConnectedAsync(device, ct);
 
-            var destination = Path.Combine(snapshotRoot, binding.DeviceName);
+            var destination = Path.Combine(snapshotRoot, ConfigNames.Segment(binding.DeviceName));
             Directory.CreateDirectory(destination);
+            onDevicePhase?.Invoke(SyncPhase.Pull, binding.DeviceName);
             var result = await transfer.PullMirrorAsync(serial, binding.RemotePath, destination, exclude, eff.ToTransferPolicy(), ct);
             totalFiles += result.FilesCopied;
             totalBytes += result.BytesCopied;
@@ -44,7 +51,9 @@ public sealed class DeviceSnapshotService(IAdbDeviceResolver deviceResolver, IAd
 
     public IReadOnlyList<SnapshotInfo> ListSnapshots(SyncJobConfig job, GlobalSettings settings)
     {
-        var checkpointsRoot = GetCheckpointsRoot(job, job.Resolve(settings));
+        if (ProjectFolders.TryProjectRoot(job.Resolve(settings), job.Name) is not { } projectRoot)
+            return [];
+        var checkpointsRoot = Path.Combine(projectRoot, CheckpointsFolderName);
         if (!Directory.Exists(checkpointsRoot))
             return [];
 
@@ -67,12 +76,14 @@ public sealed class DeviceSnapshotService(IAdbDeviceResolver deviceResolver, IAd
     }
 
     public async Task<SnapshotResult> RestoreSnapshotAsync(
-        SyncJobConfig job, IReadOnlyList<DeviceConfig> devices, GlobalSettings settings, string snapshotPath, CancellationToken ct = default)
+        SyncJobConfig job, IReadOnlyList<DeviceConfig> devices, GlobalSettings settings, string snapshotPath, CancellationToken ct = default,
+        Action<SyncPhase, string>? onDevicePhase = null)
     {
         if (!Directory.Exists(snapshotPath))
             throw new InvalidOperationException($"Checkpoint '{snapshotPath}' no longer exists.");
 
         var eff = job.Resolve(settings);
+        await using var @lock = await AcquireAsync(job, eff, ct);
         var exclude = new ExcludeMatcher(job.Exclude);
         var restoredDevices = 0;
         var totalFilesCopied = 0;
@@ -93,8 +104,10 @@ public sealed class DeviceSnapshotService(IAdbDeviceResolver deviceResolver, IAd
 
             var device = devices.FirstOrDefault(d => d.Name == binding.DeviceName)
                 ?? throw new InvalidOperationException($"Device '{binding.DeviceName}' referenced by job '{job.Name}' was not found.");
+            onDevicePhase?.Invoke(SyncPhase.PreConnect, binding.DeviceName);
             var serial = await deviceResolver.EnsureConnectedAsync(device, ct);
 
+            onDevicePhase?.Invoke(SyncPhase.Push, binding.DeviceName);
             var result = await transfer.PushMirrorAsync(serial, deviceDir, binding.RemotePath, exclude, eff.ToTransferPolicy(), ct);
             totalFilesCopied += result.FilesCopied;
             totalFilesDeleted += result.FilesDeleted;
@@ -103,11 +116,22 @@ public sealed class DeviceSnapshotService(IAdbDeviceResolver deviceResolver, IAd
             restoredDevices++;
         }
 
+        // The restored devices no longer match their manifests. Left alone, the next sync would read the restore as
+        // device-side edits and deletions and copy them to master and every other device; cleared, it rebuilds the
+        // manifests from both sides, so differences become conflicts and nothing is deleted.
+        await manifests.ClearAsync(job.Name, ct);
+
         return new SnapshotResult(snapshotPath, restoredDevices, totalFilesCopied, totalBytes, errors, totalFilesDeleted, skipped);
     }
 
+    private async Task<IAsyncDisposable> AcquireAsync(SyncJobConfig job, EffectiveJobSettings eff, CancellationToken ct) =>
+        await lockManager.TryAcquireAsync(ProjectFolders.RequireAvailable(eff, job.Name), ct)
+            ?? throw new InvalidOperationException($"Job '{job.Name}' is running - wait for it to finish and try again.");
+
+    private const string CheckpointsFolderName = "checkpoints";
+
     private static string GetCheckpointsRoot(SyncJobConfig job, EffectiveJobSettings eff) =>
-        Path.Combine(eff.ProjectsDirectory, job.Name, "checkpoints");
+        Path.Combine(ProjectFolders.RequireAvailable(eff, job.Name), CheckpointsFolderName);
 
     private static void PruneOldSnapshots(string checkpointsRoot, int retentionDays)
     {

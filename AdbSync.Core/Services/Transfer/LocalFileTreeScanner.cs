@@ -1,3 +1,4 @@
+using AdbSync.Core.Services.Common;
 using AdbSync.Core.Models.Transfer;
 
 namespace AdbSync.Core.Services.Transfer;
@@ -16,8 +17,11 @@ public static class LocalFileTreeScanner
     {
         foreach (var entryPath in Directory.EnumerateFileSystemEntries(currentDir))
         {
-            var relativePath = Path.GetRelativePath(root, entryPath).Replace('\\', '/');
+            var relativePath = RelativePathUtil.ToForwardSlashes(Path.GetRelativePath(root, entryPath));
             var isDirectory = Directory.Exists(entryPath);
+            // Following a directory link can loop forever (a link to an ancestor) or leave the synced tree.
+            if (isDirectory && new DirectoryInfo(entryPath).LinkTarget is not null)
+                continue;
             if (exclude.IsExcluded(relativePath, isDirectory))
                 continue;
 

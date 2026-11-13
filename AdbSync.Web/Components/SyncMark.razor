@@ -1,0 +1,20 @@
+<span class="sync-mark" style="--sz:@(Size)px" role="img" aria-label="Syncing">
+    <svg viewBox="0 0 80 80" aria-hidden="true">
+        <g transform="translate(40 40)" style="isolation:isolate">
+            <g class="ang"><g class="rad"><g class="unang">
+                <rect class="glow" x="-17" y="-17" width="34" height="34" rx="10" transform="rotate(45)" fill="#7C5CFF" />
+                <rect x="-15" y="-15" width="30" height="30" rx="9" transform="rotate(45)" fill="#7C5CFF" opacity=".92" />
+            </g></g></g>
+            <g transform="rotate(180)" style="mix-blend-mode:screen"><g class="ang"><g class="rad"><g class="unang">
+                <rect class="glow" x="-17" y="-17" width="34" height="34" rx="10" transform="rotate(45)" fill="#38BDF8" />
+                <rect x="-15" y="-15" width="30" height="30" rx="9" transform="rotate(45)" fill="#38BDF8" opacity=".85" />
+            </g></g></g></g>
+            <circle class="ring" r="14" fill="none" stroke="#fff" stroke-width="1.6" />
+            <circle class="core" r="3.2" fill="#fff" />
+        </g>
+    </svg>
+</span>
+
+@code {
+    [Parameter] public int Size { get; set; } = 18;
+}

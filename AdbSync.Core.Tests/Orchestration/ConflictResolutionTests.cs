@@ -25,6 +25,7 @@ public class ConflictResolutionTests : IDisposable
     {
         _appPaths = new AppPaths(Path.Combine(_root, "appdata"));
         _settings = new GlobalSettings { ProjectsDirectory = Path.Combine(_root, "projects"), ConflictPolicy = ConflictPolicy.Ask };
+        ProjectFolders.AdoptRoot(_settings.ProjectsDirectory);
         _job = new SyncJobConfig { Name = "Job", Devices = [new JobDeviceBinding { DeviceName = "DeviceA", RemotePath = "/sdcard/app" }] };
         _pending = new PendingConflictStore(_appPaths);
         _manifests = new ManifestStore(_appPaths);

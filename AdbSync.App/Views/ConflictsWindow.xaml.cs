@@ -1,4 +1,5 @@
 using AdbSync.App.Services;
+using AdbSync.Engine.Services;
 using AdbSync.Core.Models.Merge;
 using AdbSync.Core.Services.Merge;
 using System.Windows;
@@ -160,7 +161,7 @@ public partial class ConflictsWindow : Window
             {
                 var index = config.Jobs.FindIndex(j => j.Name == job);
                 if (index >= 0)
-                    _ = _jobRunService.RunJobAsync(index);
+                    _ = _jobRunService.RunJobAsync(index, trigger: RunTrigger.ConflictResolved);
             }
 
             if (failures.Count > 0)

@@ -2,18 +2,22 @@ using AdbSync.Core.Models.Merge;
 using AdbSync.Core.Models.Transfer;
 using AdbSync.Core.Services.Common;
 using AdbSync.Core.Services.Config;
+using AdbSync.Core.Services.Persistence;
 using AdbSync.Core.Services.Transfer;
+using System.Text.Json;
 
 namespace AdbSync.Core.Services.Merge;
 
-public sealed class ManifestStore(AppPaths paths) : IManifestStore
+public sealed class ManifestStore(EngineDatabase database) : IManifestStore
 {
     private static readonly IExcludeMatcher NoExclude = new ExcludeMatcher([]);
     private static readonly TimeSpan ModifiedTolerance = TimeSpan.FromSeconds(2);
 
+    public ManifestStore(AppPaths paths) : this(new EngineDatabase(paths)) { }
+
     public async Task<SyncManifest> GetOrBootstrapAsync(string jobName, string deviceName, string stagingPath, string masterPath, CancellationToken ct = default)
     {
-        var existing = await JsonFileIo.ReadAsync(GetManifestPath(jobName, deviceName), AppConfigJsonContext.Default.SyncManifest, ct);
+        var existing = await TryGetAsync(jobName, deviceName, ct);
         if (existing is not null)
             return existing;
 
@@ -32,41 +36,56 @@ public sealed class ManifestStore(AppPaths paths) : IManifestStore
         return new SyncManifest { Version = 1, LastMergedAtUtc = DateTimeOffset.UtcNow, Entries = entries };
     }
 
-    public Task<SyncManifest?> TryGetAsync(string jobName, string deviceName, CancellationToken ct = default) =>
-        JsonFileIo.ReadAsync(GetManifestPath(jobName, deviceName), AppConfigJsonContext.Default.SyncManifest, ct);
-
-    public Task SaveAsync(string jobName, string deviceName, SyncManifest manifest, CancellationToken ct = default) =>
-        JsonFileIo.WriteAtomicAsync(GetManifestPath(jobName, deviceName), manifest, AppConfigJsonContext.Default.SyncManifest, ct);
-
-    public int Clear(string jobName)
+    public async Task<SyncManifest?> TryGetAsync(string jobName, string deviceName, CancellationToken ct = default)
     {
-        var dir = Path.Combine(paths.ManifestsDir, jobName);
-        if (!Directory.Exists(dir))
-            return 0;
+        await using var connection = await database.OpenAsync(ct);
+        var rows = await Sql.QueryAsync(connection, null,
+            "SELECT Json FROM Manifests WHERE JobName = @job AND DeviceName = @device;", r => r.GetString(0), ct,
+            ("@job", jobName), ("@device", deviceName));
+        return rows.Count == 0 ? null : JsonSerializer.Deserialize(rows[0], AppConfigJsonContext.Default.SyncManifest);
+    }
 
-        var files = Directory.GetFiles(dir, "*.manifest.json");
-        foreach (var file in files)
-            File.Delete(file);
-        return files.Length;
+    public async Task SaveAsync(string jobName, string deviceName, SyncManifest manifest, CancellationToken ct = default)
+    {
+        await using var connection = await database.OpenAsync(ct);
+        await Sql.ExecuteAsync(connection, null, """
+            INSERT INTO Manifests (JobName, DeviceName, Json) VALUES (@job, @device, @json)
+            ON CONFLICT (JobName, DeviceName) DO UPDATE SET Json = excluded.Json;
+            """, ct,
+            ("@job", ConfigNames.Segment(jobName)), ("@device", ConfigNames.Segment(deviceName)),
+            ("@json", JsonSerializer.Serialize(manifest, AppConfigJsonContext.Default.SyncManifest)));
+    }
+
+    public async Task<int> ClearAsync(string jobName, CancellationToken ct = default)
+    {
+        await using var connection = await database.OpenAsync(ct);
+        await Sql.ExecuteAsync(connection, null, "DELETE FROM ManifestRoots WHERE JobName = @job;", ct, ("@job", jobName));
+        return await Sql.ExecuteAsync(connection, null, "DELETE FROM Manifests WHERE JobName = @job;", ct, ("@job", jobName));
+    }
+
+    public async Task<ManifestRoot?> GetRootAsync(string jobName, CancellationToken ct = default)
+    {
+        await using var connection = await database.OpenAsync(ct);
+        var rows = await Sql.QueryAsync(connection, null, "SELECT RootId, MasterPath FROM ManifestRoots WHERE JobName = @job;",
+            r => new ManifestRoot(Guid.Parse(r.GetString(0)), r.GetString(1)), ct, ("@job", jobName));
+        return rows.Count == 0 ? null : rows[0];
+    }
+
+    public async Task SetRootAsync(string jobName, ManifestRoot root, CancellationToken ct = default)
+    {
+        await using var connection = await database.OpenAsync(ct);
+        await Sql.ExecuteAsync(connection, null, """
+            INSERT INTO ManifestRoots (JobName, RootId, MasterPath) VALUES (@job, @rootId, @masterPath)
+            ON CONFLICT (JobName) DO UPDATE SET RootId = excluded.RootId, MasterPath = excluded.MasterPath;
+            """, ct, ("@job", ConfigNames.Segment(jobName)), ("@rootId", root.RootId.ToString()), ("@masterPath", root.MasterPath));
     }
 
     public async Task<bool> AnyEntriesAsync(string jobName, CancellationToken ct = default)
     {
-        var dir = Path.Combine(paths.ManifestsDir, jobName);
-        if (!Directory.Exists(dir))
-            return false;
-
-        foreach (var file in Directory.GetFiles(dir, "*.manifest.json"))
-        {
-            var manifest = await JsonFileIo.ReadAsync(file, AppConfigJsonContext.Default.SyncManifest, ct);
-            if (manifest is { Entries.Count: > 0 })
-                return true;
-        }
-        return false;
+        await using var connection = await database.OpenAsync(ct);
+        var rows = await Sql.QueryAsync(connection, null, "SELECT Json FROM Manifests WHERE JobName = @job;", r => r.GetString(0), ct, ("@job", jobName));
+        return rows.Any(json => JsonSerializer.Deserialize(json, AppConfigJsonContext.Default.SyncManifest) is { Entries.Count: > 0 });
     }
-
-    private string GetManifestPath(string jobName, string deviceName) =>
-        Path.Combine(paths.ManifestsDir, jobName, $"{deviceName}.manifest.json");
 
     private static bool IsSame(string stagingPath, string masterPath, FileEntry staging, FileEntry master) =>
         staging.Size == master.Size

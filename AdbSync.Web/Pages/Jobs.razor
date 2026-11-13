@@ -1,0 +1,709 @@
+@page "/"
+@implements IDisposable
+@inject StatusStore Status
+@inject ApiClient Api
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+@inject NavigationManager Navigation
+
+<PageTitle>Jobs · AdbSync</PageTitle>
+
+<div class="page-head">
+    <MudText Typo="Typo.h4">Jobs</MudText>
+    <MudSpacer />
+    <MudMenu Icon="@Icons.Material.Filled.Sort" AriaLabel="Sort" Dense="true"
+             title="@($"Sort: {SortLabel(_sortKey)} ({(_sortDescending ? "descending" : "ascending")})")">
+        @foreach (var (key, label) in SortOptions)
+        {
+            var k = key;
+            <MudMenuItem OnClick="() => PickSortAsync(k)"
+                         Icon="@(_sortKey == k ? (_sortDescending ? Icons.Material.Filled.ArrowDownward : Icons.Material.Filled.ArrowUpward) : null)">
+                @label
+            </MudMenuItem>
+        }
+    </MudMenu>
+    @if (Status.Snapshot is { } sched)
+    {
+        <MudTooltip Text="@(sched.Scheduler.Paused ? "Scheduler paused. Timed runs are paused; on-change runs still start when a phone changes." : "Scheduler on. Timed runs are on")">
+            <MudIconButton Icon="@(sched.Scheduler.Paused ? Icons.Material.Filled.PauseCircle : Icons.Material.Filled.PlayCircle)"
+                           Color="@(sched.Scheduler.Paused ? Color.Warning : Color.Default)"
+                           Disabled="_schedulerBusy" OnClick="ToggleSchedulerAsync" />
+        </MudTooltip>
+    }
+    <MudTooltip Text="Refresh">
+        <MudIconButton Icon="@Icons.Material.Filled.Refresh" OnClick="RefreshAsync" />
+    </MudTooltip>
+    <MudTooltip Text="New job">
+        <MudIconButton Icon="@Icons.Material.Filled.Add" Color="Color.Primary" Variant="Variant.Filled" OnClick="() => EditAsync(null)" />
+    </MudTooltip>
+</div>
+
+@if (Status.Snapshot is not { } snapshot)
+{
+    <div class="page-loading"><SyncMark Size="64" /></div>
+}
+else if (snapshot.Jobs.Count == 0)
+{
+    <MudPaper Class="pa-8 d-flex flex-column align-center" Outlined="true">
+        <MudIcon Icon="@Icons.Material.Filled.SyncDisabled" Size="Size.Large" Class="mb-2" />
+        <MudText>No jobs yet.</MudText>
+    </MudPaper>
+}
+else
+{
+    var runningCount = snapshot.Jobs.Count(j => j.State != "idle");
+    var conflictCount = snapshot.Jobs.Sum(j => j.PendingConflicts);
+    var failedCount = snapshot.Jobs.Count(j => j.LastRun?.Status == "failed");
+    var enabledCount = snapshot.Jobs.Count(j => j.Enabled);
+    var nextUp = snapshot.Jobs.Where(j => j.NextRunAt is not null).Select(j => j.NextRunAt!.Value).DefaultIfEmpty().Min();
+    <div class="stat-strip">
+        <div class="stat-tile @(runningCount > 0 ? "live" : "")" style="--c:#7c5cff;--i:0">
+            <div class="stat-value">@runningCount</div>
+            <div class="stat-label"><span class="stat-dot"></span>Running</div>
+        </div>
+        <div class="stat-tile" style="--c:#5bd98a;--i:1">
+            <div class="stat-value">@enabledCount<span style="opacity:.45;font-size:1.1rem"> / @snapshot.Jobs.Count</span></div>
+            <div class="stat-label"><span class="stat-dot"></span>Enabled</div>
+        </div>
+        <div class="stat-tile" style="@("--c:#ffb454;--i:2;" + (conflictCount > 0 ? "cursor:pointer" : ""))"
+             @onclick="@(() => { if (conflictCount > 0) Navigation.NavigateTo("conflicts"); })">
+            <div class="stat-value">@conflictCount</div>
+            <div class="stat-label"><span class="stat-dot"></span>Conflicts</div>
+        </div>
+        <div class="stat-tile" style="--c:#ff6b6b;--i:3">
+            <div class="stat-value">@failedCount</div>
+            <div class="stat-label"><span class="stat-dot"></span>Failed last run</div>
+        </div>
+        <div class="stat-tile" style="--c:#38bdf8;--i:4">
+            <div class="stat-value" style="font-size:1.45rem;padding-top:6px">@(nextUp == default ? "-" : Format.Ago(nextUp))</div>
+            <div class="stat-label"><span class="stat-dot"></span>Next run</div>
+        </div>
+    </div>
+    var cardIndex = 0;
+    <MudGrid>
+        @foreach (var job in Sorted(snapshot.Jobs))
+        {
+            var busy = job.State != "idle";
+            var config = _jobs.GetValueOrDefault(job.JobId);
+            var stateClass = busy ? "is-running" : !job.Enabled ? "is-off" : job.LastRun?.Status == "failed" ? "is-failed" : job.PendingConflicts > 0 ? "is-warn" : "is-ok";
+            <MudItem xs="12" md="6" lg="4">
+                <MudCard Elevation="1" Class="@("job-card " + stateClass)" Style="@($"--i:{cardIndex++}")">
+                    <MudCardHeader>
+                        <CardHeaderAvatar>
+                            <AppIcon JobId="job.JobId" Package="@job.AppPackage" />
+                        </CardHeaderAvatar>
+                        <CardHeaderContent>
+                            <MudText Typo="Typo.h6">@job.Name</MudText>
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">@(job.AppPackage ?? "No linked app")</MudText>
+                        </CardHeaderContent>
+                        <CardHeaderActions>
+                            <MudTooltip Text="@(job.Enabled ? "Enabled: runs on its schedule or when a phone changes" : "Disabled: only runs when you start it")">
+                                <MudSwitch T="bool" Value="job.Enabled" ValueChanged="v => SetEnabledAsync(job, v)" Color="Color.Primary"
+                                           Disabled="_pending.Contains(job.JobId)" />
+                            </MudTooltip>
+                        </CardHeaderActions>
+                    </MudCardHeader>
+                    <MudCardContent Class="pt-0">
+                        <div class="d-flex flex-wrap gap-2 mb-4">
+                            @{ var hasOp = Status.RunningOperations.Any(o => o.JobId == job.JobId); }
+                            @if (hasOp && !(job.Phase == "waitingForAppClose" || job.Devices.Any(d => d.Phase == "waitingForAppClose")))
+                            {
+                            }
+                            else if (busy)
+                            {
+                                var waitingOnApp = job.Phase == "waitingForAppClose" || job.Devices.Any(d => d.Phase == "waitingForAppClose");
+                                <MudChip T="string" Color="@(waitingOnApp ? Color.Warning : Color.Primary)" Size="Size.Small"
+                                         Icon="@(waitingOnApp ? Icons.Material.Filled.HourglassTop : job.State == "queued" ? Icons.Material.Filled.Sync : null)">
+                                    @if (!waitingOnApp && job.State != "queued")
+                                    {
+                                        <SyncMark Size="18" />
+                                    }
+                                    @(waitingOnApp ? "Waiting · app is open" : job.State == "queued" ? "Queued" : "Running" + (job.Phase is { } p ? " · " + Format.Words(p) : ""))
+                                </MudChip>
+                            }
+                            else
+                            {
+                                <MudChip T="string" Variant="Variant.Outlined" Size="Size.Small">@(job.Enabled ? "Idle" : "Disabled")</MudChip>
+                            }
+                            @foreach (var op in Status.RunningOperations.Where(o => o.JobId == job.JobId))
+                            {
+                                <MudTooltip Text="Click to open">
+                                    <MudChip T="string" Color="Color.Primary" Size="Size.Small"
+                                             OnClick="() => OpenOperationAsync(job, op)">
+                                        <SyncMark Size="18" />
+                                        @(op.Kind switch { "restoreSnapshot" => "Restoring snapshot", "createSnapshot" => "Creating snapshot", "closeAndSync" => "Closing app and syncing", _ => Format.Words(op.Kind) })@(op.Progress is { Message: { Length: > 0 } m } ? " · " + m : "")
+                                    </MudChip>
+                                </MudTooltip>
+                            }
+                            @if (job.Availability.ProjectFolder != "ok")
+                            {
+                                <MudTooltip Text="@(job.Availability.Detail ?? "")">
+                                    <MudChip T="string" Color="Color.Error" Size="Size.Small" Icon="@Icons.Material.Filled.FolderOff">Folder unavailable</MudChip>
+                                </MudTooltip>
+                            }
+                            @if (job.PendingConflicts > 0)
+                            {
+                                <MudTooltip Text="Click to resolve">
+                                    <MudChip T="string" Color="Color.Warning" Size="Size.Small" Icon="@Icons.Material.Filled.CallSplit"
+                                             OnClick="@(() => Navigation.NavigateTo($"conflicts?job={job.JobId}"))">
+                                        @job.PendingConflicts conflict@(job.PendingConflicts == 1 ? "" : "s")
+                                    </MudChip>
+                                </MudTooltip>
+                            }
+                            @if (job.Checkpoint is not null)
+                            {
+                                <MudChip T="string" Color="Color.Info" Size="Size.Small" Icon="@Icons.Material.Filled.Bookmark">Resumable</MudChip>
+                            }
+                        </div>
+
+                        @{ var opGraphs = Status.RunningOperations.Where(o => o.JobId == job.JobId && OperationPhases.ContainsKey(o.Kind)).ToList(); }
+                        @foreach (var op in opGraphs)
+                        {
+                            var steps = OperationPhases[op.Kind];
+                            <div class="phase-graph fixed-gap">
+                                @for (var i = 0; i < steps.Length; i++)
+                                {
+                                    var (label, icon, state) = steps[i];
+                                    <MudTooltip Text="@($"{label} · {PhaseText(state)}")" RootClass="phase-node-wrap">
+                                        <div class="phase-node @state" title="@($"{label} · {PhaseText(state)}")">
+                                            <MudIcon Icon="@(state == "done" ? Icons.Material.Filled.Check : icon)" />
+                                        </div>
+                                    </MudTooltip>
+                                    @if (i < steps.Length - 1)
+                                    {
+                                        <div class="phase-line @state"></div>
+                                    }
+                                }
+                            </div>
+                        }
+
+                        @if (opGraphs.Count == 0)
+                        {
+                            <div class="@("phase-graph " + (busy ? "shown" : "hidden"))" aria-hidden="@(!busy ? "true" : null)">
+                                @for (var i = 0; i < Phases.Length; i++)
+                                {
+                                    var (key, label, icon) = Phases[i];
+                                    var state = busy ? PhaseClass(job.Phase, key) : "";
+                                    <MudTooltip Text="@($"{label} · {PhaseText(state)}")" RootClass="phase-node-wrap">
+                                        <div class="phase-node @state" title="@($"{label} · {PhaseText(state)}")">
+                                            <MudIcon Icon="@(state == "done" ? Icons.Material.Filled.Check : icon)" />
+                                        </div>
+                                    </MudTooltip>
+                                    @if (i < Phases.Length - 1)
+                                    {
+                                        <div class="phase-line @state"></div>
+                                    }
+                                }
+                            </div>
+                        }
+
+                        <MudSimpleTable Dense="true" Elevation="0" Class="job-info" Style="background:transparent">
+                            <tbody>
+                                <tr>
+                                    <td style="width:110px"><MudText Typo="Typo.body2" Class="mud-text-secondary">Last run</MudText></td>
+                                    <td>
+                                        @if (job.LastRun is { } last)
+                                        {
+                                            <MudLink Typo="Typo.body2" OnClick="() => OpenRunAsync(last.RunId)">
+                                                <MudText Typo="Typo.body2" Inline="true" Color="Format.RunColor(last.Status)">@Format.RunLabel(last.Status)</MudText>
+                                                · @Format.Ago(last.FinishedAt)
+                                            </MudLink>
+                                        }
+                                        else
+                                        {
+                                            <MudText Typo="Typo.body2">Never</MudText>
+                                        }
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><MudText Typo="Typo.body2" Class="mud-text-secondary">Devices</MudText></td>
+                                    <td>
+                                        @if (config is null)
+                                        {
+                                            <MudText Typo="Typo.body2">-</MudText>
+                                        }
+                                        else
+                                        {
+                                            foreach (var binding in config.Devices)
+                                            {
+                                                var deviceState = _devices.FirstOrDefault(d => d.Id == binding.DeviceId)?.Connection.State ?? "unknown";
+                                                var phase = busy ? job.Devices.FirstOrDefault(d => d.DeviceId == binding.DeviceId)?.Phase : null;
+                                                <div class="job-device-row">
+                                                    <span class="device-status-slot">
+                                                        @if (phase is not null && PhaseIcon(phase) is { } icon)
+                                                        {
+                                                            <MudIcon Icon="@icon" Size="Size.Small" Class="@("device-phase " + phase)" title="@PhaseLabel(phase)" />
+                                                        }
+                                                        else
+                                                        {
+                                                            <span class="@("device-dot " + deviceState)" title="@Format.Words(deviceState)"></span>
+                                                        }
+                                                    </span>
+                                                    <MudText Typo="Typo.body2">@_deviceNames.GetValueOrDefault(binding.DeviceId, "?")</MudText>
+                                                </div>
+                                            }
+                                        }
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><MudText Typo="Typo.body2" Class="mud-text-secondary">Trigger</MudText></td>
+                                    <td>
+                                        <MudText Typo="Typo.body2">
+                                            @(config is null ? "-" : ScheduleText(config.Schedule))@(job.NextRunAt is { } next ? " · next " + Format.Ago(next) : "")
+                                        </MudText>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </MudSimpleTable>
+
+                        @if (job.LastRun is { Message: { Length: > 0 } message } && job.LastRun.Status is "failed" or "skipped" or "cancelled")
+                        {
+                            <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-3">@message</MudAlert>
+                        }
+                    </MudCardContent>
+                    <MudCardActions Class="px-4 pb-4 job-actions">
+                        @if (busy)
+                        {
+                            <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Filled.Stop"
+                                       Disabled="_pending.Contains(job.JobId)" OnClick="() => StopAsync(job)">Stop</MudButton>
+                            @if (job.ActiveRunId is { } active)
+                            {
+                                <MudButton Variant="Variant.Text" Class="ml-2" OnClick="() => OpenRunAsync(active)">Watch</MudButton>
+                            }
+                        }
+                        else
+                        {
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.PlayArrow"
+                                       Disabled="_pending.Contains(job.JobId)" OnClick="() => RunAsync(job, normal: true)">Run</MudButton>
+                        }
+                        <MudSpacer />
+                        <MudTooltip Text="Edit job">
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Disabled="@(busy || config is null)" OnClick="() => EditAsync(config)" />
+                        </MudTooltip>
+                        <MudTooltip Text="Run history">
+                            <MudIconButton Icon="@Icons.Material.Filled.History" OnClick="@(() => Navigation.NavigateTo($"runs?job={job.JobId}"))" />
+                        </MudTooltip>
+                        <MudMenu Icon="@Icons.Material.Filled.MoreVert" AriaLabel="More actions" AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
+                            <MudMenuItem Icon="@Icons.Material.Filled.Science" Disabled="@(busy || _pending.Contains(job.JobId))"
+                                         OnClick="() => RunAsync(job, normal: false)">Dry run</MudMenuItem>
+                            @if (job.PendingConflicts > 0)
+                            {
+                                <MudMenuItem Icon="@Icons.Material.Filled.CallSplit" OnClick="@(() => Navigation.NavigateTo($"conflicts?job={job.JobId}"))">Resolve conflicts…</MudMenuItem>
+                            }
+                            @if (job.AppPackage is not null)
+                            {
+                                @foreach (var device in job.Devices)
+                                {
+                                    var deviceId = device.DeviceId;
+                                    var deviceName = _deviceNames.GetValueOrDefault(deviceId, "?");
+                                    <MudMenuItem Icon="@Icons.Material.Filled.OpenInNew" Disabled="@(busy || _pending.Contains(job.JobId))"
+                                                 OnClick="() => OpenAppAsync(job, deviceId)">Open app on @deviceName</MudMenuItem>
+                                    <MudMenuItem Icon="@Icons.Material.Filled.PowerSettingsNew" Disabled="@(busy || _pending.Contains(job.JobId))"
+                                                 OnClick="() => CloseAndSyncAsync(job, deviceId)">Close app and sync @deviceName</MudMenuItem>
+                                }
+                            }
+                            <MudMenuItem Icon="@Icons.Material.Filled.PhotoCamera" Disabled="busy" OnClick="() => TakeSnapshotAsync(job)">Take snapshot</MudMenuItem>
+                            <MudMenuItem Icon="@Icons.Material.Filled.Restore" Disabled="busy" OnClick="() => OpenSnapshotsAsync(job)">Snapshots and rollback</MudMenuItem>
+                            @if (job.Checkpoint is not null)
+                            {
+                                <MudMenuItem Icon="@Icons.Material.Filled.BookmarkRemove" Disabled="busy" OnClick="() => DiscardCheckpointAsync(job)">Discard checkpoint</MudMenuItem>
+                            }
+                            @if (job.CanForcePush)
+                            {
+                                <MudMenuItem Icon="@Icons.Material.Filled.Warning" Disabled="@(busy || _pending.Contains(job.JobId))"
+                                             OnClick="() => ForcePushAsync(job)">Force push (bypass safety check)</MudMenuItem>
+                            }
+                            <MudDivider />
+                            <MudMenuItem Icon="@Icons.Material.Filled.Delete" IconColor="Color.Error" Disabled="busy"
+                                         OnClick="() => RemoveAsync(job)">Remove</MudMenuItem>
+                        </MudMenu>
+                    </MudCardActions>
+                </MudCard>
+            </MudItem>
+        }
+    </MudGrid>
+}
+
+@code {
+    private bool _schedulerBusy;
+
+    private async Task ToggleSchedulerAsync()
+    {
+        if (Status.Snapshot is not { } snapshot)
+            return;
+        _schedulerBusy = true;
+        try
+        {
+            var state = await Api.PatchAsync<SchedulerStateDto>("scheduler", new { paused = !snapshot.Scheduler.Paused });
+            Snackbar.Add(state.Paused ? "Scheduler paused" : "Scheduler resumed", Severity.Info);
+            await Status.RefreshAsync();
+        }
+        catch (ApiException ex)
+        {
+            if (!ex.IsSignedOut()) Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _schedulerBusy = false;
+        }
+    }
+
+    private static readonly (string Key, string Label, string Icon)[] Phases =
+    [
+        ("preConnect", "Connect", Icons.Material.Filled.Link),
+        ("pull", "Pull", Icons.Material.Filled.Download),
+        ("snapshot", "Rollback", Icons.Material.Filled.Backup),
+        ("merge", "Merge", Icons.Material.Filled.CallMerge),
+        ("push", "Push", Icons.Material.Filled.Upload),
+    ];
+
+    private static readonly Dictionary<string, (string Label, string Icon, string State)[]> OperationPhases = new()
+    {
+        ["createSnapshot"] =
+        [
+            ("Pull", Icons.Material.Filled.Download, "active"),
+            ("Save snapshot", Icons.Material.Filled.Bookmark, ""),
+        ],
+        ["restoreSnapshot"] =
+        [
+            ("Restore", Icons.Material.Filled.Restore, "active"),
+        ],
+    };
+
+    private static string PhaseClass(string? current, string key)
+    {
+        var cur = Array.FindIndex(Phases, p => p.Key == current);
+        var idx = Array.FindIndex(Phases, p => p.Key == key);
+        return cur < 0 ? "" : idx < cur ? "done" : idx == cur ? "active" : "";
+    }
+
+    private static string PhaseText(string state) => state switch
+    {
+        "done" => "done",
+        "active" => "in progress",
+        _ => "waiting",
+    };
+
+    private Dictionary<Guid, JobDto> _jobs = [];
+    private Dictionary<Guid, string> _deviceNames = [];
+    private List<DeviceDto> _devices = [];
+    private readonly HashSet<Guid> _pending = [];
+
+    private string _sortKey = "order";
+    private bool _sortDescending;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Status.Changed += OnChanged;
+        Status.EventReceived += OnEvent;
+        Status.Watch();
+        await LoadConfigAsync();
+        await LoadSortAsync();
+    }
+
+    private void OnEvent(string type)
+    {
+        if (type == "preferences.changed")
+            _ = InvokeAsync(async () =>
+            {
+                await LoadSortAsync();
+                StateHasChanged();
+            });
+    }
+
+    private async Task LoadSortAsync()
+    {
+        try
+        {
+            var prefs = await Api.GetAsync<DashboardPreferencesDto>("preferences/dashboard");
+            _sortKey = prefs.SortKey ?? "order";
+            _sortDescending = prefs.Descending;
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException)
+        {
+        }
+    }
+
+    private async Task SaveSortAsync()
+    {
+        try
+        {
+            await Api.PutAsync<DashboardPreferencesDto>("preferences/dashboard", new DashboardPreferencesDto(_sortKey, _sortDescending));
+        }
+        catch (ApiException ex)
+        {
+            if (!ex.IsSignedOut()) Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private static readonly (string Key, string Label)[] SortOptions =
+    [
+        ("order", "Order"),
+        ("name", "Name"),
+        ("lastRun", "Last run"),
+        ("nextRun", "Next run"),
+        ("status", "Status"),
+    ];
+
+    private static string SortLabel(string key) => SortOptions.FirstOrDefault(o => o.Key == key).Label ?? "Order";
+
+    private async Task PickSortAsync(string key)
+    {
+        if (_sortKey == key) _sortDescending = !_sortDescending;
+        else _sortKey = key;
+        await SaveSortAsync();
+    }
+
+    private IEnumerable<JobStatusDto> Sorted(IReadOnlyList<JobStatusDto> jobs)
+    {
+        IOrderedEnumerable<JobStatusDto> Apply<TKey>(Func<JobStatusDto, TKey> key) =>
+            _sortDescending ? jobs.OrderByDescending(key) : jobs.OrderBy(key);
+
+        return (_sortKey switch
+        {
+            "name" => Apply(j => j.Name.ToLowerInvariant()),
+            "lastRun" => Apply(j => j.LastRun?.FinishedAt ?? DateTimeOffset.MinValue),
+            "nextRun" => Apply(j => j.NextRunAt ?? DateTimeOffset.MaxValue),
+            "status" => Apply(j => j.LastRun?.Status ?? ""),
+            _ => Apply(j => _jobs.TryGetValue(j.JobId, out var config) ? config.Order : int.MaxValue),
+        }).ThenBy(j => j.Name, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private async Task LoadConfigAsync()
+    {
+        try
+        {
+            var jobs = await Api.GetAsync<List<JobDto>>("jobs");
+            var devices = await Api.GetAsync<List<DeviceDto>>("devices");
+            _jobs = jobs.ToDictionary(j => j.Id);
+            _devices = devices;
+            _deviceNames = devices.ToDictionary(d => d.Id, d => d.Name);
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException)
+        {
+            if (!ex.IsSignedOut()) Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task RefreshAsync()
+    {
+        await LoadConfigAsync();
+        await Status.RefreshAsync();
+    }
+
+    private static string? PhaseIcon(string phase) => phase switch
+    {
+        "preConnect" => Icons.Material.Filled.Sync,
+        "pull" => Icons.Material.Filled.CloudDownload,
+        "push" => Icons.Material.Filled.CloudUpload,
+        "merge" => Icons.Material.Filled.MergeType,
+        "snapshot" => Icons.Material.Filled.Backup,
+        "waitingForAppClose" => Icons.Material.Filled.HourglassTop,
+        "waitingForDevice" => Icons.Material.Filled.PhonelinkOff,
+        _ => null,
+    };
+
+    private static string PhaseLabel(string phase) => phase switch
+    {
+        "preConnect" => "Connecting",
+        "pull" => "Pulling",
+        "push" => "Pushing",
+        "merge" => "Merging",
+        "snapshot" => "Saving rollback point",
+        "waitingForAppClose" => "Waiting for app to close",
+        "waitingForDevice" => "Waiting for device",
+        _ => Format.Words(phase),
+    };
+
+    private static string ScheduleText(ScheduleDto s) => s.Kind switch
+    {
+        "onChange" => "When a phone changes",
+        "interval" => $"Every {TimeSpan.FromSeconds(s.IntervalSeconds ?? 0):g}",
+        "dailyAt" => "Daily at " + string.Join(", ", s.DailyTimes ?? []),
+        "manual" => "Manual only",
+        _ => Format.Words(s.Kind),
+    };
+
+    private async Task SetEnabledAsync(JobStatusDto job, bool enabled)
+    {
+        _pending.Add(job.JobId);
+        try
+        {
+            var updated = await Api.PatchAsync<JobDto>($"jobs/{job.JobId}", new { enabled });
+            _jobs[updated.Id] = updated;
+            Snackbar.Add($"{job.Name} {(enabled ? "enabled" : "disabled")}", Severity.Success);
+            await Status.RefreshAsync();
+        }
+        catch (ApiException ex)
+        {
+            if (!ex.IsSignedOut()) Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _pending.Remove(job.JobId);
+        }
+    }
+
+    private async Task RunAsync(JobStatusDto job, bool normal)
+    {
+        _pending.Add(job.JobId);
+        try
+        {
+            await Api.PostAsync<RunDto>($"jobs/{job.JobId}/runs", new { mode = normal ? "normal" : "dryRun" });
+            await Status.RefreshAsync();
+            _pending.Remove(job.JobId);
+        }
+        catch (ApiException ex)
+        {
+            if (!ex.IsSignedOut()) Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _pending.Remove(job.JobId);
+        }
+    }
+
+    private async Task StopAsync(JobStatusDto job)
+    {
+        _pending.Add(job.JobId);
+        try
+        {
+            await Api.PostAsync($"jobs/{job.JobId}/stop");
+            Snackbar.Add($"Stopping {job.Name} at the next file boundary", Severity.Info);
+            await Status.RefreshAsync();
+        }
+        catch (ApiException ex)
+        {
+            if (!ex.IsSignedOut()) Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _pending.Remove(job.JobId);
+        }
+    }
+
+    private async Task EditAsync(JobDto? job)
+    {
+        var parameters = new DialogParameters<JobEditDialog> { { d => d.Job, job }, { d => d.Devices, _devices } };
+        var dialog = await Dialogs.ShowAsync<JobEditDialog>(job is null ? "New job" : "Edit job", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        var result = await dialog.Result;
+        if (result is { Canceled: false })
+        {
+            await LoadConfigAsync();
+            await Status.RefreshAsync();
+        }
+    }
+
+    private async Task OpenRunAsync(Guid runId)
+    {
+        var parameters = new DialogParameters<RunDialog> { { d => d.RunId, runId }, { d => d.DeviceNames, _deviceNames } };
+        var dialog = await Dialogs.ShowAsync<RunDialog>("Run", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true, CloseButton = true });
+        await dialog.Result;
+        await Status.RefreshAsync();
+    }
+
+    private Task OpenOperationAsync(JobStatusDto job, OperationDto op) =>
+        op.Kind is "createSnapshot" or "restoreSnapshot" ? OpenSnapshotsAsync(job) : Task.CompletedTask;
+
+    private async Task OpenSnapshotsAsync(JobStatusDto job)
+    {
+        var parameters = new DialogParameters<SnapshotsDialog>
+        {
+            { d => d.JobId, job.JobId }, { d => d.JobName, job.Name }, { d => d.DeviceNames, _deviceNames },
+        };
+        var dialog = await Dialogs.ShowAsync<SnapshotsDialog>("Snapshots", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true });
+        await dialog.Result;
+        await Status.RefreshAsync();
+    }
+
+    private async Task<bool> ConfirmAsync(string title, string message, string yes) =>
+        await Dialogs.ShowMessageBox(title, message, yesText: yes, cancelText: "Cancel") == true;
+
+    private async Task RunActionAsync(JobStatusDto job, Func<Task> action)
+    {
+        _pending.Add(job.JobId);
+        try
+        {
+            await action();
+            await Status.RefreshAsync();
+        }
+        catch (ApiException ex)
+        {
+            if (!ex.IsSignedOut()) Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _pending.Remove(job.JobId);
+        }
+    }
+
+    private Task OpenAppAsync(JobStatusDto job, Guid deviceId) =>
+        RunActionAsync(job, async () =>
+        {
+            await Api.PostAsync($"jobs/{job.JobId}/app/open", new { deviceId });
+            Snackbar.Add($"Opened the app for {job.Name}", Severity.Success);
+        });
+
+    private Task CloseAndSyncAsync(JobStatusDto job, Guid deviceId) =>
+        RunActionAsync(job, async () =>
+        {
+            await Api.PostAsync($"jobs/{job.JobId}/app/close-and-sync", new { deviceId });
+            Snackbar.Add($"Closing the app and syncing {job.Name}", Severity.Info);
+        });
+
+    private async Task TakeSnapshotAsync(JobStatusDto job)
+    {
+        try
+        {
+            await Api.PostAsync($"jobs/{job.JobId}/snapshots");
+            Snackbar.Add($"Creating a snapshot of {job.Name}", Severity.Info);
+            await Status.RefreshAsync();
+        }
+        catch (ApiException ex)
+        {
+            if (!ex.IsSignedOut()) Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task DiscardCheckpointAsync(JobStatusDto job)
+    {
+        if (!await ConfirmAsync("Discard checkpoint", $"Discard the saved checkpoint for {job.Name}? The next run starts from scratch.", "Discard"))
+            return;
+        await RunActionAsync(job, async () =>
+        {
+            await Api.DeleteAsync($"jobs/{job.JobId}/checkpoint");
+            Snackbar.Add("Checkpoint discarded", Severity.Success);
+        });
+    }
+
+    private async Task ForcePushAsync(JobStatusDto job)
+    {
+        if (!await ConfirmAsync("Force push", $"Push {job.Name} to the devices even though the safety check blocked it?", "Force push"))
+            return;
+        await RunActionAsync(job, () => Api.PostAsync<RunDto>($"jobs/{job.JobId}/runs", new { mode = "forcePush" }));
+    }
+
+    private async Task RemoveAsync(JobStatusDto job)
+    {
+        if (!await ConfirmAsync("Remove job", $"Remove {job.Name}? Its project folder is kept.", "Remove"))
+            return;
+        await RunActionAsync(job, async () =>
+        {
+            await Api.DeleteAsync($"jobs/{job.JobId}");
+            _jobs.Remove(job.JobId);
+            Snackbar.Add($"{job.Name} removed", Severity.Success);
+        });
+    }
+
+    private void OnChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        Status.Changed -= OnChanged;
+        Status.EventReceived -= OnEvent;
+        Status.Unwatch();
+    }
+}

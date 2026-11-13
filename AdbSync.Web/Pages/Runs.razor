@@ -1,0 +1,164 @@
+@page "/runs"
+@implements IDisposable
+@inject ApiClient Api
+@inject StatusStore Status
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+
+<PageTitle>Run history · AdbSync</PageTitle>
+
+<div class="page-head">
+    <MudText Typo="Typo.h4">Run history</MudText>
+    <MudSpacer />
+    @if (_jobsLoaded)
+    {
+    <JobFilter Jobs="_jobs" Selected="_jobFilter" SelectedChanged="OnJobFilterAsync" />
+    }
+    <MudTooltip Text="Refresh">
+        <MudIconButton Icon="@Icons.Material.Filled.Refresh" OnClick="ReloadAsync" />
+    </MudTooltip>
+</div>
+
+@if (_loading)
+{
+    <div class="page-loading"><SyncMark Size="64" /></div>
+}
+else if (_runs.Count == 0)
+{
+    <MudPaper Class="pa-8 d-flex flex-column align-center" Outlined="true">
+        <MudIcon Icon="@Icons.Material.Filled.History" Size="Size.Large" Class="mb-2" />
+        <MudText>No runs yet.</MudText>
+    </MudPaper>
+}
+else
+{
+    <RunCharts Runs="_runs" />
+    <MudTable Items="_runs" Hover="true" Dense="true" Elevation="1" OnRowClick="@((TableRowClickEventArgs<RunDto> e) => OpenAsync(e.Item!))" T="RunDto" RowStyle="cursor:pointer" Breakpoint="Breakpoint.Xs" Class="runs-table">
+        <HeaderContent>
+            <MudTh>Started</MudTh>
+            <MudTh>Job</MudTh>
+            <MudTh>Status</MudTh>
+            <MudTh>Trigger</MudTh>
+            <MudTh Style="text-align:right">Copied</MudTh>
+            <MudTh Style="text-align:right">Deleted</MudTh>
+            <MudTh Style="text-align:right">Errors</MudTh>
+            <MudTh Style="text-align:right">Transferred</MudTh>
+            <MudTh>Duration</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Started" Style="white-space:nowrap">
+                <span title="@Format.Local(context.StartedAt ?? context.QueuedAt)">@Format.Ago(context.StartedAt ?? context.QueuedAt)</span>
+            </MudTd>
+            <MudTd DataLabel="Job">@context.JobName</MudTd>
+            <MudTd DataLabel="Status">
+                <MudChip T="string" Size="Size.Small" Color="Format.RunColor(context.Status)">@Format.RunLabel(context.Status)</MudChip>
+                @if (context.Mode != "normal")
+                {
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@Format.Words(context.Mode)</MudChip>
+                }
+            </MudTd>
+            <MudTd DataLabel="Trigger">@Format.Words(context.Trigger)</MudTd>
+            <MudTd DataLabel="Copied" Style="text-align:right">@context.FilesCopied</MudTd>
+            <MudTd DataLabel="Deleted" Style="text-align:right">@context.FilesDeleted</MudTd>
+            <MudTd DataLabel="Errors" Style="text-align:right">@context.ErrorCount</MudTd>
+            <MudTd DataLabel="Transferred" Style="text-align:right;white-space:nowrap">@Format.Bytes(context.BytesCopied)</MudTd>
+            <MudTd DataLabel="Duration" Style="white-space:nowrap">@Format.Duration(context.StartedAt ?? context.QueuedAt, context.FinishedAt)</MudTd>
+        </RowTemplate>
+    </MudTable>
+    @if (_next is not null)
+    {
+        <div class="d-flex justify-center mt-4">
+            <MudButton Variant="Variant.Outlined" Disabled="_loadingMore" OnClick="LoadMoreAsync">Load more</MudButton>
+        </div>
+    }
+}
+
+@code {
+    private List<RunDto> _runs = [];
+    private List<JobDto> _jobs = [];
+    private Dictionary<Guid, string> _deviceNames = [];
+    [SupplyParameterFromQuery(Name = "job")] public Guid? JobQuery { get; set; }
+
+    private bool _jobsLoaded;
+    private IReadOnlySet<Guid> _jobFilter = new HashSet<Guid>();
+    private string? _next;
+    private bool _loading = true;
+    private bool _loadingMore;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (JobQuery is { } queryJob) _jobFilter = new HashSet<Guid> { queryJob };
+        try
+        {
+            _jobs = await Api.GetAsync<List<JobDto>>("jobs");
+            _deviceNames = (await Api.GetAsync<List<DeviceDto>>("devices")).ToDictionary(d => d.Id, d => d.Name);
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException)
+        {
+            if (!ex.IsSignedOut()) Snackbar.Add(ex.Message, Severity.Error);
+        }
+        _jobsLoaded = true;
+        await ReloadAsync();
+        Status.EventReceived += OnEvent;
+    }
+
+    private void OnEvent(string type)
+    {
+        if (type is "run.queued" or "run.started" or "run.finished" && _runs.Count <= 50)
+            InvokeAsync(async () =>
+            {
+                await ReloadAsync();
+                StateHasChanged();
+            });
+    }
+
+    private string Query(string? cursor) =>
+        "runs?limit=50" + string.Concat(_jobFilter.Select(id => $"&jobId={id}")) + (cursor is null ? "" : $"&cursor={cursor}");
+
+    private async Task ReloadAsync()
+    {
+        try
+        {
+            var page = await Api.GetAsync<RunPageDto>(Query(null));
+            _runs = page.Items.ToList();
+            _next = page.NextCursor;
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException)
+        {
+            if (!ex.IsSignedOut()) Snackbar.Add(ex.Message, Severity.Error);
+        }
+        _loading = false;
+    }
+
+    private async Task LoadMoreAsync()
+    {
+        _loadingMore = true;
+        try
+        {
+            var page = await Api.GetAsync<RunPageDto>(Query(_next));
+            var known = _runs.Select(r => r.Id).ToHashSet();
+            _runs.AddRange(page.Items.Where(r => !known.Contains(r.Id)));
+            _next = page.NextCursor;
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException)
+        {
+            if (!ex.IsSignedOut()) Snackbar.Add(ex.Message, Severity.Error);
+        }
+        _loadingMore = false;
+    }
+
+    private async Task OnJobFilterAsync(IReadOnlySet<Guid> selected)
+    {
+        _jobFilter = selected;
+        await ReloadAsync();
+    }
+
+    private async Task OpenAsync(RunDto run)
+    {
+        var parameters = new DialogParameters<RunDialog> { { d => d.RunId, run.Id }, { d => d.DeviceNames, _deviceNames } };
+        await Dialogs.ShowAsync<RunDialog>("Run", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true, CloseButton = true });
+    }
+
+    public void Dispose() => Status.EventReceived -= OnEvent;
+}

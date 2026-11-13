@@ -1,0 +1,214 @@
+@inject ApiClient Api
+@inject IDialogService Dialogs
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">Snapshots · @JobName</MudText>
+    </TitleContent>
+    <DialogContent>
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Class="mb-3">@_error</MudAlert>
+        }
+        @if (_busy is not null)
+        {
+            <MudAlert Severity="Severity.Info" Class="mb-3">
+                <div class="d-flex align-center gap-3">
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                    <span>@_busy</span>
+                </div>
+            </MudAlert>
+        }
+        @if (_result is not null)
+        {
+            <MudAlert Severity="@(_resultOk ? Severity.Success : Severity.Warning)" Class="mb-3">@_result</MudAlert>
+        }
+
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+            A manual snapshot copies the current files of every device into a backup folder in the project directory.
+            A rollback point is saved automatically before a sync changes things.
+        </MudText>
+
+        @if (_snapshots is null)
+        {
+            <MudProgressLinear Indeterminate="true" />
+        }
+        else if (_snapshots.Count == 0)
+        {
+            <MudText Typo="Typo.body2">No snapshots yet.</MudText>
+        }
+        else
+        {
+            <MudTable Items="_snapshots" Dense="true" Hover="true" Elevation="0" FixedHeader="true" Height="360px" RowsPerPage="200">
+                <HeaderContent>
+                    <MudTh>Created</MudTh>
+                    <MudTh>Kind</MudTh>
+                    <MudTh>Devices</MudTh>
+                    <MudTh></MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@Format.Local(context.CreatedAt)</MudTd>
+                    <MudTd>
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                                 Color="@(context.Kind == "rollbackPoint" ? Color.Info : Color.Default)">
+                            @(context.Kind == "rollbackPoint" ? "Rollback point" : "Manual")
+                        </MudChip>
+                    </MudTd>
+                    <MudTd>@DeviceList(context)</MudTd>
+                    <MudTd Style="text-align:right">
+                        <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Error" Disabled="@(_busy is not null)"
+                                   OnClick="() => RestoreAsync(context)">Restore…</MudButton>
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(_busy is not null)" OnClick="CreateAsync">Create snapshot</MudButton>
+        <MudButton OnClick="() => MudDialog.Close()">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public Guid JobId { get; set; }
+    [Parameter] public string JobName { get; set; } = "";
+    [Parameter] public IReadOnlyDictionary<Guid, string> DeviceNames { get; set; } = new Dictionary<Guid, string>();
+
+    private List<SnapshotDto>? _snapshots;
+    private Dictionary<Guid, string> _remotePaths = [];
+    private string? _error;
+    private string? _busy;
+    private string? _result;
+    private bool _resultOk;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        await ResumeRunningAsync();
+    }
+
+    private async Task ResumeRunningAsync()
+    {
+        try
+        {
+            var running = (await Api.GetAsync<List<OperationDto>>("operations"))
+                .FirstOrDefault(o => o.JobId == JobId && o.Status == "running");
+            if (running is null)
+                return;
+            _busy = running.Progress?.Message ?? (running.Kind == "restoreSnapshot" ? "Restoring snapshot…" : "Creating snapshot…");
+            var op = await RunOperationAsync(running);
+            _resultOk = op.Status == "succeeded";
+            _result = _resultOk ? "Operation finished." : op.Message ?? "The operation failed.";
+            await LoadAsync();
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException)
+        {
+            if (!ex.IsSignedOut()) _error = ex.Message;
+        }
+        _busy = null;
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            var job = await Api.GetAsync<JobDto>($"jobs/{JobId}");
+            _remotePaths = job.Devices.ToDictionary(d => d.DeviceId, d => d.RemotePath);
+            var list = await Api.GetAsync<List<SnapshotDto>>($"jobs/{JobId}/snapshots");
+            _snapshots = list.OrderByDescending(s => s.CreatedAt).ToList();
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException)
+        {
+            if (!ex.IsSignedOut()) _error = ex.Message;
+            _snapshots ??= [];
+        }
+    }
+
+    private string DeviceList(SnapshotDto snapshot) =>
+        snapshot.DeviceIds.Count == 0
+            ? "-"
+            : string.Join(", ", snapshot.DeviceIds.Select(id => DeviceNames.GetValueOrDefault(id, "?") + (_remotePaths.TryGetValue(id, out var path) ? $" ({path})" : "")));
+
+    private async Task CreateAsync()
+    {
+        _error = null;
+        _result = null;
+        _busy = "Creating snapshot…";
+        try
+        {
+            var op = await RunOperationAsync(await Api.PostAsync<OperationDto>($"jobs/{JobId}/snapshots"));
+            _resultOk = op.Status == "succeeded";
+            _result = _resultOk ? "Snapshot created." : op.Message ?? "The snapshot failed.";
+            await LoadAsync();
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException)
+        {
+            if (!ex.IsSignedOut()) _error = ex.Message;
+        }
+        _busy = null;
+    }
+
+    private async Task RestoreAsync(SnapshotDto snapshot)
+    {
+        _error = null;
+        _result = null;
+        var devices = DeviceList(snapshot);
+        var rollback = snapshot.Kind == "rollbackPoint";
+        var message = rollback
+            ? $"This puts '{JobName}' back to how it was just before the sync at {Format.Local(snapshot.CreatedAt)}. " +
+              "The master is replaced with the saved copy (the current master is saved as a new rollback point first, so that part can be undone). " +
+              $"Each device ({devices}) is overwritten with its own saved folder, and any file on a device that isn't in it is deleted. Device folders are NOT saved first."
+            : $"This pushes the snapshot from {Format.Local(snapshot.CreatedAt)} back to {devices}. " +
+              "Current files on those devices are overwritten, and any device file that isn't in the snapshot is deleted. This cannot be undone.";
+
+        var confirmed = await Dialogs.ShowMessageBox(
+            new MessageBoxOptions
+            {
+                Title = "Restore snapshot?",
+                MarkupMessage = new MarkupString(
+                    $"<p>{System.Net.WebUtility.HtmlEncode(message)}</p>" +
+                    "<p>Afterwards the manifests are cleared, so the next sync reports any differences as conflicts instead of deleting anything.</p>"),
+                YesText = "Restore",
+                CancelText = "Cancel",
+            });
+        if (confirmed != true)
+            return;
+
+        _busy = "Restoring…";
+        try
+        {
+            var op = await RunOperationAsync(await Api.PostAsync<OperationDto>($"jobs/{JobId}/snapshots/{Uri.EscapeDataString(snapshot.Id)}/restore"));
+            _resultOk = op.Status == "succeeded";
+            _result = _resultOk ? RestoreSummary(op.Result) : op.Message ?? "The restore failed.";
+            await LoadAsync();
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException)
+        {
+            if (!ex.IsSignedOut()) _error = ex.Message;
+        }
+        _busy = null;
+    }
+
+    private static string RestoreSummary(object? result)
+    {
+        if (result is not System.Text.Json.JsonElement json || json.ValueKind != System.Text.Json.JsonValueKind.Object)
+            return "Snapshot restored.";
+        int Get(string name) => json.TryGetProperty(name, out var v) && v.TryGetInt32(out var n) ? n : 0;
+        var errors = Get("errors");
+        return $"Restored {Get("restoredDevices")} device(s): {Get("filesCopied")} file(s) copied, {Get("filesDeleted")} deleted"
+               + (errors > 0 ? $", {errors} error(s)." : ".");
+    }
+
+    private async Task<OperationDto> RunOperationAsync(OperationDto operation)
+    {
+        while (operation.Status == "running")
+        {
+            await Task.Delay(1000);
+            operation = await Api.GetAsync<OperationDto>($"operations/{operation.Id}");
+            _busy = operation.Progress?.Message ?? _busy;
+            StateHasChanged();
+        }
+        return operation;
+    }
+}

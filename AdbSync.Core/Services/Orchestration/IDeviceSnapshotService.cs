@@ -11,7 +11,8 @@ namespace AdbSync.Core.Services.Orchestration;
 public interface IDeviceSnapshotService
 {
     Task<SnapshotResult> CreateSnapshotAsync(
-        SyncJobConfig job, IReadOnlyList<DeviceConfig> devices, GlobalSettings settings, CancellationToken ct = default);
+        SyncJobConfig job, IReadOnlyList<DeviceConfig> devices, GlobalSettings settings, CancellationToken ct = default,
+        Action<SyncPhase, string>? onDevicePhase = null);
 
     /// <summary>Lists this job's stored checkpoints, most recent first.</summary>
     IReadOnlyList<SnapshotInfo> ListSnapshots(SyncJobConfig job, GlobalSettings settings);
@@ -20,5 +21,6 @@ public interface IDeviceSnapshotService
     /// the job, mirroring device contents to match (deletes device files absent from the checkpoint). Checkpoint
     /// device folders with no matching binding are skipped and reported via <see cref="SnapshotResult.SkippedDevices"/>.</summary>
     Task<SnapshotResult> RestoreSnapshotAsync(
-        SyncJobConfig job, IReadOnlyList<DeviceConfig> devices, GlobalSettings settings, string snapshotPath, CancellationToken ct = default);
+        SyncJobConfig job, IReadOnlyList<DeviceConfig> devices, GlobalSettings settings, string snapshotPath, CancellationToken ct = default,
+        Action<SyncPhase, string>? onDevicePhase = null);
 }

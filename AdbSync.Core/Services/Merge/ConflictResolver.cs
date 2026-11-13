@@ -51,10 +51,12 @@ public sealed class ConflictResolver(
         var job = config.Jobs.FirstOrDefault(j => j.Name == conflict.JobName)
             ?? throw new ConflictResolutionException($"Job '{conflict.JobName}' no longer exists.");
         var eff = job.Resolve(config.Settings);
-        var projectRoot = Path.Combine(eff.ProjectsDirectory, job.Name);
+        var projectRoot = ProjectFolders.ProjectRoot(eff, job.Name);
+        if (ProjectFolders.Unavailable(eff, job.Name) is { } unavailable)
+            throw new ConflictResolutionException(unavailable);
         var masterPath = Path.Combine(projectRoot, "master");
 
-        await using var @lock = await AcquireAsync(projectRoot, TimeSpan.FromHours(eff.StaleLockHours), ct)
+        await using var @lock = await AcquireAsync(projectRoot, ct)
             ?? throw new ConflictResolutionException($"'{job.Name}' is syncing right now - try again in a moment.");
 
         var masterFile = Path.Combine(masterPath, conflict.RelativePath);
@@ -66,7 +68,7 @@ public sealed class ConflictResolver(
             choice = PickNewest(conflict);
 
         var manifest = await manifests.TryGetAsync(conflict.JobName, conflict.DeviceName, ct) ?? new SyncManifest();
-        var backupDir = Path.Combine(projectRoot, ".sync_conflicts", conflict.DeviceName);
+        var backupDir = Path.Combine(projectRoot, ".sync_conflicts", ConfigNames.Segment(conflict.DeviceName));
 
         if (choice == ConflictChoice.Device)
         {
@@ -114,16 +116,18 @@ public sealed class ConflictResolver(
         if (job is null)
             return null;
 
-        var masterFile = Path.Combine(job.Resolve(config.Settings).ProjectsDirectory, job.Name, "master", conflict.RelativePath);
+        var masterFile = ProjectFolders.TryProjectRoot(job.Resolve(config.Settings), job.Name) is { } projectRoot
+            ? Path.Combine(projectRoot, "master", conflict.RelativePath)
+            : null;
         return new ConflictFiles(File.Exists(masterFile) ? masterFile : null, pending.GetDeviceCopyPath(conflict));
     }
 
-    private async Task<IAsyncDisposable?> AcquireAsync(string projectRoot, TimeSpan staleAfter, CancellationToken ct)
+    private async Task<IAsyncDisposable?> AcquireAsync(string projectRoot, CancellationToken ct)
     {
         var deadline = DateTime.UtcNow + LockWait;
         while (true)
         {
-            var handle = await lockManager.TryAcquireAsync(projectRoot, staleAfter, ct);
+            var handle = await lockManager.TryAcquireAsync(projectRoot, ct);
             if (handle is not null || DateTime.UtcNow >= deadline)
                 return handle;
             await Task.Delay(TimeSpan.FromMilliseconds(500), ct);
@@ -143,7 +147,7 @@ public sealed class ConflictResolver(
         var name = Path.GetFileNameWithoutExtension(masterFile);
         var ext = Path.GetExtension(masterFile);
         var stamp = DateTimeOffset.UtcNow.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
-        return Path.Combine(dir, $"{name} ({deviceName} {stamp}){ext}");
+        return Path.Combine(dir, $"{name} ({ConfigNames.Segment(deviceName)} {stamp}){ext}");
     }
 
     private static void Backup(string source, string backupDir, string relativePath)

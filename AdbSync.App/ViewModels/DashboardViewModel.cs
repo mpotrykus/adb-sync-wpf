@@ -34,7 +34,7 @@ public sealed class DashboardViewModel : ISyncEventSink
     {
         RunOnUi(() =>
         {
-            var now = DateTimeOffset.Now;
+            var now = ScheduleClock.Now(config.Settings);
             var existingByName = Jobs.ToDictionary(j => j.Name);
             var seen = new HashSet<string>();
 
@@ -79,6 +79,7 @@ public sealed class DashboardViewModel : ISyncEventSink
                 {
                     SyncPhase.WaitingForAppClose => ("Waiting for app to close on ", ""),
                     SyncPhase.WaitingForDevice => ("Waiting for ", " (in use by another job)"),
+                    SyncPhase.Snapshot => ("Saving rollback point @ ", ""),
                     _ => ($"{phase} @ ", ""),
                 };
                 vm.SetDevicePhase(deviceName, prefix, suffix);

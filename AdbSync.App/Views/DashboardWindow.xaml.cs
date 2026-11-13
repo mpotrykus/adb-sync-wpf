@@ -1,4 +1,5 @@
 using AdbSync.App.Services;
+using AdbSync.Engine.Services;
 using AdbSync.App.ViewModels;
 using AdbSync.Core.Models.Config;
 using AdbSync.Core.Models.Orchestration;
@@ -214,7 +215,9 @@ public partial class DashboardWindow : Window
             if (lastRun.Outcome == JobRunOutcome.Failed)
             {
                 vm.NeedsAttention = true;
-                vm.CanForcePush = lastRun.ErrorMessage?.Contains("Safety check blocked push", StringComparison.Ordinal) == true;
+                // Runs recorded before error codes existed only have the message text.
+                vm.CanForcePush = lastRun.ErrorCode == RunErrorCode.PushSafetyBlocked
+                    || (lastRun.ErrorCode is null && lastRun.ErrorMessage?.Contains("Safety check blocked push", StringComparison.Ordinal) == true);
             }
         }
     }
@@ -261,6 +264,7 @@ public partial class DashboardWindow : Window
         JobRunOutcome.CompletedNoChanges => "No changes",
         JobRunOutcome.Skipped => "Skipped: already running",
         JobRunOutcome.SkippedAppRunning => "Skipped: app running",
+        JobRunOutcome.SkippedProjectFolderUnavailable => $"Skipped: {record.ErrorMessage}",
         JobRunOutcome.Failed => $"Error: {record.ErrorMessage}",
         JobRunOutcome.DryRunCompleted => "Dry run completed",
         JobRunOutcome.Cancelled => "Stopped",
@@ -651,10 +655,14 @@ public partial class DashboardWindow : Window
             return;
 
         var eff = job.Resolve(config.Settings);
-        if (string.IsNullOrWhiteSpace(eff.ProjectsDirectory))
+        if (ProjectFolders.TryProjectRoot(eff, job.Name) is not { } projectRoot)
             return;
+        if (ProjectFolders.Unavailable(eff, job.Name) is { } unavailable)
+        {
+            MessageBox.Show(this, unavailable, "AdbSync", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
 
-        var projectRoot = Path.Combine(eff.ProjectsDirectory, job.Name);
         Directory.CreateDirectory(projectRoot);
         Process.Start(new ProcessStartInfo("explorer.exe", $"\"{projectRoot}\"") { UseShellExecute = true });
     }

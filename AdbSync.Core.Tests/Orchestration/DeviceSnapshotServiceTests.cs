@@ -1,4 +1,6 @@
 using AdbSync.Core.Models.Config;
+using AdbSync.Core.Services.Config;
+using AdbSync.Core.Services.Merge;
 using AdbSync.Core.Services.Orchestration;
 using AdbSync.Core.Tests.Orchestration.Fakes;
 
@@ -12,6 +14,7 @@ public class DeviceSnapshotServiceTests : IDisposable
     public DeviceSnapshotServiceTests()
     {
         _projectsDirectory = Path.Combine(_root, "projects");
+        ProjectFolders.AdoptRoot(_projectsDirectory);
     }
 
     public void Dispose()
@@ -37,7 +40,8 @@ public class DeviceSnapshotServiceTests : IDisposable
         var device = new DeviceConfig { Name = "DeviceA", Serial = "DeviceA" };
         var settings = new GlobalSettings { ProjectsDirectory = _projectsDirectory };
         var service = new DeviceSnapshotService(
-            new FakeDeviceResolver(), new FakeAdbTransferEngine(new Dictionary<string, string> { ["DeviceA"] = DeviceFolder("DeviceA") }));
+            new FakeDeviceResolver(), new FakeAdbTransferEngine(new Dictionary<string, string> { ["DeviceA"] = DeviceFolder("DeviceA") }),
+            new SyncLockManager(), new ManifestStore(new AppPaths(Path.Combine(_root, "appdata"))));
 
         var checkpointsRoot = Path.Combine(_projectsDirectory, "JobSnap", "checkpoints");
         Directory.CreateDirectory(checkpointsRoot);
@@ -67,7 +71,8 @@ public class DeviceSnapshotServiceTests : IDisposable
         var device = new DeviceConfig { Name = "DeviceA", Serial = "DeviceA" };
         var settings = new GlobalSettings { ProjectsDirectory = _projectsDirectory, CheckpointRetentionDays = 30 };
         var service = new DeviceSnapshotService(
-            new FakeDeviceResolver(), new FakeAdbTransferEngine(new Dictionary<string, string> { ["DeviceA"] = DeviceFolder("DeviceA") }));
+            new FakeDeviceResolver(), new FakeAdbTransferEngine(new Dictionary<string, string> { ["DeviceA"] = DeviceFolder("DeviceA") }),
+            new SyncLockManager(), new ManifestStore(new AppPaths(Path.Combine(_root, "appdata"))));
 
         var checkpointsRoot = Path.Combine(_projectsDirectory, "JobSnapOverride", "checkpoints");
         Directory.CreateDirectory(checkpointsRoot);

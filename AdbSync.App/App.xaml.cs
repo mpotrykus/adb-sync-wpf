@@ -1,4 +1,6 @@
 using AdbSync.App.Services;
+using AdbSync.Engine;
+using AdbSync.Engine.Services;
 using AdbSync.App.Tray;
 using AdbSync.App.ViewModels;
 using AdbSync.App.Views;
@@ -8,6 +10,7 @@ using AdbSync.Core.Services.Devices;
 using AdbSync.Core.Services.Logging;
 using AdbSync.Core.Services.Merge;
 using AdbSync.Core.Services.Orchestration;
+using AdbSync.Core.Services.Persistence;
 using AdbSync.Core.Services.Orchestration.RunHistory;
 using AdbSync.Core.Services.Transfer;
 using AdvancedSharpAdbClient;
@@ -30,6 +33,7 @@ public partial class App : Application
 {
     private IHost? _host;
     private Mutex? _singleInstanceMutex;
+    private InstanceLock? _instanceLock;
     private bool _hostStopped;
 
     public static IServiceProvider Services { get; private set; } = null!;
@@ -53,6 +57,16 @@ public partial class App : Application
         if (!createdNew)
         {
             MessageBox.Show("AdbSync is already running.", "AdbSync", MessageBoxButton.OK, MessageBoxImage.Information);
+            Shutdown();
+            return;
+        }
+
+        _instanceLock = InstanceLock.TryAcquire(AppPaths.Default, "AdbSync app");
+        if (_instanceLock is null)
+        {
+            MessageBox.Show(
+                "AdbSync's data folder is in use by another process, such as an adbsync command. Close it and start AdbSync again.",
+                "AdbSync", MessageBoxButton.OK, MessageBoxImage.Information);
             Shutdown();
             return;
         }
@@ -122,62 +136,25 @@ public partial class App : Application
             Task.Run(() => host.StopAsync(TimeSpan.FromSeconds(5))).GetAwaiter().GetResult();
         _host?.Dispose();
         _singleInstanceMutex?.ReleaseMutex();
+        _instanceLock?.Dispose();
         base.OnExit(e);
     }
 
     private static void ConfigureServices(HostBuilderContext context, IServiceCollection services)
     {
-        services.AddSingleton(AppPaths.Default);
-        services.AddSingleton<IAppConfigStore, AppConfigStore>();
-        services.AddSingleton<AppConfigService>();
-        services.AddSingleton<DashboardUiStateStore>();
-
-        services.AddSingleton<IAdbClient>(_ => new AdbClient());
-        services.AddSingleton<IAdbServer>(_ => new AdbServer());
-        services.AddSingleton<IMdnsBrowser, MdnsBrowser>();
-        services.AddSingleton<IAdbDeviceResolver, AdbDeviceResolver>();
-        services.AddSingleton<IDeviceChangeWatcher, DeviceChangeWatcher>();
-        services.AddSingleton<IAppRunningGuard, AppRunningGuard>();
-        services.AddSingleton<IDeviceAppControl, DeviceAppControl>();
-        services.AddSingleton<IDevicePackageLister, AdbDevicePackageLister>();
-        services.AddSingleton<ISyncLockManager, SyncLockManager>();
-        services.AddSingleton<IDeviceAccessGate, DeviceAccessGate>();
-        services.AddSingleton<IAdbProcessRunner>(_ => new AdbProcessRunner());
-        services.AddSingleton<IMirrorDiffer, MirrorDiffer>();
-        services.AddSingleton<IRemoteFileSystemFactory, AdbRemoteFileSystemFactory>();
-        services.AddSingleton<IAdbTransferEngine, NativeAdbTransferEngine>();
-        services.AddSingleton<ITwoWayMergeEngine, TwoWayMergeEngine>();
-        services.AddSingleton<IManifestStore, ManifestStore>();
-        services.AddSingleton<IPendingConflictStore, PendingConflictStore>();
-        services.AddSingleton<IConflictResolver, ConflictResolver>();
-        services.AddSingleton<IPushSafetyGuard, PushSafetyGuard>();
-        services.AddSingleton<ICheckpointManager, CheckpointManager>();
-        services.AddSingleton<IDeviceSnapshotService, DeviceSnapshotService>();
-        services.AddSingleton<RollbackPointStore>();
-        services.AddSingleton<RollbackService>();
-        services.AddSingleton<IRunHistoryStore, RunHistoryStore>();
-        services.AddSingleton<ILiveRunLogSink, LiveRunLogSink>();
-        services.AddSingleton<ILiveRunStepSink, LiveRunStepSink>();
+        services.AddAdbSyncEngine(AppPaths.Default);
 
         services.AddSingleton<DashboardViewModel>();
-        services.AddSingleton<CompanionCertificateStore>();
-        services.AddSingleton<CompanionBroadcastService>();
-        services.AddHostedService(sp => sp.GetRequiredService<CompanionBroadcastService>());
-        services.AddSingleton<JobStatusTracker>();
         services.AddSingleton<ISyncEventSink>(sp => new CompositeSyncEventSink(
         [
             sp.GetRequiredService<DashboardViewModel>(),
             sp.GetRequiredService<CompanionBroadcastService>().Sink,
             sp.GetRequiredService<JobStatusTracker>(),
         ]));
-        services.AddSingleton<SyncJobRunner>();
-        services.AddSingleton<JobRunService>();
-        services.AddSingleton<AppGateService>();
+        services.AddSingleton<IHostPowerEvents, WindowsPowerEvents>();
 
-        services.AddSingleton<SchedulerHostedService>();
+        services.AddHostedService(sp => sp.GetRequiredService<CompanionBroadcastService>());
         services.AddHostedService(sp => sp.GetRequiredService<SchedulerHostedService>());
-
-        services.AddSingleton<ChangeWatchHostedService>();
         services.AddHostedService(sp => sp.GetRequiredService<ChangeWatchHostedService>());
 
         services.AddSingleton<CompanionServerService>();

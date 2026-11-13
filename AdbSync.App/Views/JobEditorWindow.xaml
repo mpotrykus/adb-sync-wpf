@@ -233,6 +233,7 @@
                                             </Grid>
                                             <Button Grid.Column="1" Content="Browse..." Click="BrowseProjectDirectory_Click"/>
                                         </Grid>
+                                        <TextBlock x:Name="ProjectDirectoryErrorText" Style="{StaticResource ValidationErrorText}"/>
                                     </StackPanel>
                                 </Border>
 

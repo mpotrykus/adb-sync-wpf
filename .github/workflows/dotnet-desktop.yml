@@ -60,8 +60,48 @@ jobs:
         # CI runners don't have. Left unset here so the suite passes trivially.
         run: dotnet test ${{ env.IntegrationTests_Project_Path }} --configuration ${{ matrix.configuration }} --no-restore
 
+  linux-build-and-test:
+    strategy:
+      matrix:
+        configuration: [Debug, Release]
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: |
+          dotnet restore AdbSync.Cli/AdbSync.Cli.csproj
+          dotnet restore AdbSync.Engine/AdbSync.Engine.csproj
+          dotnet restore AdbSync.Server/AdbSync.Server.csproj
+          dotnet restore AdbSync.Server.Tests/AdbSync.Server.Tests.csproj
+          dotnet restore AdbSync.Core.Tests/AdbSync.Core.Tests.csproj
+          dotnet restore AdbSync.Core.IntegrationTests/AdbSync.Core.IntegrationTests.csproj
+
+      - name: Build
+        run: |
+          dotnet build AdbSync.Cli/AdbSync.Cli.csproj --configuration ${{ matrix.configuration }} --no-restore
+          dotnet build AdbSync.Engine/AdbSync.Engine.csproj --configuration ${{ matrix.configuration }} --no-restore
+          dotnet build AdbSync.Server/AdbSync.Server.csproj --configuration ${{ matrix.configuration }} --no-restore
+
+      - name: Run unit tests
+        run: dotnet test AdbSync.Core.Tests/AdbSync.Core.Tests.csproj --configuration ${{ matrix.configuration }} --no-restore
+
+      - name: Run integration tests
+        run: dotnet test AdbSync.Core.IntegrationTests/AdbSync.Core.IntegrationTests.csproj --configuration ${{ matrix.configuration }} --no-restore
+
+      - name: Run server tests
+        run: dotnet test AdbSync.Server.Tests/AdbSync.Server.Tests.csproj --configuration ${{ matrix.configuration }} --no-restore
+
   publish:
-    needs: build-and-test
+    needs: [build-and-test, linux-build-and-test]
     if: github.event_name == 'push'
     runs-on: windows-latest
 

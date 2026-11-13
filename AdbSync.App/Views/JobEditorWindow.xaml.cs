@@ -1,4 +1,5 @@
 using AdbSync.Core.Models.Config;
+using AdbSync.Core.Services.Config;
 using AdbSync.Core.Services.Devices;
 using AdbSync.Core.Services.Transfer;
 using Microsoft.Win32;
@@ -15,6 +16,8 @@ public partial class JobEditorWindow : Window
     private readonly ObservableCollection<JobDeviceBindingRow> _bindings = [];
     private readonly SyncJobConfig? _originalJob;
     private readonly List<DeviceConfig> _devices;
+    private readonly List<string> _otherJobNames;
+    private readonly string _globalProjectsDirectory;
     private readonly IAdbDeviceResolver _deviceResolver;
     private readonly IDeviceChangeWatcher _changeWatcher;
     private readonly IRemoteFileSystemFactory _remoteFileSystemFactory;
@@ -29,6 +32,8 @@ public partial class JobEditorWindow : Window
         InitializeComponent();
         _originalJob = job;
         _devices = config.Devices;
+        _otherJobNames = config.Jobs.Where(j => j != job).Select(j => j.Name).ToList();
+        _globalProjectsDirectory = config.Settings.ProjectsDirectory;
         _deviceResolver = deviceResolver;
         _changeWatcher = changeWatcher;
         _remoteFileSystemFactory = remoteFileSystemFactory;
@@ -228,12 +233,23 @@ public partial class JobEditorWindow : Window
     {
         NameErrorText.Visibility = Visibility.Collapsed;
         DevicesErrorText.Visibility = Visibility.Collapsed;
+        ProjectDirectoryErrorText.Visibility = Visibility.Collapsed;
 
         var hasError = false;
-        if (string.IsNullOrWhiteSpace(NameBox.Text))
+        var name = NameBox.Text.Trim();
+        var nameProblem = ConfigNames.Problem(name)
+            ?? (ConfigNames.IsUnique(name, _otherJobNames) ? null : $"A job named '{name}' already exists.");
+        if (_originalJob is null && nameProblem is not null)
         {
-            NameErrorText.Text = "Name is required.";
+            NameErrorText.Text = nameProblem;
             NameErrorText.Visibility = Visibility.Visible;
+            hasError = true;
+        }
+        var projectDirectory = ProjectDirectoryBox.Text.Trim();
+        if (projectDirectory.Length > 0 && !Path.IsPathFullyQualified(projectDirectory))
+        {
+            ProjectDirectoryErrorText.Text = "Enter a full path, or leave it empty to use the projects directory from Settings.";
+            ProjectDirectoryErrorText.Visibility = Visibility.Visible;
             hasError = true;
         }
         if (_bindings.Count == 0)
@@ -245,15 +261,27 @@ public partial class JobEditorWindow : Window
         if (hasError)
             return;
 
+        var root = projectDirectory.Length > 0 ? projectDirectory : _globalProjectsDirectory;
+        try
+        {
+            ProjectFolders.AdoptRoot(root);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            MessageBox.Show(this, $"Can't use the projects folder '{root}': {ex.Message}", "AdbSync", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
         var schedule = BuildSchedule();
         schedule.LastRunAt = _originalJob?.Schedule.LastRunAt;
         schedule.LastSuccessAt = _originalJob?.Schedule.LastSuccessAt;
 
         Result = new SyncJobConfig
         {
-            Name = NameBox.Text.Trim(),
+            Id = _originalJob?.Id ?? Guid.Empty,
+            Name = name,
             AppPackage = string.IsNullOrWhiteSpace(AppPackageBox.Text) ? null : AppPackageBox.Text.Trim(),
-            ProjectDirectory = string.IsNullOrWhiteSpace(ProjectDirectoryBox.Text) ? null : ProjectDirectoryBox.Text.Trim(),
+            ProjectDirectory = projectDirectory.Length == 0 ? null : projectDirectory,
             Exclude = ParseExcludePatterns(),
             Devices = _bindings.Select(b => new JobDeviceBinding { DeviceName = b.DeviceName, RemotePath = b.RemotePath }).ToList(),
             Schedule = schedule,

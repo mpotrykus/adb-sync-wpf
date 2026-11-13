@@ -34,7 +34,14 @@ data class RemoteJob(
     val appPackage: String?,
     val staleDevices: List<Pair<String, String>>,
     val pendingConflicts: Int = 0,
+    val lastRunId: String? = null,
+    val lastStatus: String? = null,
+    val lastMessage: String? = null,
+    val folderProblem: String? = null,
+    val canForcePush: Boolean = false,
 ) {
+    fun isSyncingOn(device: String) = running && (devices.isEmpty() || devices.any { it.first == device })
+
     val isPushing get() = phase == "Push" || devices.any { it.second == "Push" }
 
     fun statusText(): String = when {
@@ -44,32 +51,44 @@ data class RemoteJob(
     }
 
     companion object {
-        fun parse(o: JSONObject): RemoteJob {
+        /** Parses a v1 JobStatus. [deviceNames] maps device ids to the names the rest of the app works with. */
+        fun parse(o: JSONObject, deviceNames: Map<String, String>): RemoteJob {
             val devices = o.optJSONArray("devices")
+            val lastRun = o.optJSONObject("lastRun")
+            val status = lastRun?.optStringOrNull("status")
+            val checkpoint = o.optJSONObject("checkpoint")
+            val stale = o.optJSONArray("staleDevices")?.let { array ->
+                (0 until array.length()).map {
+                    val d = array.getJSONObject(it)
+                    (deviceNames[d.getString("deviceId")] ?: "A device") to d.getString("reason")
+                }
+            }.orEmpty()
             return RemoteJob(
                 name = o.getString("name"),
                 enabled = o.optBoolean("enabled"),
-                running = o.optBoolean("running"),
-                phase = o.optStringOrNull("phase"),
+                running = o.optString("state", "idle") != "idle",
+                phase = o.optStringOrNull("phase")?.capitalized(),
                 devices = (0 until (devices?.length() ?: 0)).map {
                     val d = devices!!.getJSONObject(it)
-                    d.getString("device") to d.getString("phase")
+                    (deviceNames[d.getString("deviceId")] ?: "A device") to d.getString("phase").capitalized()
                 },
-                lastResult = o.optStringOrNull("lastResult"),
-                lastFailed = o.optBoolean("lastFailed"),
-                lastResultAt = o.optStringOrNull("lastResultAt")?.let { OffsetDateTime.parse(it) },
+                lastResult = status?.let { outcomeLabel(it.capitalized()) },
+                lastFailed = status == "failed",
+                lastResultAt = lastRun?.optStringOrNull("finishedAt")?.let { OffsetDateTime.parse(it) },
                 nextRunAt = o.optStringOrNull("nextRunAt")?.let { OffsetDateTime.parse(it) },
-                needsAttention = o.optBoolean("needsAttention"),
-                hasCheckpoint = o.optBoolean("hasCheckpoint"),
-                checkpointSummary = o.optStringOrNull("checkpointSummary"),
+                needsAttention = status == "failed" || stale.isNotEmpty() ||
+                    o.optJSONObject("availability")?.optString("projectFolder", "ok") != "ok",
+                hasCheckpoint = checkpoint != null,
+                checkpointSummary = checkpoint?.optStringOrNull("summary"),
                 appPackage = o.optStringOrNull("appPackage"),
-                staleDevices = o.optJSONArray("staleDevices")?.let { stale ->
-                    (0 until stale.length()).map {
-                        val d = stale.getJSONObject(it)
-                        d.getString("device") to d.getString("reason")
-                    }
-                }.orEmpty(),
+                staleDevices = stale,
                 pendingConflicts = o.optInt("pendingConflicts"),
+                lastRunId = lastRun?.optStringOrNull("runId"),
+                lastStatus = status,
+                lastMessage = lastRun?.optStringOrNull("message"),
+                folderProblem = o.optJSONObject("availability")?.takeIf { it.optString("projectFolder", "ok") != "ok" }
+                    ?.let { it.optStringOrNull("detail") ?: "Folder unavailable" },
+                canForcePush = o.optBoolean("canForcePush"),
             )
         }
     }
@@ -89,30 +108,38 @@ data class RemoteRun(
     val failed get() = outcome == "Failed"
     val skipped get() = outcome == "Skipped" || outcome == "SkippedAppRunning" || outcome == "Cancelled"
 
-    fun outcomeText(): String = when (outcome) {
-        "Completed" -> "Success"
-        "CompletedNoChanges" -> "No changes"
-        "Skipped" -> "Skipped"
-        "SkippedAppRunning" -> "Skipped (app running)"
-        "Failed" -> "Error"
-        "DryRunCompleted" -> "Dry run"
-        "Cancelled" -> "Stopped"
-        else -> outcome
-    }
+    fun outcomeText(): String = outcomeLabel(outcome)
 
     companion object {
-        fun parse(o: JSONObject) = RemoteRun(
-            runId = o.getString("runId"),
-            startedAt = OffsetDateTime.parse(o.getString("startedAt")),
-            completedAt = OffsetDateTime.parse(o.getString("completedAt")),
-            outcome = o.getString("outcome"),
-            errorMessage = o.optStringOrNull("errorMessage"),
-            filesCopied = o.optInt("filesCopied"),
-            filesDeleted = o.optInt("filesDeleted"),
-            errorCount = o.optInt("errorCount"),
-            bytesCopied = o.optLong("bytesCopied"),
-        )
+        fun parse(o: JSONObject): RemoteRun {
+            val queued = o.getString("queuedAt")
+            val started = o.optStringOrNull("startedAt") ?: queued
+            return RemoteRun(
+                runId = o.getString("id"),
+                startedAt = OffsetDateTime.parse(started),
+                completedAt = OffsetDateTime.parse(o.optStringOrNull("finishedAt") ?: started),
+                outcome = o.getString("status").capitalized(),
+                errorMessage = o.optStringOrNull("message"),
+                filesCopied = o.optInt("filesCopied"),
+                filesDeleted = o.optInt("filesDeleted"),
+                errorCount = o.optInt("errorCount"),
+                bytesCopied = o.optLong("bytesCopied"),
+            )
+        }
     }
+}
+
+fun outcomeLabel(outcome: String): String = when (outcome) {
+    "Completed" -> "Success"
+    "CompletedNoChanges" -> "No changes"
+    "Skipped" -> "Skipped"
+    "SkippedAppRunning" -> "Skipped (app running)"
+    "Failed" -> "Error"
+    "DryRunCompleted" -> "Dry run"
+    "Cancelled" -> "Stopped"
+    "Queued" -> "Queued"
+    "Running" -> "Running"
+    else -> outcome
 }
 
 data class RemoteStep(
@@ -129,9 +156,9 @@ data class RemoteStep(
 ) {
     companion object {
         fun parse(o: JSONObject) = RemoteStep(
-            device = o.getString("device"),
-            phase = o.getString("phase"),
-            status = o.getString("status"),
+            device = o.getString("deviceName"),
+            phase = o.getString("phase").capitalized(),
+            status = o.getString("status").capitalized(),
             startedAt = o.optStringOrNull("startedAt")?.let { OffsetDateTime.parse(it) },
             endedAt = o.optStringOrNull("endedAt")?.let { OffsetDateTime.parse(it) },
             filesCopied = o.optInt("filesCopied"),
@@ -156,67 +183,103 @@ data class RemoteConflict(
     val pcModifiedAt: OffsetDateTime?,
 ) {
     companion object {
-        fun parse(o: JSONObject) = RemoteConflict(
-            id = o.getString("id"),
-            job = o.getString("job"),
-            device = o.getString("device"),
-            path = o.getString("path"),
-            deviceDeleted = o.optBoolean("deviceDeleted"),
-            deviceSize = if (o.isNull("deviceSize")) null else o.optLong("deviceSize"),
-            deviceModifiedAt = o.optStringOrNull("deviceModifiedAt")?.let { OffsetDateTime.parse(it) },
-            pcDeleted = o.optBoolean("pcDeleted"),
-            pcSize = if (o.isNull("pcSize")) null else o.optLong("pcSize"),
-            pcModifiedAt = o.optStringOrNull("pcModifiedAt")?.let { OffsetDateTime.parse(it) },
-        )
+        fun parse(o: JSONObject, jobNames: Map<String, String>, deviceNames: Map<String, String>): RemoteConflict {
+            val master = o.getJSONObject("master")
+            val device = o.getJSONObject("device")
+            return RemoteConflict(
+                id = o.getString("id"),
+                job = jobNames[o.getString("jobId")] ?: "Unknown job",
+                device = deviceNames[o.getString("deviceId")] ?: "Unknown device",
+                path = o.getString("path"),
+                deviceDeleted = device.optBoolean("deleted"),
+                deviceSize = if (device.isNull("size")) null else device.optLong("size"),
+                deviceModifiedAt = device.optStringOrNull("modifiedAt")?.let { OffsetDateTime.parse(it) },
+                pcDeleted = master.optBoolean("deleted"),
+                pcSize = if (master.isNull("size")) null else master.optLong("size"),
+                pcModifiedAt = master.optStringOrNull("modifiedAt")?.let { OffsetDateTime.parse(it) },
+            )
+        }
     }
 }
 
-/** [PC] keeps what the PC has, [DEVICE] keeps the version from the device the conflict was found on. */
-enum class ConflictChoice(val wire: String) { PC("pc"), DEVICE("device"), BOTH("both"), NEWEST("newest") }
+/** [PC] keeps the server's master copy, [DEVICE] keeps the version from the device the conflict was found on. */
+enum class ConflictChoice(val wire: String) { PC("master"), DEVICE("device"), BOTH("both"), NEWEST("newest") }
 
 data class CloseAndSyncResult(val result: String, val failed: Boolean, val stillOutOfSync: Boolean, val reason: String?)
 
-private fun JSONObject.optStringOrNull(key: String): String? = if (isNull(key)) null else optString(key)
+internal fun JSONObject.optStringOrNull(key: String): String? = if (!has(key) || isNull(key)) null else optString(key)
+
+internal fun String.capitalized() = replaceFirstChar { it.uppercaseChar() }
 
 class HttpStatusException(val code: Int) : Exception("HTTP $code")
+
+/** Job and device ids by name and back. The app works with names; the v1 API works with ids. */
+internal class Directory(val jobIds: Map<String, String>, val deviceIds: Map<String, String>, val fetchedAt: Long) {
+    val jobNames = jobIds.entries.associate { (name, id) -> id to name }
+    val deviceNames = deviceIds.entries.associate { (name, id) -> id to name }
+}
 
 /** Blocking calls; run them off the main thread. */
 class PcClient(private val config: PcConfig) {
 
-    fun run(job: String) = post("/api/jobs/${encode(job)}/run")
+    fun run(job: String): Int = postJson("/api/v1/jobs/${jobId(job)}/runs", JSONObject().put("mode", "normal")).first
 
-    fun stop(job: String) = post("/api/jobs/${encode(job)}/stop")
+    fun stop(job: String): Int = postJson("/api/v1/jobs/${jobId(job)}/stop", null).first
 
-    fun dryRun(job: String) = post("/api/jobs/${encode(job)}/dryrun")
+    fun forcePush(job: String): Int = postJson("/api/v1/jobs/${jobId(job)}/runs", JSONObject().put("mode", "forcePush")).first
 
-    fun discardCheckpoint(job: String) = post("/api/jobs/${encode(job)}/checkpoint/discard")
+    fun dryRun(job: String): Int = postJson("/api/v1/jobs/${jobId(job)}/runs", JSONObject().put("mode", "dryRun")).first
+
+    fun discardCheckpoint(job: String): Int = send("DELETE", "/api/v1/jobs/${jobId(job)}/checkpoint", null).first
 
     fun setEnabled(job: String, enabled: Boolean): Int =
-        postJson("/api/jobs/${encode(job)}/enabled", JSONObject().put("enabled", enabled)).first
+        send("PATCH", "/api/v1/jobs/${jobId(job)}", JSONObject().put("enabled", enabled), "application/merge-patch+json").first
 
-    fun status(): List<RemoteJob> {
-        val jobs = JSONObject(getText("/api/status", connectTimeoutMs = 2_500, readTimeoutMs = 4_000)).getJSONArray("jobs")
-        return (0 until jobs.length()).map { RemoteJob.parse(jobs.getJSONObject(it)) }
+    fun status(): List<RemoteJob> = parseStatus(getText("/api/v1/status", connectTimeoutMs = 2_500, readTimeoutMs = 4_000))
+
+    private fun parseStatus(json: String): List<RemoteJob> {
+        val jobs = JSONObject(json).getJSONArray("jobs")
+        val names = directory().deviceNames
+        return (0 until jobs.length()).map { RemoteJob.parse(jobs.getJSONObject(it), names) }
     }
 
-    /** Closes the linked app on [device], syncs, and waits for the run to end. Throws [HttpStatusException] if the PC refuses. */
+    /** Closes the linked app on [device], syncs, and waits for the run to end. Throws [HttpStatusException] if the server refuses. */
     fun closeAndSync(job: String, device: String): CloseAndSyncResult {
         val (code, text) = postJson(
-            "/api/jobs/${encode(job)}/close-and-sync", JSONObject().put("device", device), readTimeoutMs = 25 * 60_000,
+            "/api/v1/jobs/${jobId(job)}/app/close-and-sync", JSONObject().put("deviceId", deviceId(device)),
         )
         if (code !in 200..299) throw HttpStatusException(code)
-        val o = JSONObject(text)
-        return CloseAndSyncResult(o.getString("result"), o.optBoolean("failed"), o.optBoolean("stillOutOfSync"), o.optStringOrNull("reason"))
+        val operationId = JSONObject(text).getString("id")
+
+        val deadline = System.currentTimeMillis() + 25 * 60_000L
+        while (System.currentTimeMillis() < deadline) {
+            val operation = JSONObject(getText("/api/v1/operations/$operationId"))
+            when (operation.getString("status")) {
+                "succeeded" -> {
+                    val result = operation.optJSONObject("result")
+                    val outcome = result?.optString("result").orEmpty()
+                    return CloseAndSyncResult(
+                        outcome, outcome.equals("failed", ignoreCase = true), result?.optBoolean("stillOutOfSync") == true,
+                        result?.optStringOrNull("reason"),
+                    )
+                }
+                "failed" -> return CloseAndSyncResult("failed", true, false, operation.optStringOrNull("message"))
+            }
+            Thread.sleep(2_000)
+        }
+        return CloseAndSyncResult("failed", true, false, "Timed out waiting for the sync")
     }
 
     fun conflicts(): List<RemoteConflict> {
-        val array = JSONArray(getText("/api/conflicts"))
-        return (0 until array.length()).map { RemoteConflict.parse(array.getJSONObject(it)) }
+        val array = JSONArray(getText("/api/v1/conflicts"))
+        val dir = directory()
+        return (0 until array.length()).map { RemoteConflict.parse(array.getJSONObject(it), dir.jobNames, dir.deviceNames) }
     }
 
-    /** A small JPEG of one side of a conflict, or null when it isn't an image (or that side was deleted). */
+    /** A small JPEG of one side of a conflict ("pc" or "device"), or null when it isn't an image (or that side was deleted). */
     fun conflictThumbnail(id: String, side: String): ByteArray? {
-        val conn = open("/api/conflicts/$id/thumb/$side", readTimeoutMs = 15_000)
+        val wireSide = if (side == "pc") "master" else side
+        val conn = open("/api/v1/conflicts/${encode(id)}/thumbnail?side=$wireSide", readTimeoutMs = 15_000)
         try {
             if (conn.responseCode == 404) return null
             check(conn)
@@ -226,59 +289,134 @@ class PcClient(private val config: PcConfig) {
         }
     }
 
-    /** Returns the HTTP status and the PC's message, if any. A successful resolve also starts the job on the PC. */
-    fun resolveConflict(id: String, choice: ConflictChoice): Pair<Int, String> =
-        postJson("/api/conflicts/$id/resolve", JSONObject().put("choice", choice.wire), readTimeoutMs = 30_000)
-
-    /** Returns the HTTP status and the PC's JSON reply (`resolved`, `failed`). */
-    fun resolveAllConflicts(choice: ConflictChoice): Pair<Int, String> =
-        postJson("/api/conflicts/resolve-all", JSONObject().put("choice", choice.wire), readTimeoutMs = 120_000)
-
-    fun reportEndpoint(device: String, port: Int): Int =
-        postJson("/api/devices/${encode(device)}/endpoint", JSONObject().put("port", port)).first
-
-    /** Returns the HTTP status and the PC's error text, if any. */
-    fun pair(device: String, port: Int, code: String): Pair<Int, String> =
-        postJson("/api/devices/${encode(device)}/pair", JSONObject().put("port", port).put("code", code), readTimeoutMs = 45_000)
-
-    private fun postJson(path: String, body: JSONObject, readTimeoutMs: Int = 10_000): Pair<Int, String> {
-        val bytes = body.toString().toByteArray(Charsets.UTF_8)
-        val conn = open(path, readTimeoutMs)
+    /** The job's app icon as PNG bytes, or null when the server couldn't make one. */
+    fun appIcon(job: String): ByteArray? {
+        val conn = open("/api/v1/jobs/${jobId(job)}/app-icon", readTimeoutMs = 60_000)
         try {
-            conn.requestMethod = "POST"
-            conn.doOutput = true
-            conn.setRequestProperty("Content-Type", "application/json")
-            conn.setFixedLengthStreamingMode(bytes.size)
-            conn.outputStream.use { it.write(bytes) }
-            val code = conn.responseCode
-            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-            val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty().trim().removeSurrounding("\"")
-            return code to text
+            if (conn.responseCode == 404) return null
+            check(conn)
+            return conn.inputStream.use { it.readBytes() }
         } finally {
             conn.disconnect()
         }
     }
 
-    fun log(job: String): String = getText("/api/jobs/${encode(job)}/log")
+    /** Returns the HTTP status and the server's message, if any. A successful resolve also queues the job. */
+    fun resolveConflict(id: String, choice: ConflictChoice): Pair<Int, String> =
+        postJson("/api/v1/conflicts/${encode(id)}/resolve", JSONObject().put("choice", choice.wire), readTimeoutMs = 30_000)
 
-    fun runLog(job: String, runId: String): String = getText("/api/jobs/${encode(job)}/history/$runId/log")
+    /** Returns the HTTP status and the server's JSON reply, normalised to `resolved` and `failed` counts. */
+    fun resolveAllConflicts(choice: ConflictChoice): Pair<Int, String> {
+        val (code, text) = postJson("/api/v1/conflicts/resolve", JSONObject().put("choice", choice.wire), readTimeoutMs = 120_000)
+        if (code !in 200..299) return code to text
+        val o = JSONObject(text)
+        return code to JSONObject().put("resolved", o.optInt("resolved")).put("failed", o.optJSONArray("failed")?.length() ?: 0).toString()
+    }
 
-    fun runSteps(job: String, runId: String): List<RemoteStep> = parseSteps(getText("/api/jobs/${encode(job)}/history/$runId/steps"))
+    fun reportEndpoint(device: String, port: Int): Int =
+        postJson("/api/v1/devices/${deviceId(device)}/endpoint", JSONObject().put("port", port)).first
+
+    /** Returns the HTTP status and the server's error text, if any. */
+    fun pair(device: String, port: Int, code: String): Pair<Int, String> =
+        postJson("/api/v1/devices/${deviceId(device)}/pair", JSONObject().put("port", port).put("code", code), readTimeoutMs = 45_000)
+
+    /** A one-time code the web UI's sign-in page accepts, or null if the server refused. */
+    fun createPairingCode(): String? {
+        val (code, text) = postJson("/api/v1/auth/pairing-codes", null)
+        return if (code in 200..299) JSONObject(text).getString("code") else null
+    }
+
+    /** The devices the server knows, by name, for choosing which one this phone is. */
+    fun deviceList(): List<RemoteDevice> {
+        val array = JSONArray(getText("/api/v1/devices"))
+        return (0 until array.length()).map {
+            val d = array.getJSONObject(it)
+            RemoteDevice(d.getString("name"), d.optStringOrNull("host"))
+        }
+    }
+
+    internal fun postJson(path: String, body: JSONObject?, readTimeoutMs: Int = 10_000): Pair<Int, String> =
+        send("POST", path, body, readTimeoutMs = readTimeoutMs)
+
+    internal fun send(
+        method: String, path: String, body: JSONObject?, contentType: String = "application/json", readTimeoutMs: Int = 10_000,
+    ): Pair<Int, String> {
+        val bytes = body?.toString()?.toByteArray(Charsets.UTF_8)
+        val conn = open(path, readTimeoutMs)
+        try {
+            conn.requestMethod = method
+            if (bytes != null) {
+                conn.doOutput = true
+                conn.setRequestProperty("Content-Type", contentType)
+                conn.setFixedLengthStreamingMode(bytes.size)
+                conn.outputStream.use { it.write(bytes) }
+            } else if (method == "POST") {
+                conn.doOutput = true
+                conn.setFixedLengthStreamingMode(0)
+                conn.outputStream.close()
+            }
+            val code = conn.responseCode
+            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+            val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty().trim()
+            return code to if (code in 200..299) text else problemText(text)
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    /** The title and detail of a problem+json body, or the text as it came. */
+    private fun problemText(text: String): String = try {
+        val o = JSONObject(text)
+        val fields = o.optJSONObject("errors")?.let { errors ->
+            errors.keys().asSequence().mapNotNull { key ->
+                errors.optJSONArray(key)?.optString(0)?.takeIf { it.isNotEmpty() }
+            }.toList()
+        }.orEmpty()
+        listOfNotNull(o.optStringOrNull("title"), o.optStringOrNull("detail")).plus(fields).distinct().joinToString(" ").ifBlank { text }
+    } catch (_: Exception) {
+        text
+    }
+
+    fun log(job: String): String {
+        val run = runIdFor(job) ?: throw HttpStatusException(404)
+        return getText("/api/v1/runs/$run/log")
+    }
+
+    fun runLog(job: String, runId: String): String = getText("/api/v1/runs/$runId/log")
+
+    fun runSteps(job: String, runId: String): List<RemoteStep> = parseSteps(getText("/api/v1/runs/$runId"))
+
+    fun activeRunId(job: String): String? = statusFor(job)?.optStringOrNull("activeRunId")
 
     /** The in-progress run's steps; empty when the job isn't running. */
-    fun liveSteps(job: String): List<RemoteStep> = parseSteps(getText("/api/jobs/${encode(job)}/steps/live"))
+    fun liveSteps(job: String): List<RemoteStep> {
+        val active = statusFor(job)?.optStringOrNull("activeRunId") ?: return emptyList()
+        return parseSteps(getText("/api/v1/runs/$active"))
+    }
 
-    private fun parseSteps(json: String): List<RemoteStep> {
-        val array = JSONArray(json)
+    private fun parseSteps(runDetailJson: String): List<RemoteStep> {
+        val array = JSONObject(runDetailJson).optJSONArray("steps") ?: return emptyList()
         return (0 until array.length()).map { RemoteStep.parse(array.getJSONObject(it)) }
     }
 
     fun history(job: String): List<RemoteRun> {
-        val array = JSONArray(getText("/api/jobs/${encode(job)}/history"))
-        return (0 until array.length()).map { RemoteRun.parse(array.getJSONObject(it)) }
+        val items = JSONObject(getText("/api/v1/runs?jobId=${jobId(job)}&limit=50")).getJSONArray("items")
+        return (0 until items.length()).map { RemoteRun.parse(items.getJSONObject(it)) }
+            .filter { it.outcome != "Queued" && it.outcome != "Running" }
     }
 
-    private fun getText(path: String, connectTimeoutMs: Int = 5_000, readTimeoutMs: Int = 10_000): String {
+    private fun statusFor(job: String): JSONObject? {
+        val jobs = JSONObject(getText("/api/v1/status")).getJSONArray("jobs")
+        return (0 until jobs.length()).map { jobs.getJSONObject(it) }.firstOrNull { it.getString("name") == job }
+    }
+
+    /** The run to show the log of: the active one, else the latest. */
+    private fun runIdFor(job: String): String? {
+        val status = statusFor(job) ?: return null
+        return status.optStringOrNull("activeRunId") ?: status.optJSONObject("lastRun")?.optStringOrNull("runId")
+    }
+
+    internal fun getText(path: String, connectTimeoutMs: Int = 5_000, readTimeoutMs: Int = 10_000): String {
         val conn = open(path, readTimeoutMs, connectTimeoutMs)
         try {
             check(conn)
@@ -288,19 +426,40 @@ class PcClient(private val config: PcConfig) {
         }
     }
 
+    internal fun jobId(name: String) = encode(directory().jobIds[name] ?: directory(refresh = true).jobIds[name] ?: throw HttpStatusException(404))
+
+    internal fun deviceId(name: String) = encode(directory().deviceIds[name] ?: directory(refresh = true).deviceIds[name] ?: throw HttpStatusException(404))
+
+    internal fun directory(refresh: Boolean = false): Directory {
+        val cached = directories[config.url]
+        if (!refresh && cached != null && System.currentTimeMillis() - cached.fetchedAt < DIRECTORY_TTL_MS) return cached
+        val jobs = JSONArray(getText("/api/v1/jobs"))
+        val devices = JSONArray(getText("/api/v1/devices"))
+        val fresh = Directory(
+            (0 until jobs.length()).associate { jobs.getJSONObject(it).let { j -> j.getString("name") to j.getString("id") } },
+            (0 until devices.length()).associate { devices.getJSONObject(it).let { d -> d.getString("name") to d.getString("id") } },
+            System.currentTimeMillis(),
+        )
+        synchronized(directories) { directories[config.url] = fresh }
+        return fresh
+    }
+
     interface FeedListener {
         fun onConnected()
         fun onSnapshot(pc: String, jobs: List<RemoteJob>)
         fun onJob(job: RemoteJob)
     }
 
-    /** Reads the SSE stream until it ends or [shouldContinue] turns false. Throws on connection failure. */
+    /** Reads the event stream until it ends or [shouldContinue] turns false. Throws on connection failure. */
     fun streamEvents(listener: FeedListener, onOpen: (HttpURLConnection) -> Unit, shouldContinue: () -> Boolean) {
-        val conn = open("/api/events", readTimeoutMs = 60_000)
+        val conn = open("/api/v1/events", readTimeoutMs = 60_000)
         onOpen(conn)
         try {
+            conn.setRequestProperty("Accept", "text/event-stream")
             check(conn)
             listener.onConnected()
+            val snapshot = JSONObject(getText("/api/v1/status"))
+            listener.onSnapshot(snapshot.optJSONObject("server")?.optString("name") ?: config.pcName, parseStatus(snapshot.toString()))
             BufferedReader(InputStreamReader(conn.inputStream, Charsets.UTF_8)).use { reader ->
                 var event = "message"
                 val data = StringBuilder()
@@ -327,37 +486,18 @@ class PcClient(private val config: PcConfig) {
     }
 
     private fun dispatch(event: String, data: String, listener: FeedListener) {
-        val o = JSONObject(data)
+        val envelope = JSONObject(data)
         when (event) {
-            "snapshot" -> {
-                val jobs = o.getJSONArray("jobs")
-                listener.onSnapshot(o.optString("pc", config.pcName), (0 until jobs.length()).map { RemoteJob.parse(jobs.getJSONObject(it)) })
+            "job.status" -> listener.onJob(RemoteJob.parse(envelope.getJSONObject("data"), directory().deviceNames))
+            "job.changed", "job.deleted", "device.changed", "device.deleted", "resync" -> {
+                directory(refresh = true)
+                listener.onSnapshot(config.pcName, parseStatus(getText("/api/v1/status")))
             }
-            "job" -> listener.onJob(RemoteJob.parse(o))
-        }
-    }
-
-    private fun post(path: String): Int {
-        val conn = open(path, readTimeoutMs = 10_000)
-        try {
-            conn.requestMethod = "POST"
-            conn.doOutput = true
-            conn.setFixedLengthStreamingMode(0)
-            conn.outputStream.close()
-            return conn.responseCode
-        } finally {
-            conn.disconnect()
         }
     }
 
     private fun open(path: String, readTimeoutMs: Int, connectTimeoutMs: Int = 5_000): HttpURLConnection =
-        (URL(config.url.trimEnd('/') + path).openConnection() as HttpsURLConnection).apply {
-            sslSocketFactory = pinnedSocketFactory(config.certSha256)
-            // The PC is reached by a DHCP-assigned IP that its self-signed cert can't name; trust comes from
-            // the exact-certificate pin in PinnedTrustManager instead of hostname matching.
-            hostnameVerifier = HostnameVerifier { _, _ -> true }
-            connectTimeout = connectTimeoutMs
-            readTimeout = readTimeoutMs
+        openPinned(config.url, path, config.certSha256, readTimeoutMs, connectTimeoutMs).apply {
             setRequestProperty("Authorization", "Bearer ${config.token}")
         }
 
@@ -366,13 +506,26 @@ class PcClient(private val config: PcConfig) {
         if (code !in 200..299) throw HttpStatusException(code)
     }
 
-    private fun encode(s: String) = URLEncoder.encode(s, "UTF-8").replace("+", "%20")
-
-    private companion object {
+    companion object {
+        private const val DIRECTORY_TTL_MS = 30_000L
+        private val directories = mutableMapOf<String, Directory>()
         private val factories = mutableMapOf<String, SSLSocketFactory>()
 
+        internal fun encode(s: String) = URLEncoder.encode(s, "UTF-8").replace("+", "%20")
+
+        /** A connection to [path] under [url] that only trusts the certificate with [certSha256]. */
+        fun openPinned(url: String, path: String, certSha256: String, readTimeoutMs: Int, connectTimeoutMs: Int = 5_000): HttpsURLConnection =
+            (URL(url.trimEnd('/') + path).openConnection() as HttpsURLConnection).apply {
+                sslSocketFactory = pinnedSocketFactory(certSha256)
+                // The server is reached by a LAN address its self-signed cert can't name; trust comes from the
+                // exact-certificate pin in PinnedTrustManager instead of hostname matching.
+                hostnameVerifier = HostnameVerifier { _, _ -> true }
+                connectTimeout = connectTimeoutMs
+                readTimeout = readTimeoutMs
+            }
+
         @Synchronized
-        fun pinnedSocketFactory(sha256: String): SSLSocketFactory = factories.getOrPut(sha256) {
+        fun pinnedSocketFactory(sha256: String): SSLSocketFactory = factories.getOrPut(sha256.lowercase()) {
             SSLContext.getInstance("TLS").apply {
                 init(null, arrayOf<TrustManager>(PinnedTrustManager(sha256)), null)
             }.socketFactory
@@ -380,7 +533,9 @@ class PcClient(private val config: PcConfig) {
     }
 }
 
-class CertificatePinMismatchException : CertificateException("PC certificate doesn't match the pinned fingerprint")
+data class RemoteDevice(val name: String, val host: String?)
+
+class CertificatePinMismatchException : CertificateException("Server certificate doesn't match the pinned fingerprint")
 
 private class PinnedTrustManager(private val expectedSha256: String) : X509TrustManager {
     override fun checkServerTrusted(chain: Array<out X509Certificate>, authType: String) {

@@ -1,11 +1,15 @@
 using AdbSync.Core.Models.Orchestration;
 using AdbSync.Core.Services.Common;
 using AdbSync.Core.Services.Config;
+using AdbSync.Core.Services.Persistence;
+using System.Text.Json;
 
 namespace AdbSync.Core.Services.Orchestration;
 
-public sealed class PushSafetyGuard(AppPaths paths) : IPushSafetyGuard
+public sealed class PushSafetyGuard(EngineDatabase database) : IPushSafetyGuard
 {
+    public PushSafetyGuard(AppPaths paths) : this(new EngineDatabase(paths)) { }
+
     public async Task RecordDeviceSnapshotAsync(string jobName, string deviceName, int fileCount, CancellationToken ct = default)
     {
         var history = await LoadHistoryAsync(jobName, ct);
@@ -50,11 +54,19 @@ public sealed class PushSafetyGuard(AppPaths paths) : IPushSafetyGuard
     private static int CountFiles(string path) =>
         Directory.Exists(path) ? Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories).Count() : 0;
 
-    private async Task<PushSafetyHistory> LoadHistoryAsync(string jobName, CancellationToken ct) =>
-        await JsonFileIo.ReadAsync(GetHistoryPath(jobName), AppConfigJsonContext.Default.PushSafetyHistory, ct) ?? new PushSafetyHistory();
+    private async Task<PushSafetyHistory> LoadHistoryAsync(string jobName, CancellationToken ct)
+    {
+        await using var connection = await database.OpenAsync(ct);
+        var rows = await Sql.QueryAsync(connection, null, "SELECT Json FROM PushSafety WHERE JobName = @job;", r => r.GetString(0), ct, ("@job", jobName));
+        return rows.Count == 0 ? new PushSafetyHistory() : JsonSerializer.Deserialize(rows[0], AppConfigJsonContext.Default.PushSafetyHistory)!;
+    }
 
-    private Task SaveHistoryAsync(string jobName, PushSafetyHistory history, CancellationToken ct) =>
-        JsonFileIo.WriteAtomicAsync(GetHistoryPath(jobName), history, AppConfigJsonContext.Default.PushSafetyHistory, ct);
-
-    private string GetHistoryPath(string jobName) => Path.Combine(paths.Root, "push-safety", $"{jobName}.json");
+    private async Task SaveHistoryAsync(string jobName, PushSafetyHistory history, CancellationToken ct)
+    {
+        await using var connection = await database.OpenAsync(ct);
+        await Sql.ExecuteAsync(connection, null, """
+            INSERT INTO PushSafety (JobName, Json) VALUES (@job, @json)
+            ON CONFLICT (JobName) DO UPDATE SET Json = excluded.Json;
+            """, ct, ("@job", ConfigNames.Segment(jobName)), ("@json", JsonSerializer.Serialize(history, AppConfigJsonContext.Default.PushSafetyHistory)));
+    }
 }

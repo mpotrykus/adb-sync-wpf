@@ -56,6 +56,39 @@ public class NativeAdbTransferEngineTests : IDisposable
     }
 
     [Fact]
+    public async Task PullMirrorAsync_SkipPull_LeavesMatchingFilesOnDeviceAndReportsThem()
+    {
+        var remote = new FakeRemoteFileSystem();
+        remote.AddFile("app/same.txt", "same", T0);
+        remote.AddFile("app/new.txt", "new", T0);
+        var localPath = Path.Combine(_root, "local");
+        var policy = new TransferPolicy(SkipPull: e => e.RelativePath == "same.txt");
+
+        var engine = new NativeAdbTransferEngine(new SingleDeviceFactory(remote), new MirrorDiffer());
+        var result = await engine.PullMirrorAsync("serial-1", "app", localPath, new ExcludeMatcher([]), policy);
+
+        Assert.Equal(["new.txt"], result.CopiedPaths);
+        Assert.Equal(["same.txt"], result.SkippedUnchanged!.Select(e => e.RelativePath));
+        Assert.False(File.Exists(Path.Combine(localPath, "same.txt")));
+        Assert.DoesNotContain(remote.Calls, c => c.StartsWith("pull:") && c.Contains("same.txt"));
+    }
+
+    [Fact]
+    public async Task PullMirrorAsync_SkipPull_RemovesStaleStagingCopyOfSkippedFile()
+    {
+        var remote = new FakeRemoteFileSystem();
+        remote.AddFile("app/same.txt", "same", T0);
+        var localPath = Path.Combine(_root, "local");
+        Directory.CreateDirectory(localPath);
+        File.WriteAllText(Path.Combine(localPath, "same.txt"), "leftover");
+
+        var engine = new NativeAdbTransferEngine(new SingleDeviceFactory(remote), new MirrorDiffer());
+        await engine.PullMirrorAsync("serial-1", "app", localPath, new ExcludeMatcher([]), new TransferPolicy(SkipPull: _ => true));
+
+        Assert.False(File.Exists(Path.Combine(localPath, "same.txt")));
+    }
+
+    [Fact]
     public async Task PushMirrorAsync_CopiesLocalFilesAndDeletesRemoteExtras()
     {
         var remote = new FakeRemoteFileSystem();

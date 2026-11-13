@@ -1,6 +1,6 @@
 namespace AdbSync.Core.Services.Common;
 
-internal static class DirectoryUtil
+public static class DirectoryUtil
 {
     public static void CopyRecursive(string source, string destination)
     {
@@ -12,7 +12,7 @@ internal static class DirectoryUtil
         {
             var target = Path.Combine(destination, Path.GetRelativePath(source, file));
             File.Copy(file, target, overwrite: true);
-            File.SetAttributes(target, File.GetAttributes(target) & ~FileAttributes.ReadOnly);
+            ClearReadOnly(new FileInfo(target));
         }
     }
 
@@ -26,15 +26,25 @@ internal static class DirectoryUtil
             return;
 
         foreach (var entry in new DirectoryInfo(path).EnumerateFileSystemInfos("*", SearchOption.AllDirectories))
+            ClearReadOnly(entry);
+        ClearReadOnly(new DirectoryInfo(path));
+
+        Directory.Delete(path, recursive: true);
+    }
+
+    /// <summary>
+    /// Best effort off Windows: there ReadOnly maps to a chmod, which some mounts (CIFS, rootless containers) refuse.
+    /// If it mattered, the delete or write that follows reports the real error.
+    /// </summary>
+    private static void ClearReadOnly(FileSystemInfo entry)
+    {
+        try
         {
             if ((entry.Attributes & FileAttributes.ReadOnly) != 0)
                 entry.Attributes &= ~FileAttributes.ReadOnly;
         }
-
-        var root = new DirectoryInfo(path);
-        if ((root.Attributes & FileAttributes.ReadOnly) != 0)
-            root.Attributes &= ~FileAttributes.ReadOnly;
-
-        Directory.Delete(path, recursive: true);
+        catch (Exception ex) when (!OperatingSystem.IsWindows() && ex is IOException or UnauthorizedAccessException)
+        {
+        }
     }
 }

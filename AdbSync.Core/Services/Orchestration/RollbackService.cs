@@ -1,6 +1,7 @@
 using AdbSync.Core.Models.Config;
 using AdbSync.Core.Models.Orchestration;
 using AdbSync.Core.Services.Common;
+using AdbSync.Core.Services.Config;
 using AdbSync.Core.Services.Devices;
 using AdbSync.Core.Services.Merge;
 using AdbSync.Core.Services.Transfer;
@@ -26,11 +27,11 @@ public sealed class RollbackService(
             throw new InvalidOperationException($"Rollback point '{pointPath}' no longer exists.");
 
         var eff = job.Resolve(settings);
-        var projectRoot = Path.Combine(eff.ProjectsDirectory, job.Name);
+        var projectRoot = ProjectFolders.RequireAvailable(eff, job.Name);
         var masterPath = Path.Combine(projectRoot, "master");
         var exclude = new ExcludeMatcher(job.Exclude);
 
-        await using var @lock = await lockManager.TryAcquireAsync(projectRoot, TimeSpan.FromHours(eff.StaleLockHours), ct)
+        await using var @lock = await lockManager.TryAcquireAsync(projectRoot, ct)
             ?? throw new InvalidOperationException($"Job '{job.Name}' is running - wait for it to finish before restoring.");
 
         var capturedDevices = Path.Combine(pointPath, RollbackPointStore.DevicesFolderName);
@@ -78,7 +79,7 @@ public sealed class RollbackService(
             restoredDevices++;
         }
 
-        manifests.Clear(job.Name);
+        await manifests.ClearAsync(job.Name, ct);
         await pushSafety.ForcePushAsync(job.Name, masterPath, ct);
 
         return new SnapshotResult(pointPath, restoredDevices, filesCopied, bytes, errors, filesDeleted, skipped);

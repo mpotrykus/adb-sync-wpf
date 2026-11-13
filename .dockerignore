@@ -1,0 +1,11 @@
+**/bin/
+**/obj/
+**/TestResults/
+.git/
+.github/
+AdbSync.Android/
+AdbSync.App/
+AdbSync.Cli/
+AdbSync.Core.Tests/
+AdbSync.Core.IntegrationTests/
+docs/

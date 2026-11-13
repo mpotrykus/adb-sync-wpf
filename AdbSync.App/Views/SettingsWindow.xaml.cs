@@ -66,7 +66,7 @@ public partial class SettingsWindow : Window
             "This resets every setting on this page to its default value. Your changes won't be saved unless you click Save afterward.",
             confirmText: "Set to Default"))
         {
-            LoadFromSettings(new GlobalSettings());
+            LoadFromSettings(new GlobalSettings { ProjectsDirectory = AppPaths.Default.DefaultProjectsDirectory });
             ProjectsDirectoryErrorText.Visibility = Visibility.Collapsed;
         }
     }
@@ -93,9 +93,25 @@ public partial class SettingsWindow : Window
         }
 
         var newRoot = ProjectsDirectoryBox.Text.Trim();
+        if (!Path.IsPathFullyQualified(newRoot))
+        {
+            ProjectsDirectoryErrorText.Text = @"Enter a full path, for example D:\AdbSync Projects.";
+            ProjectsDirectoryErrorText.Visibility = Visibility.Visible;
+            return;
+        }
         var oldRoot = _config.Settings.ProjectsDirectory;
         if (!string.Equals(oldRoot, newRoot, StringComparison.OrdinalIgnoreCase) && !TryMigrateProjects(oldRoot, newRoot))
             return;
+        try
+        {
+            ProjectFolders.AdoptRoot(newRoot);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            ProjectsDirectoryErrorText.Text = $"Can't use this folder: {ex.Message}";
+            ProjectsDirectoryErrorText.Visibility = Visibility.Visible;
+            return;
+        }
 
         _config.Settings.ProjectsDirectory = newRoot;
         _config.Settings.StartAtLogin = StartAtLoginBox.IsChecked == true;

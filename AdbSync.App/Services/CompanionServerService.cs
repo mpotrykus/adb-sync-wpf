@@ -1,4 +1,5 @@
 using AdbSync.App.ViewModels;
+using AdbSync.Engine.Services;
 using AdbSync.Core.Models.Config;
 using AdbSync.Core.Models.Merge;
 using AdbSync.Core.Models.Orchestration;
@@ -257,7 +258,7 @@ public sealed class CompanionServerService(
         var job = config.Jobs.FirstOrDefault(j => j.Name == s.Name);
         var enabled = job?.Enabled ?? false;
         var nextRun = job is not null && enabled
-            ? ScheduleCalculator.NextDueUtc(job.Schedule, DateTimeOffset.Now, config.Settings.RunMissedSchedules)
+            ? ScheduleCalculator.NextDueUtc(job.Schedule, ScheduleClock.Now(config.Settings), config.Settings.RunMissedSchedules)
             : null;
         checkpoints.TryGetValue(s.Name, out var checkpoint);
         return new CompanionJobDto(

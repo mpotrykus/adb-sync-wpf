@@ -1,0 +1,113 @@
+@inject ApiClient Api
+@inject IDialogService Dialogs
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">@(Device is null ? "New device" : "Edit " + Device.Name)</MudText>
+    </TitleContent>
+    <DialogContent>
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@_error</MudAlert>
+        }
+        <MudStack Spacing="3">
+            <MudTextField @bind-Value="_name" Label="Name" Variant="Variant.Outlined" Required="true"
+                          HelperText="Renaming is only possible while no job uses the device." />
+            <MudSelect T="string" @bind-Value="_transport" Label="Connection" Variant="Variant.Outlined">
+                <MudSelectItem Value="@("wifi")">Wi-Fi (wireless debugging)</MudSelectItem>
+                <MudSelectItem Value="@("usb")">USB</MudSelectItem>
+            </MudSelect>
+            @if (_transport == "wifi")
+            {
+                <MudTextField @bind-Value="_host" Label="IP address or hostname" Variant="Variant.Outlined" />
+                <MudNumericField T="int?" @bind-Value="_port" Label="Fixed port (optional)" Variant="Variant.Outlined" Min="1" Max="65535"
+                                 HelperText="Leave empty to find the port automatically." />
+            }
+            else
+            {
+                <MudTextField @bind-Value="_serial" Label="adb serial" Variant="Variant.Outlined" />
+            }
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        @if (Device is not null)
+        {
+            <MudButton Color="Color.Error" Disabled="_saving" OnClick="DeleteAsync">Delete</MudButton>
+            <MudSpacer />
+        }
+        <MudButton Disabled="_saving" OnClick="() => MudDialog.Cancel()">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" Disabled="_saving" OnClick="SaveAsync">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public DeviceDto? Device { get; set; }
+
+    private string _name = "";
+    private string _transport = "wifi";
+    private string? _host;
+    private string? _serial;
+    private int? _port;
+    private bool _saving;
+    private string? _error;
+
+    protected override void OnInitialized()
+    {
+        if (Device is null)
+            return;
+        _name = Device.Name;
+        _transport = Device.Transport;
+        _host = Device.Host;
+        _serial = Device.Serial;
+        _port = Device.StaticPort;
+    }
+
+    private async Task SaveAsync()
+    {
+        _error = null;
+        _saving = true;
+        try
+        {
+            var wifi = _transport == "wifi";
+            var host = wifi && !string.IsNullOrWhiteSpace(_host) ? _host.Trim() : null;
+            var serial = !wifi && !string.IsNullOrWhiteSpace(_serial) ? _serial.Trim() : null;
+            var port = wifi ? _port : null;
+            if (Device is null)
+                await Api.PostAsync<DeviceDto>("devices", new DeviceInputDto(_name.Trim(), _transport, host, serial, port));
+            else
+                await Api.PatchAsync<DeviceDto>($"devices/{Device.Id}", new { name = _name.Trim(), transport = _transport, host, serial, staticPort = port });
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException)
+        {
+            if (!ex.IsSignedOut()) _error = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        var confirmed = await Dialogs.ShowMessageBox("Delete device",
+            $"Delete \"{Device!.Name}\"? This server forgets it; nothing changes on the phone.", yesText: "Delete", cancelText: "Cancel");
+        if (confirmed != true)
+            return;
+        _saving = true;
+        try
+        {
+            await Api.DeleteAsync($"devices/{Device.Id}");
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException)
+        {
+            if (!ex.IsSignedOut()) _error = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

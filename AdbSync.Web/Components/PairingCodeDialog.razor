@@ -1,0 +1,74 @@
+@using QRCoder
+@inject ApiClient Api
+@inject IJSRuntime JS
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        @if (_code is null && _error is null)
+        {
+            <div class="d-flex justify-center pa-6"><MudProgressCircular Indeterminate="true" /></div>
+        }
+        else if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error">@_error</MudAlert>
+        }
+        else
+        {
+            <MudText Typo="Typo.body2" Class="mb-4">Enter this code on the other client's sign-in screen. It works once.</MudText>
+            <MudPaper Outlined="true" Class="pa-4 mb-3 d-flex justify-center">
+                <MudText Typo="Typo.h4" Class="mono" Style="letter-spacing:.12em">@_code!.Code</MudText>
+            </MudPaper>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">Expires @Format.Local(_code!.ExpiresAt)</MudText>
+
+            <MudDivider Class="my-4" />
+            <MudText Typo="Typo.body2" Class="mb-3">
+                Pairing the Android app? Scan this with the phone's camera. It opens the app and pairs it.
+            </MudText>
+            <div class="qr-box">@((MarkupString)_qr)</div>
+            <div class="d-flex align-center gap-2 mt-3">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary mono" Style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">@_code!.QrPayload</MudText>
+                <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.ContentCopy" OnClick="CopyAsync">Copy link</MudButton>
+            </div>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => MudDialog.Close()">Done</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    private PairingCodeResponse? _code;
+    private string? _error;
+    private string _qr = "";
+
+    private async Task CopyAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", _code!.QrPayload);
+            Snackbar.Add("Link copied", Severity.Success);
+        }
+        catch (JSException)
+        {
+            Snackbar.Add("Couldn't copy; select the link and copy it by hand.", Severity.Warning);
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _code = await Api.PostAsync<PairingCodeResponse>("auth/pairing-codes");
+            using var generator = new QRCodeGenerator();
+            using var data = generator.CreateQrCode(_code.QrPayload, QRCodeGenerator.ECCLevel.M);
+            _qr = new SvgQRCode(data).GetGraphic(6, "#000000", "#ffffff", true, SvgQRCode.SizingMode.ViewBoxAttribute);
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+    }
+}

@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <title>AdbSync</title>
+    <base href="/" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link href="_content/MudBlazor/MudBlazor.min.css" rel="stylesheet" />
+    <link href="css/app.css" rel="stylesheet" />
+    <link href="css/effects.css" rel="stylesheet" />
+</head>
+
+<body>
+    <script>
+        (function () {
+            var dark = true;
+            try { dark = localStorage.getItem("adbsync.theme") !== "light"; } catch (e) { }
+            document.body.classList.toggle("glass", dark);
+        })();
+    </script>
+    <div id="app">
+        <div class="boot">
+            <span class="sync-mark" style="--sz:64px" role="img" aria-label="Loading">
+                <svg viewBox="0 0 80 80" aria-hidden="true">
+                    <g transform="translate(40 40)" style="isolation:isolate">
+                        <g class="ang"><g class="rad"><g class="unang">
+                            <rect class="glow" x="-17" y="-17" width="34" height="34" rx="10" transform="rotate(45)" fill="#7C5CFF" />
+                            <rect x="-15" y="-15" width="30" height="30" rx="9" transform="rotate(45)" fill="#7C5CFF" opacity=".92" />
+                        </g></g></g>
+                        <g transform="rotate(180)" style="mix-blend-mode:screen"><g class="ang"><g class="rad"><g class="unang">
+                            <rect class="glow" x="-17" y="-17" width="34" height="34" rx="10" transform="rotate(45)" fill="#38BDF8" />
+                            <rect x="-15" y="-15" width="30" height="30" rx="9" transform="rotate(45)" fill="#38BDF8" opacity=".85" />
+                        </g></g></g></g>
+                        <circle class="ring" r="14" fill="none" stroke="#fff" stroke-width="1.6" />
+                        <circle class="core" r="3.2" fill="#fff" />
+                    </g>
+                </svg>
+            </span>
+        </div>
+    </div>
+
+    <div id="blazor-error-ui">
+        Something went wrong. <a href="" class="reload">Reload</a>
+        <a class="dismiss">✕</a>
+    </div>
+    <script>
+        window.adbsyncSettleMark = function (el) {
+            return new Promise(function (resolve) {
+                var g = el.__gen = (el.__gen || 0) + 1;
+                var anims = el.getAnimations({ subtree: true });
+                if (!anims.length) { resolve(); return; }
+                var D = 4800;
+                var wait = (((0.60 * D - anims[0].currentTime) % D) + D) % D;
+                setTimeout(function () {
+                    if (g !== el.__gen) { resolve(); return; }
+                    anims.forEach(function (a) { if (/^sm-(ang|unang|rad)$/.test(a.animationName)) a.pause(); });
+                    setTimeout(resolve, 0.10 * D);
+                }, wait);
+            });
+        };
+        window.adbsyncResumeMark = function (el) {
+            el.__gen = (el.__gen || 0) + 1;
+            el.getAnimations({ subtree: true }).forEach(function (a) { a.play(); });
+        };
+    </script>
+    <script src="_framework/blazor.webassembly.js"></script>
+    <script src="_content/MudBlazor/MudBlazor.min.js"></script>
+    <script>
+        document.addEventListener("pointermove", function (e) {
+            var c = e.target.closest && e.target.closest(".job-card, .stat-tile");
+            if (!c) return;
+            var r = c.getBoundingClientRect();
+            c.style.setProperty("--mx", (e.clientX - r.left) + "px");
+            c.style.setProperty("--my", (e.clientY - r.top) + "px");
+        });
+    </script>
+</body>
+
+</html>

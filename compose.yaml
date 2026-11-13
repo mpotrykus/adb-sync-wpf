@@ -1,0 +1,33 @@
+# AdbSync server. See docs/server-migration-audit.md, decision 5, for why each setting is here.
+services:
+  adbsync:
+    image: adbsync-server
+    build: .
+    container_name: adbsync
+    restart: unless-stopped
+    # Wireless adb connects out to a random port on each phone, and mDNS discovery doesn't cross a bridge network.
+    network_mode: host
+    # Files on the projects drive are owned by this host user.
+    user: "${PUID:-1000}:${PGID:-1000}"
+    # Forwards SIGTERM to the server so runs stop at a file boundary, and reaps the adb daemon it starts.
+    init: true
+    stop_grace_period: 90s
+    environment:
+      TZ: ${TZ:-Etc/UTC}
+      ADBSYNC_SERVER_NAME: ${ADBSYNC_SERVER_NAME:-adbsync}
+      # The address clients use, put into pairing links. Defaults to https://<hostname>:47615.
+      ADBSYNC_PUBLIC_URL: ${ADBSYNC_PUBLIC_URL:-}
+      # Optional PEM certificate and key (paths inside the container), for example from `tailscale cert`.
+      # Without them the server uses a self-signed certificate that clients pin by fingerprint.
+      ADBSYNC_TLS_CERT: ${ADBSYNC_TLS_CERT:-}
+      ADBSYNC_TLS_KEY: ${ADBSYNC_TLS_KEY:-}
+    volumes:
+      # Config, database, logs, certificate and adb keys.
+      - ${ADBSYNC_DATA:-./data}:/data
+      # The projects directory. rslave makes a drive mounted after the container started visible without a restart;
+      # an unmounted drive shows up as an empty folder, which the .adbsync-root marker check refuses to use.
+      - type: bind
+        source: ${ADBSYNC_PROJECTS:?Set ADBSYNC_PROJECTS to the host folder that holds the project folders}
+        target: /projects
+        bind:
+          propagation: rslave

@@ -1,0 +1,164 @@
+@implements IDisposable
+@inject ApiClient Api
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mb-2">On <b>@Device.Name</b>:</MudText>
+        <ol style="margin:0 0 16px 20px;padding:0">
+            <li><MudText Typo="Typo.body2">Settings → Developer options → <b>Wireless debugging</b> (switch it on).</MudText></li>
+            <li><MudText Typo="Typo.body2">Tap <b>Pair device with pairing code</b> and keep that screen open.</MudText></li>
+            <li><MudText Typo="Typo.body2">Type the 6-digit code below. The port fills in by itself when the server sees the phone.</MudText></li>
+        </ol>
+
+        <MudGrid Spacing="2">
+            <MudItem xs="7">
+                <MudTextField @bind-Value="_host" Label="Phone IP address" Variant="Variant.Outlined" Disabled="_busy" Class="mono-input" />
+            </MudItem>
+            <MudItem xs="5">
+                <MudNumericField T="int?" @bind-Value="_port" Label="Pairing port" Variant="Variant.Outlined" Disabled="_busy"
+                                 HideSpinButtons="true" Class="mono-input"
+                                 Adornment="Adornment.End" AdornmentIcon="@(_searching ? Icons.Material.Filled.Radar : Icons.Material.Filled.Search)"
+                                 OnAdornmentClick="FindPortAsync" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_code" Label="6-digit pairing code" Variant="Variant.Outlined" Disabled="_busy" Immediate="true"
+                              MaxLength="6" Class="mono-input code-input" AutoFocus="true" />
+            </MudItem>
+        </MudGrid>
+
+        @if (_searching && _port is null)
+        {
+            <MudText Typo="Typo.caption" Class="mud-text-secondary mt-2 d-flex align-center gap-2">
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" /> Looking for the phone's pairing service…
+            </MudText>
+        }
+        @if (_status is not null)
+        {
+            <MudAlert Severity="_statusSeverity" Dense="true" Class="mt-4">@_status</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => MudDialog.Cancel()" Disabled="_busy">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="PairAsync" Disabled="@(_busy || !Ready)">
+            @if (_busy)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+            }
+            Pair
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public DeviceDto Device { get; set; } = default!;
+
+    private readonly CancellationTokenSource _cts = new();
+    private string? _host;
+    private int? _port;
+    private string _code = "";
+    private bool _busy;
+    private bool _searching;
+    private string? _status;
+    private Severity _statusSeverity = Severity.Info;
+
+    private bool Ready => !string.IsNullOrWhiteSpace(_host) && _port is > 0 and <= 65535 && _code.Trim().Length == 6 && _code.Trim().All(char.IsAsciiDigit);
+
+    protected override void OnInitialized()
+    {
+        _host = Device.Host;
+        _ = AutoFindAsync(_cts.Token);
+    }
+
+    private async Task AutoFindAsync(CancellationToken ct)
+    {
+        try
+        {
+            for (var i = 0; i < 40 && _port is null && !ct.IsCancellationRequested; i++)
+            {
+                await FindOnceAsync(ct);
+                if (_port is null)
+                    await Task.Delay(2000, ct);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        _searching = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task FindPortAsync()
+    {
+        try
+        {
+            await FindOnceAsync(_cts.Token);
+            if (_port is null)
+                Snackbar.Add("No pairing service found yet. Is the pairing screen open on the phone?", Severity.Info);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task FindOnceAsync(CancellationToken ct)
+    {
+        _searching = true;
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            var found = await Api.GetAsync<List<DiscoveredDeviceDto>>("devices/discovered", ct);
+            var pairing = found.Where(f => f.Source == "mdnsPairing" && f.Endpoint is not null).ToList();
+            var match = pairing.FirstOrDefault(f => f.MatchedDeviceId == Device.Id)
+                ?? pairing.FirstOrDefault(f => _host is not null && f.Endpoint!.StartsWith(_host + ":"))
+                ?? (pairing.Count == 1 && pairing[0].MatchedDeviceId is null ? pairing[0] : null);
+            if (match?.Endpoint is { } endpoint && endpoint.LastIndexOf(':') is var colon and > 0
+                && int.TryParse(endpoint[(colon + 1)..], out var port))
+            {
+                _host = endpoint[..colon];
+                _port = port;
+                _status = null;
+            }
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException)
+        {
+            _status = "Couldn't search for the phone: " + ex.Message;
+            _statusSeverity = Severity.Warning;
+        }
+        _searching = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task PairAsync()
+    {
+        _busy = true;
+        _status = "Pairing…";
+        _statusSeverity = Severity.Info;
+        try
+        {
+            await Api.PostAsync($"devices/{Device.Id}/pair", new AdbPairRequestDto(_host!.Trim(), _port!.Value, _code.Trim()));
+            _status = "Paired. Checking the connection…";
+            StateHasChanged();
+            var test = await Api.PostAsync<ConnectionTestResultDto>($"devices/{Device.Id}/test");
+            Snackbar.Add(test.Connected ? $"{Device.Name} paired and connected" : $"{Device.Name} paired, but the connection test failed: {test.Detail}",
+                test.Connected ? Severity.Success : Severity.Warning);
+            MudDialog.Close(DialogResult.Ok(test));
+        }
+        catch (ApiException ex)
+        {
+            _status = ex.Message;
+            _statusSeverity = Severity.Error;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+}

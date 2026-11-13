@@ -1,0 +1,206 @@
+@implements IDisposable
+@inject ApiClient Api
+@inject StatusStore Status
+
+<MudDialog>
+    <TitleContent>
+        <div class="d-flex align-center gap-3">
+            <MudText Typo="Typo.h6">@(_detail?.Run.JobName ?? "Run")</MudText>
+            @if (_detail is { } d)
+            {
+                <MudChip T="string" Size="Size.Small" Color="Format.RunColor(d.Run.Status)">@Format.RunLabel(d.Run.Status)</MudChip>
+                @if (d.Run.Mode != "normal")
+                {
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@Format.Words(d.Run.Mode)</MudChip>
+                }
+                @if (Live)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Color="Color.Primary" />
+                }
+            }
+        </div>
+    </TitleContent>
+    <DialogContent>
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error">@_error</MudAlert>
+        }
+        else if (_detail is not { } detail)
+        {
+            <div class="d-flex justify-center pa-8"><MudProgressCircular Indeterminate="true" /></div>
+        }
+        else
+        {
+            var run = detail.Run;
+            <MudGrid Spacing="2" Class="mb-2">
+                <MudItem xs="6" sm="3"><Stat Label="Started" Value="@Format.Local(run.StartedAt ?? run.QueuedAt)" /></MudItem>
+                <MudItem xs="6" sm="3"><Stat Label="Duration" Value="@Format.Duration(run.StartedAt ?? run.QueuedAt, run.FinishedAt)" /></MudItem>
+                <MudItem xs="6" sm="3"><Stat Label="Copied / deleted" Value="@($"{run.FilesCopied} / {run.FilesDeleted}")" /></MudItem>
+                <MudItem xs="6" sm="3"><Stat Label="Transferred" Value="@Format.Bytes(run.BytesCopied)" /></MudItem>
+            </MudGrid>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                Trigger: @Format.Words(run.Trigger) · @run.ErrorCount error@(run.ErrorCount == 1 ? "" : "s")
+            </MudText>
+            @if (!string.IsNullOrEmpty(run.Message))
+            {
+                <MudAlert Severity="@(run.Status == "failed" ? Severity.Error : Severity.Warning)" Dense="true" Class="mt-3">
+                    @run.Message @(run.ErrorCode is { } code ? $"({code})" : "")
+                </MudAlert>
+            }
+
+            <MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pt-4" Class="mt-4" @bind-ActivePanelIndex="_tab">
+                <MudTabPanel Text="Steps">
+                    @if (detail.Steps.Count == 0)
+                    {
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary">No steps recorded yet.</MudText>
+                    }
+                    else
+                    {
+                        <ExecutionGraph Steps="detail.Steps" />
+                    }
+                </MudTabPanel>
+                <MudTabPanel Text="@($"Files{(_files is { } f ? $" ({f.Items.Count})" : "")}")">
+                    @if (_files is null)
+                    {
+                        <MudProgressLinear Indeterminate="true" />
+                    }
+                    else if (_files.Items.Count == 0)
+                    {
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                            @(Live ? "Nothing recorded yet." : _files.Retained ? "No file changes." : "No file changes recorded for this run.")
+                        </MudText>
+                    }
+                    else
+                    {
+                        <MudTable Items="_files.Items" Dense="true" Hover="true" Elevation="0" FixedHeader="true" Height="380px"
+                                  Filter="FilterFile" RowsPerPage="200">
+                            <ToolBarContent>
+                                <MudTextField @bind-Value="_fileFilter" Placeholder="Filter" Adornment="Adornment.Start" Immediate="true"
+                                              AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Small" Class="mt-0" />
+                                <MudSpacer />
+                                <MudSwitch @bind-Value="_showPull" Color="Color.Primary" Label="Show pulls into staging" Class="ml-4" />
+                            </ToolBarContent>
+                            <HeaderContent>
+                                <MudTh>Device</MudTh>
+                                <MudTh>Phase</MudTh>
+                                <MudTh>Action</MudTh>
+                                <MudTh>Path</MudTh>
+                                <MudTh Style="text-align:right">Size</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd Style="white-space:nowrap">@DeviceNames.GetValueOrDefault(context.DeviceId, "?")</MudTd>
+                                <MudTd>@Format.Words(context.Phase)</MudTd>
+                                <MudTd>@Format.Words(context.Action)</MudTd>
+                                <MudTd Class="mono" Style="font-size:12px;word-break:break-all">
+                                    @context.Path
+                                    @if (context.Detail is { Length: > 0 } detailText)
+                                    {
+                                        <MudText Typo="Typo.caption" Class="mud-text-secondary">@detailText</MudText>
+                                    }
+                                </MudTd>
+                                <MudTd Style="text-align:right;white-space:nowrap">@Format.Bytes(context.Size)</MudTd>
+                            </RowTemplate>
+                            <PagerContent>
+                                <MudTablePager PageSizeOptions="new[] { 50, 200, 1000 }" />
+                            </PagerContent>
+                        </MudTable>
+                    }
+                </MudTabPanel>
+                <MudTabPanel Text="Log">
+                    <pre class="log-view">@(_log ?? "Loading…")</pre>
+                </MudTabPanel>
+            </MudTabs>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => MudDialog.Close()">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public Guid RunId { get; set; }
+    [Parameter] public IReadOnlyDictionary<Guid, string> DeviceNames { get; set; } = new Dictionary<Guid, string>();
+
+    private readonly CancellationTokenSource _cts = new();
+    private RunDetailDto? _detail;
+    private RunFilesPageDto? _files;
+    private string? _log;
+    private string? _error;
+    private string _fileFilter = "";
+    private bool _showPull;
+    private int _tab;
+
+    private bool Live => _detail?.Run.Status is "queued" or "running";
+
+    private readonly SemaphoreSlim _refreshing = new(1, 1);
+
+    protected override void OnInitialized()
+    {
+        Status.EventReceived += OnEvent;
+        _ = PollAsync(_cts.Token);
+    }
+
+    /// <summary>The server announces step, start, finish and conflict changes; the log has no event, so a slow poll covers it.</summary>
+    private void OnEvent(string type)
+    {
+        if (Live && type is "run.steps" or "run.started" or "run.finished" or "run.conflicts")
+            _ = InvokeAsync(() => RefreshAsync(_cts.Token));
+    }
+
+    private async Task PollAsync(CancellationToken ct)
+    {
+        try
+        {
+            await RefreshAsync(ct);
+            while (Live && !ct.IsCancellationRequested)
+            {
+                await Task.Delay(3000, ct);
+                await RefreshAsync(ct);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task RefreshAsync(CancellationToken ct)
+    {
+        if (!await _refreshing.WaitAsync(0, ct))
+            return;
+        try
+        {
+            _detail = await Api.GetAsync<RunDetailDto>($"runs/{RunId}", ct);
+            _files = await Api.GetAsync<RunFilesPageDto>($"runs/{RunId}/files", ct);
+            _log = await Api.GetTextAsync($"runs/{RunId}/log?tail=400", ct);
+            await InvokeAsync(() =>
+            {
+                StateHasChanged();
+                // The dialog frame captures TitleContent once; it only re-renders the title when told to.
+                MudDialog.StateHasChanged();
+            });
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException)
+        {
+            _error = ex.Message;
+            await InvokeAsync(StateHasChanged);
+        }
+        finally
+        {
+            _refreshing.Release();
+        }
+    }
+
+    private bool FilterFile(RunFileDto file) =>
+        (_showPull || file.Phase != "pull")
+        && (string.IsNullOrWhiteSpace(_fileFilter)
+            || file.Path.Contains(_fileFilter, StringComparison.OrdinalIgnoreCase)
+            || file.Action.Contains(_fileFilter, StringComparison.OrdinalIgnoreCase));
+
+    public void Dispose()
+    {
+        Status.EventReceived -= OnEvent;
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+}

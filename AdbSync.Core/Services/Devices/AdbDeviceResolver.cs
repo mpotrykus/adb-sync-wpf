@@ -11,8 +11,12 @@ namespace AdbSync.Core.Services.Devices;
 
 public sealed class AdbDeviceResolver(
     IAdbClient adbClient, IMdnsBrowser mdns, IAdbServer adbServer, string adbExecutablePath = "adb",
-    ILogger<AdbDeviceResolver>? logger = null) : IAdbDeviceResolver
+    ILogger<AdbDeviceResolver>? logger = null, TimeSpan? onlineWait = null) : IAdbDeviceResolver
 {
+    private static readonly TimeSpan DefaultOnlineWait = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan OnlinePollInterval = TimeSpan.FromMilliseconds(500);
+    private readonly TimeSpan _onlineWait = onlineWait ?? DefaultOnlineWait;
+
     private const string AdbTlsConnectServiceType = "_adb-tls-connect._tcp";
     private const string AdbTlsPairingServiceType = "_adb-tls-pairing._tcp";
     private static readonly TimeSpan MdnsBrowseTimeout = TimeSpan.FromSeconds(5);
@@ -27,6 +31,23 @@ public sealed class AdbDeviceResolver(
     }
 
     private readonly ILogger<AdbDeviceResolver> _logger = new RunCapturingLogger<AdbDeviceResolver>(logger ?? NullLogger<AdbDeviceResolver>.Instance);
+
+    // Two callers starting a cold adb server at once race: the loser fails with "Address already in use" and the
+    // client's recovery kills the server the winner just started, dropping its half-built wireless transports.
+    private static readonly SemaphoreSlim ServerStartGate = new(1, 1);
+
+    private async Task<StartServerResult> StartServerSerializedAsync(CancellationToken ct)
+    {
+        await ServerStartGate.WaitAsync(ct);
+        try
+        {
+            return await adbServer.StartServerAsync(adbExecutablePath, restartServerIfNewer: false, ct);
+        }
+        finally
+        {
+            ServerStartGate.Release();
+        }
+    }
 
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _connectGates = new(StringComparer.OrdinalIgnoreCase);
 
@@ -46,7 +67,7 @@ public sealed class AdbDeviceResolver(
 
     private async Task<string> EnsureConnectedCoreAsync(DeviceConfig device, CancellationToken ct)
     {
-        var startResult = await adbServer.StartServerAsync(adbExecutablePath, restartServerIfNewer: false, ct);
+        var startResult = await StartServerSerializedAsync(ct);
         if (startResult != StartServerResult.AlreadyRunning)
             _logger.LogDebug("Device '{Device}': adb server start result: {Result}", device.Name, startResult);
 
@@ -72,6 +93,24 @@ public sealed class AdbDeviceResolver(
             _logger.LogDebug("Device '{Device}': found already-connected {HostPort} via 'adb devices'", device.Name, existing);
             Cache(device, existing);
             return existing;
+        }
+
+        if (device.StaticPort is { } staticPort)
+        {
+            var staticHostPort = $"{device.Ip}:{staticPort}";
+            try
+            {
+                await adbClient.ConnectAsync(device.Ip, staticPort, ct);
+                if (await WaitForStateAsync(staticHostPort, ct) == DeviceState.Online)
+                {
+                    Cache(device, staticHostPort);
+                    return staticHostPort;
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogDebug(ex, "Device '{Device}': static port {HostPort} didn't connect, trying mDNS", device.Name, staticHostPort);
+            }
         }
 
         _logger.LogDebug("Device '{Device}': browsing mDNS for {ServiceType} to find {Ip}", device.Name, AdbTlsConnectServiceType, device.Ip);
@@ -103,7 +142,7 @@ public sealed class AdbDeviceResolver(
             }
 
             var hostPort = $"{device.Ip}:{candidate.Port}";
-            var state = await GetStateAsync(hostPort, ct);
+            var state = await WaitForStateAsync(hostPort, ct);
             if (state == DeviceState.Online)
             {
                 Cache(device, hostPort);
@@ -126,7 +165,7 @@ public sealed class AdbDeviceResolver(
         if (device.Ip is null)
             throw new InvalidOperationException($"Device '{device.Name}' has no IP configured; pairing only applies to WiFi devices.");
 
-        await adbServer.StartServerAsync(adbExecutablePath, restartServerIfNewer: false, ct);
+        await StartServerSerializedAsync(ct);
 
         var announcements = await mdns.BrowseAsync(AdbTlsPairingServiceType, MdnsBrowseTimeout, ct);
         var candidate = announcements.FirstOrDefault(a => a.Addresses.Any(addr => addr.ToString() == device.Ip));
@@ -144,7 +183,7 @@ public sealed class AdbDeviceResolver(
         if (device.Ip is null)
             throw new InvalidOperationException($"Device '{device.Name}' has no IP configured; pairing only applies to WiFi devices.");
 
-        await adbServer.StartServerAsync(adbExecutablePath, restartServerIfNewer: false, ct);
+        await StartServerSerializedAsync(ct);
         return await PairCoreAsync(device, device.Ip, pairingPort, pairingCode, ct);
     }
 
@@ -174,7 +213,7 @@ public sealed class AdbDeviceResolver(
             return false;
         }
 
-        if (!await IsOnlineAsync(hostPort, ct))
+        if (await WaitForStateAsync(hostPort, ct) != DeviceState.Online)
             return false;
 
         _logger.LogDebug("Device '{Device}': reconnected to cached {HostPort}", device.Name, hostPort);
@@ -202,6 +241,20 @@ public sealed class AdbDeviceResolver(
     {
         var devices = await adbClient.GetDevicesAsync(ct);
         return devices.FirstOrDefault(d => d.Serial == hostPort)?.State;
+    }
+
+    /// <summary>A just-made wireless connection can take a few seconds to show up in 'adb devices' (or show as offline
+    /// first), so a single immediate look reports a healthy device as missing. Polls until it is online or the wait is up.</summary>
+    private async Task<DeviceState?> WaitForStateAsync(string hostPort, CancellationToken ct)
+    {
+        var state = await GetStateAsync(hostPort, ct);
+        var deadline = DateTime.UtcNow + _onlineWait;
+        while (state != DeviceState.Online && state != DeviceState.Unauthorized && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(OnlinePollInterval, ct);
+            state = await GetStateAsync(hostPort, ct);
+        }
+        return state;
     }
 
     private async Task<bool> IsOnlineAsync(string hostPort, CancellationToken ct) =>

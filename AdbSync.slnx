@@ -1,6 +1,11 @@
 <Solution>
   <Project Path="AdbSync.App/AdbSync.App.csproj" />
   <Project Path="AdbSync.Cli/AdbSync.Cli.csproj" />
+  <Project Path="AdbSync.Contracts/AdbSync.Contracts.csproj" />
   <Project Path="AdbSync.Core.Tests/AdbSync.Core.Tests.csproj" />
   <Project Path="AdbSync.Core/AdbSync.Core.csproj" />
+  <Project Path="AdbSync.Engine/AdbSync.Engine.csproj" />
+  <Project Path="AdbSync.Server.Tests/AdbSync.Server.Tests.csproj" />
+  <Project Path="AdbSync.Server/AdbSync.Server.csproj" />
+  <Project Path="AdbSync.Web/AdbSync.Web.csproj" />
 </Solution>

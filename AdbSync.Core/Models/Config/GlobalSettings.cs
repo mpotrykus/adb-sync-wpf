@@ -1,11 +1,10 @@
+using AdbSync.Core.Services.Scheduling;
+
 namespace AdbSync.Core.Models.Config;
 
 public sealed class GlobalSettings
 {
-    public static string DefaultProjectsDirectory { get; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "AdbSync Projects");
-
-    public string ProjectsDirectory { get; set; } = DefaultProjectsDirectory;
+    public string ProjectsDirectory { get; set; } = "";
     public bool StartAtLogin { get; set; } = true;
     public bool ShowInfoNotifications { get; set; }
     public bool ShowErrorNotifications { get; set; } = true;
@@ -29,6 +28,8 @@ public sealed class GlobalSettings
     public int MaxConcurrentPerDevice { get; set; } = 4;
 
     /// <summary>When enabled, tray notifications are suppressed during the [Start, End) window (wraps past midnight if Start &gt; End).</summary>
+    /// <summary>IANA time zone (for example America/Chicago) for daily schedules and quiet hours. Empty means the host's.</summary>
+    public string? TimeZone { get; set; }
     public bool QuietHoursEnabled { get; set; }
     public TimeOnly QuietHoursStart { get; set; } = new(22, 0);
     public TimeOnly QuietHoursEnd { get; set; } = new(7, 0);
@@ -52,6 +53,14 @@ public sealed class GlobalSettings
 
     /// <summary>Default minimum percent of the historical baseline file count master must retain to allow a push.</summary>
     public int PushSafetyMinimumPercent { get; set; } = 25;
+
+    /// <summary>Default for incremental pull: only transfer device files whose size/mtime differ from what the last
+    /// successful sync recorded, instead of re-pulling the whole folder every run. Dry runs always pull everything.</summary>
+    public bool IncrementalPull { get; set; }
+
+    /// <summary>How many days may pass before an incremental-pull job does one full pull anyway, as a safety net
+    /// against a wrong skip decision. 0 means every run is a full pull.</summary>
+    public int FullPullIntervalDays { get; set; } = 7;
 
     /// <summary>Default number of run-history rows kept per job, unless a job overrides it.</summary>
     public int MaxRunHistoryEntries { get; set; } = 50;
@@ -89,7 +98,7 @@ public sealed class GlobalSettings
         if (!QuietHoursEnabled)
             return false;
 
-        var now = nowOverride ?? TimeOnly.FromDateTime(DateTime.Now);
+        var now = nowOverride ?? TimeOnly.FromDateTime(ScheduleClock.Now(this).DateTime);
         return QuietHoursStart <= QuietHoursEnd
             ? now >= QuietHoursStart && now < QuietHoursEnd
             : now >= QuietHoursStart || now < QuietHoursEnd;

@@ -2,6 +2,9 @@ namespace AdbSync.Core.Models.Config;
 
 public sealed class SyncJobConfig
 {
+    /// <summary>Stable id, assigned when the job is first saved. Names are display values and can change.</summary>
+    public Guid Id { get; set; }
+
     /// <summary>Folder name under <see cref="GlobalSettings.ProjectsDirectory"/> (or <see cref="ProjectDirectory"/> if set).</summary>
     public string Name { get; set; } = string.Empty;
 
@@ -59,6 +62,12 @@ public sealed class SyncJobConfig
 
     /// <summary>Optional override of <see cref="GlobalSettings.PushSafetyMinimumPercent"/> for this job only.</summary>
     public int? PushSafetyMinimumPercent { get; set; }
+
+    /// <summary>Optional override of <see cref="GlobalSettings.IncrementalPull"/> for this job only.</summary>
+    public bool? IncrementalPull { get; set; }
+
+    /// <summary>Optional override of <see cref="GlobalSettings.FullPullIntervalDays"/> for this job only.</summary>
+    public int? FullPullIntervalDays { get; set; }
 
     /// <summary>When true, this job always runs as a rehearsal - master/manifest/checkpoints are never written and push never runs. Job-only, no global fallback.</summary>
     public bool DryRun { get; set; }

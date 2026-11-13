@@ -147,6 +147,20 @@ public class TwoWayMergeEngineTests : IDisposable
     }
 
     [Fact]
+    public async Task MissingFromStagingBecausePullFailed_SkipPath_LeavesMasterAndBaselineUntouched()
+    {
+        Write(_masterPath, "a.txt", "original", T0);
+        var manifest = ManifestWith("a.txt", SizeOf(_masterPath, "a.txt"), T0);
+
+        var result = await _engine.MergeAsync(_stagingPath, _masterPath, manifest, new MergeOptions(SkipPaths: ["a.txt"]));
+
+        Assert.Equal(0, result.Deleted);
+        Assert.Empty(result.Changes);
+        Assert.Equal("original", Read(_masterPath, "a.txt"));
+        Assert.Equal(manifest.Entries["a.txt"], result.UpdatedManifest.Entries["a.txt"]);
+    }
+
+    [Fact]
     public async Task DeletedFromStaging_MasterUnchanged_PropagatesDeleteToMaster()
     {
         Write(_masterPath, "a.txt", "original", T0);

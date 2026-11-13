@@ -2,6 +2,9 @@ namespace AdbSync.Core.Models.Config;
 
 public sealed class DeviceConfig
 {
+    /// <summary>Stable id, assigned when the device is first saved.</summary>
+    public Guid Id { get; set; }
+
     public string Name { get; set; } = string.Empty;
 
     /// <summary>WiFi/mDNS device. Null when <see cref="Serial"/> is set (legacy USB fallback).</summary>
@@ -9,6 +12,9 @@ public sealed class DeviceConfig
 
     /// <summary>Static USB serial fallback; bypasses mDNS discovery entirely.</summary>
     public string? Serial { get; set; }
+
+    /// <summary>Fixed wireless-debugging port, for networks where mDNS can't reach this machine (Docker bridge, VPN).</summary>
+    public int? StaticPort { get; set; }
 
     /// <summary>Last resolved "ip:port" for a WiFi device, persisted so it survives app restarts.</summary>
     public string? CachedHostPort { get; set; }

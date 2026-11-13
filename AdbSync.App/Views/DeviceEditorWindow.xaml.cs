@@ -1,4 +1,5 @@
 using AdbSync.Core.Models.Config;
+using AdbSync.Core.Services.Config;
 using AdbSync.Core.Services.Devices;
 using AdvancedSharpAdbClient;
 using AdvancedSharpAdbClient.Models;
@@ -94,14 +95,14 @@ public partial class DeviceEditorWindow : Window
         NameErrorText.Visibility = Visibility.Collapsed;
 
         var name = NameBox.Text.Trim();
-        if (name.Length == 0)
+        if (ConfigNames.Problem(name) is { } problem)
         {
-            ShowNameError("Name is required.");
+            ShowNameError(problem);
             return;
         }
 
         var isNew = _selected is null;
-        if (isNew && _config.Devices.Any(d => d.Name == name))
+        if (isNew && !ConfigNames.IsUnique(name, _config.Devices.Select(d => d.Name)))
         {
             ShowNameError($"A device named '{name}' already exists.");
             return;

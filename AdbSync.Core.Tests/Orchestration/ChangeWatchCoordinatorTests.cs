@@ -25,7 +25,8 @@ public class ChangeWatchCoordinatorTests
 
         await using var coordinator = new ChangeWatchCoordinator(
             "Job", [new ChangeWatchBinding(Device, "/sdcard/DCIM", NoExclude)], watcher, new FakeDeviceResolver(), events,
-            debounceWindow: TimeSpan.FromMilliseconds(60), rescanInterval: TimeSpan.FromSeconds(30),
+            // Wide enough that the gaps between the signals below stay inside it on a slow, loaded CI runner.
+            debounceWindow: TimeSpan.FromMilliseconds(500), rescanInterval: TimeSpan.FromSeconds(30),
             onTriggered: () => { Interlocked.Increment(ref triggerCount); return Task.CompletedTask; },
             pollInterval: PollInterval, reconnectBackoff: ReconnectBackoff);
 

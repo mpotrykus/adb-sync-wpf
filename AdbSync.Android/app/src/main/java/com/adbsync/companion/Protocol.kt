@@ -35,6 +35,7 @@ object Protocol {
         "Pull" -> "Pulling"
         "Push" -> "Pushing"
         "Merge" -> "Merging"
+        "Snapshot" -> "Saving rollback point"
         "WaitingForAppClose" -> "Waiting for app to close"
         "WaitingForDevice" -> "Waiting for device"
         null, "" -> "Running"

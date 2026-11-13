@@ -1,0 +1,372 @@
+@inject ApiClient Api
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">@(Job is null ? "New job" : "Edit " + Job.Name)</MudText>
+    </TitleContent>
+    <DialogContent>
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@_error</MudAlert>
+        }
+        <MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pt-4 pb-4" KeepPanelsAlive="true">
+            <MudTabPanel Text="General">
+                <MudStack Spacing="3">
+                    <MudTextField @bind-Value="_name" Label="Name" Variant="Variant.Outlined" Required="true"
+                                  HelperText="@(Job is null ? "Also the project folder's name." : "Renaming moves the project folder.")" />
+                    <MudTextField @bind-Value="_appPackage" Label="Android app package (optional)" Variant="Variant.Outlined"
+                                  Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.Apps" AdornmentAriaLabel="Pick an installed app"
+                                  OnAdornmentClick="PickPackageAsync"
+                                  HelperText="Skips the job while the app is open, e.g. com.stephaneginier.nomad" />
+
+                    <MudText Typo="Typo.overline" Class="mud-text-secondary mt-2">Devices</MudText>
+                    @if (Devices.Count == 0)
+                    {
+                        <MudAlert Severity="Severity.Info" Dense="true">Pair a device first.</MudAlert>
+                    }
+                    @foreach (var device in Devices)
+                    {
+                        var binding = _bindings[device.Id];
+                        <MudPaper Outlined="true" Class="pa-3">
+                            <MudCheckBox T="bool" @bind-Value="binding.Selected" Label="@device.Name" Class="ml-n2" />
+                            @if (binding.Selected)
+                            {
+                                <MudTextField @bind-Value="binding.RemotePath" Label="Folder on the phone" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                              Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.FolderOpen" AdornmentAriaLabel="Browse the phone"
+                                              OnAdornmentClick="() => PickFolderAsync(device, binding)" Class="mono-input mt-1" />
+                            }
+                        </MudPaper>
+                    }
+                </MudStack>
+            </MudTabPanel>
+
+            <MudTabPanel Text="Schedule">
+                <MudStack Spacing="3">
+                    <MudSwitch T="bool" @bind-Value="_enabled" Color="Color.Primary" Label="Enabled" Class="ml-n2" />
+                    <MudSelect T="string" @bind-Value="_kind" Label="Runs" Variant="Variant.Outlined">
+                        <MudSelectItem Value="@("onChange")">When a phone changes</MudSelectItem>
+                        <MudSelectItem Value="@("interval")">On an interval</MudSelectItem>
+                        <MudSelectItem Value="@("dailyAt")">Daily at set times</MudSelectItem>
+                        <MudSelectItem Value="@("manual")">Only when I start it</MudSelectItem>
+                    </MudSelect>
+                    @if (_kind == "interval")
+                    {
+                        <MudNumericField T="int" @bind-Value="_intervalMinutes" Label="Every (minutes)" Min="1" Variant="Variant.Outlined" />
+                    }
+                    @if (_kind == "dailyAt")
+                    {
+                        <MudTextField @bind-Value="_dailyTimes" Label="Times (HH:mm, comma separated)" Variant="Variant.Outlined" Placeholder="03:00, 15:30" />
+                    }
+                    @if (_kind == "onChange")
+                    {
+                        <MudNumericField T="int" @bind-Value="_debounceSeconds" Label="Wait after the last change (seconds)" Min="0" Variant="Variant.Outlined" />
+                    }
+                    <MudText Typo="Typo.body2" Class="mb-n1">Exclude patterns (one per line)</MudText>
+                    <MudTextField @bind-Value="_exclude" Variant="Variant.Outlined" Lines="4" AutoGrow="true" Class="exclude-input" />
+                </MudStack>
+            </MudTabPanel>
+
+            <MudTabPanel Text="Advanced">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">Anything left empty uses the global value from Settings.</MudText>
+
+                <MudText Typo="Typo.subtitle2" Class="mt-6 mb-3 d-block section-header">Storage</MudText>
+                <MudStack Spacing="3">
+                    <div>
+                        <MudText Typo="Typo.body2" Class="mb-1">Project folder</MudText>
+                        <MudTextField @bind-Value="_projectDir" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mono-input"
+                                      HelperText="Full path on the server. Empty uses the projects directory." />
+                    </div>
+                    <MudSwitch T="bool" @bind-Value="_dryRun" Color="Color.Primary" Label="Always a dry run (never writes anything)" Class="ml-n2" />
+                </MudStack>
+
+                <MudText Typo="Typo.subtitle2" Class="mt-8 mb-3 d-block section-header">Conflicts</MudText>
+                <MudGrid Spacing="3">
+                    <MudItem xs="12" sm="6">
+                            <MudText Typo="Typo.body2" Class="mb-1">When a file changed on both sides</MudText>
+                            <MudSelect T="string" @bind-Value="_conflictPolicy" Variant="Variant.Outlined" Margin="Margin.Dense">
+                                <MudSelectItem Value="@("")">Global setting</MudSelectItem>
+                                <MudSelectItem Value="@("newestWins")">Newest wins</MudSelectItem>
+                                <MudSelectItem Value="@("ask")">Ask me</MudSelectItem>
+                            </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                            <MudText Typo="Typo.body2" Class="mb-1">Keep a copy of the losing version</MudText>
+                            <MudSelect T="string" @bind-Value="_backupLosers" Variant="Variant.Outlined" Margin="Margin.Dense">
+                                <MudSelectItem Value="@("")">Global setting</MudSelectItem>
+                                <MudSelectItem Value="@("yes")">Yes</MudSelectItem>
+                                <MudSelectItem Value="@("no")">No</MudSelectItem>
+                            </MudSelect>
+                    </MudItem>
+                </MudGrid>
+
+                <MudText Typo="Typo.subtitle2" Class="mt-8 mb-3 d-block section-header">Notifications</MudText>
+                <MudGrid Spacing="3">
+                    <MudItem xs="12" sm="6">
+                            <MudText Typo="Typo.body2" Class="mb-1">Info notifications</MudText>
+                            <MudSelect T="string" @bind-Value="_showInfo" Variant="Variant.Outlined" Margin="Margin.Dense">
+                                <MudSelectItem Value="@("")">Global setting</MudSelectItem>
+                                <MudSelectItem Value="@("yes")">Show</MudSelectItem>
+                                <MudSelectItem Value="@("no")">Hide</MudSelectItem>
+                            </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                            <MudText Typo="Typo.body2" Class="mb-1">Error notifications</MudText>
+                            <MudSelect T="string" @bind-Value="_showErrors" Variant="Variant.Outlined" Margin="Margin.Dense">
+                                <MudSelectItem Value="@("")">Global setting</MudSelectItem>
+                                <MudSelectItem Value="@("yes")">Show</MudSelectItem>
+                                <MudSelectItem Value="@("no")">Hide</MudSelectItem>
+                            </MudSelect>
+                    </MudItem>
+                </MudGrid>
+
+                <MudText Typo="Typo.subtitle2" Class="mt-8 mb-3 d-block section-header">Safety and retries</MudText>
+                <MudGrid Spacing="3">
+                    <MudItem xs="6" sm="3">
+                            <MudText Typo="Typo.body2" Class="mb-1">Push safety minimum (%)</MudText>
+                            <MudNumericField T="int?" @bind-Value="_pushSafety" Min="0" Max="100" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </MudItem>
+                    <MudItem xs="6" sm="3">
+                            <MudText Typo="Typo.body2" Class="mb-1">Bandwidth limit (KB/s)</MudText>
+                            <MudNumericField T="int?" @bind-Value="_throttle" Min="1" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </MudItem>
+                    <MudItem xs="6" sm="3">
+                            <MudText Typo="Typo.body2" Class="mb-1">Retry attempts</MudText>
+                            <MudNumericField T="int?" @bind-Value="_retryAttempts" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </MudItem>
+                    <MudItem xs="6" sm="3">
+                            <MudText Typo="Typo.body2" Class="mb-1">Backoff (seconds)</MudText>
+                            <MudNumericField T="int?" @bind-Value="_retryBackoff" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </MudItem>
+                </MudGrid>
+
+                <MudText Typo="Typo.subtitle2" Class="mt-8 mb-3 d-block section-header">Pulling</MudText>
+                <MudGrid Spacing="3">
+                    <MudItem xs="12" sm="6">
+                            <MudText Typo="Typo.body2" Class="mb-1">Incremental pull</MudText>
+                            <MudSelect T="string" @bind-Value="_incremental" Variant="Variant.Outlined" Margin="Margin.Dense">
+                                <MudSelectItem Value="@("")">Global setting</MudSelectItem>
+                                <MudSelectItem Value="@("yes")">On - only transfer changed files</MudSelectItem>
+                                <MudSelectItem Value="@("no")">Off - pull everything every run</MudSelectItem>
+                            </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                            <MudText Typo="Typo.body2" Class="mb-1">Full pull at least every (days)</MudText>
+                            <MudNumericField T="int?" @bind-Value="_fullPullDays" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </MudItem>
+                </MudGrid>
+
+                <MudText Typo="Typo.subtitle2" Class="mt-8 mb-3 d-block section-header">Retention</MudText>
+                <MudGrid Spacing="3">
+                    <MudItem xs="6" sm="4">
+                            <MudText Typo="Typo.body2" Class="mb-1">Conflict copies (days)</MudText>
+                            <MudNumericField T="int?" @bind-Value="_retentionDays" Min="1" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </MudItem>
+                    <MudItem xs="6" sm="4">
+                            <MudText Typo="Typo.body2" Class="mb-1">Checkpoints (days)</MudText>
+                            <MudNumericField T="int?" @bind-Value="_checkpointDays" Min="1" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </MudItem>
+                    <MudItem xs="6" sm="4">
+                            <MudText Typo="Typo.body2" Class="mb-1">Rollback points kept</MudText>
+                            <MudNumericField T="int?" @bind-Value="_rollbackKeep" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </MudItem>
+                    <MudItem xs="6" sm="4">
+                            <MudText Typo="Typo.body2" Class="mb-1">Runs kept</MudText>
+                            <MudNumericField T="int?" @bind-Value="_historyEntries" Min="1" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </MudItem>
+                    <MudItem xs="6" sm="4">
+                            <MudText Typo="Typo.body2" Class="mb-1">Runs with file detail</MudText>
+                            <MudNumericField T="int?" @bind-Value="_fileDetailRuns" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                    </MudItem>
+                </MudGrid>
+            </MudTabPanel>
+        </MudTabs>
+    </DialogContent>
+    <DialogActions>
+        @if (Job is not null)
+        {
+            <MudButton Color="Color.Error" Disabled="_saving" OnClick="DeleteAsync">Delete</MudButton>
+            <MudSpacer />
+        }
+        <MudButton Disabled="_saving" OnClick="() => MudDialog.Cancel()">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" Disabled="_saving" OnClick="SaveAsync">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private sealed class Binding
+    {
+        public bool Selected { get; set; }
+        public string RemotePath { get; set; } = "";
+    }
+
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public JobDto? Job { get; set; }
+    [Parameter] public IReadOnlyList<DeviceDto> Devices { get; set; } = [];
+
+    private readonly Dictionary<Guid, Binding> _bindings = [];
+    private string _name = "";
+    private string? _appPackage;
+    private string _kind = "onChange";
+    private int _intervalMinutes = 240;
+    private int _debounceSeconds = 10;
+    private string _dailyTimes = "";
+    private string _exclude = "";
+    private bool _enabled = true;
+    private string? _projectDir;
+    private bool _dryRun;
+    private string _conflictPolicy = "", _backupLosers = "", _showInfo = "", _showErrors = "", _incremental = "";
+    private int? _fullPullDays;
+    private int? _pushSafety, _throttle, _retryAttempts, _retryBackoff, _retentionDays, _checkpointDays, _rollbackKeep, _historyEntries, _fileDetailRuns;
+    private bool _saving;
+
+    private async Task PickFolderAsync(DeviceDto device, Binding binding)
+    {
+        var parameters = new DialogParameters<DeviceFolderPickerDialog>
+        {
+            { d => d.DeviceId, device.Id }, { d => d.DeviceName, device.Name }, { d => d.StartPath, binding.RemotePath },
+        };
+        var dialog = await Dialogs.ShowAsync<DeviceFolderPickerDialog>("Choose a folder", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: string path })
+            binding.RemotePath = path;
+    }
+
+    private async Task PickPackageAsync()
+    {
+        var device = Devices.FirstOrDefault(d => _bindings[d.Id].Selected) ?? Devices.FirstOrDefault();
+        if (device is null)
+        {
+            Snackbar.Add("Pair a device first.", Severity.Info);
+            return;
+        }
+        var parameters = new DialogParameters<PackagePickerDialog> { { d => d.DeviceId, device.Id }, { d => d.DeviceName, device.Name } };
+        var dialog = await Dialogs.ShowAsync<PackagePickerDialog>("Pick an app", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: string package })
+            _appPackage = package;
+    }
+    private string? _error;
+
+    protected override void OnInitialized()
+    {
+        foreach (var device in Devices)
+        {
+            var existing = Job?.Devices.FirstOrDefault(b => b.DeviceId == device.Id);
+            _bindings[device.Id] = new Binding { Selected = existing is not null, RemotePath = existing?.RemotePath ?? "" };
+        }
+        if (Job is null)
+            return;
+        _name = Job.Name;
+        _appPackage = Job.AppPackage;
+        _kind = Job.Schedule.Kind;
+        _intervalMinutes = Math.Max(1, (Job.Schedule.IntervalSeconds ?? 14400) / 60);
+        _debounceSeconds = Job.Schedule.DebounceSeconds ?? 10;
+        _dailyTimes = string.Join(", ", Job.Schedule.DailyTimes ?? []);
+        _exclude = string.Join('\n', Job.Exclude);
+        _enabled = Job.Enabled;
+        _projectDir = Job.ProjectDirectory;
+        _dryRun = Job.DryRun;
+        var o = Job.Overrides;
+        _conflictPolicy = o.ConflictPolicy ?? "";
+        _backupLosers = FromTri(o.BackupConflictLosers);
+        _showInfo = FromTri(o.ShowInfoNotifications);
+        _showErrors = FromTri(o.ShowErrorNotifications);
+        _pushSafety = o.PushSafetyMinimumPercent;
+        _throttle = o.BandwidthThrottleKBps;
+        _retryAttempts = o.RetryMaxAttempts;
+        _retryBackoff = o.RetryBackoffSeconds;
+        _retentionDays = o.ConflictRetentionDays;
+        _checkpointDays = o.CheckpointRetentionDays;
+        _rollbackKeep = o.RollbackPointsToKeep;
+        _historyEntries = o.MaxRunHistoryEntries;
+        _fileDetailRuns = o.FileDetailRunsKept;
+        _incremental = FromTri(o.IncrementalPull);
+        _fullPullDays = o.FullPullIntervalDays;
+    }
+
+    private static string FromTri(bool? value) => value switch { true => "yes", false => "no", _ => "" };
+
+    private static bool? ToTri(string value) => value switch { "yes" => true, "no" => false, _ => null };
+
+    private JobOverridesDto BuildOverrides() => new(
+        _retentionDays, ToTri(_showInfo), ToTri(_showErrors), _historyEntries, _fileDetailRuns, ToTri(_backupLosers),
+        string.IsNullOrEmpty(_conflictPolicy) ? null : _conflictPolicy, _checkpointDays, _rollbackKeep, _throttle,
+        _retryAttempts, _retryBackoff, _pushSafety, ToTri(_incremental), _fullPullDays);
+
+    private ScheduleDto BuildSchedule(ScheduleDto? current) => new(
+        _kind,
+        _kind == "interval" ? _intervalMinutes * 60 : current?.IntervalSeconds,
+        _kind == "dailyAt" ? _dailyTimes.Split([',', ' ', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) : current?.DailyTimes,
+        _kind == "onChange" ? _debounceSeconds : current?.DebounceSeconds,
+        current?.RescanSeconds);
+
+    private async Task SaveAsync()
+    {
+        _error = null;
+        _saving = true;
+        try
+        {
+            var devices = Devices.Where(d => _bindings[d.Id].Selected)
+                .Select(d => new JobBindingDto(d.Id, _bindings[d.Id].RemotePath.Trim())).ToList();
+            var exclude = _exclude.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+            var package = string.IsNullOrWhiteSpace(_appPackage) ? null : _appPackage.Trim();
+            var projectDir = string.IsNullOrWhiteSpace(_projectDir) ? null : _projectDir.Trim();
+            var overrides = BuildOverrides();
+            if (Job is null)
+            {
+                await Api.PostAsync<JobDto>("jobs", new JobInputDto(_name.Trim(), projectDir, package, exclude, devices, BuildSchedule(null), _enabled, _dryRun, overrides));
+            }
+            else
+            {
+                await Api.PatchAsync<JobDto>($"jobs/{Job.Id}", new
+                {
+                    name = _name.Trim(),
+                    appPackage = package,
+                    exclude,
+                    devices,
+                    schedule = BuildSchedule(Job.Schedule),
+                    enabled = _enabled,
+                    projectDirectory = projectDir,
+                    dryRun = _dryRun,
+                    overrides,
+                });
+            }
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException)
+        {
+            if (!ex.IsSignedOut()) _error = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        var confirmed = await Dialogs.ShowMessageBox("Delete job",
+            $"Delete \"{Job!.Name}\"? Its saved state and history go away. The project folder and its files stay on disk.",
+            yesText: "Delete", cancelText: "Cancel");
+        if (confirmed != true)
+            return;
+        _saving = true;
+        try
+        {
+            await Api.DeleteAsync($"jobs/{Job.Id}");
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException)
+        {
+            if (!ex.IsSignedOut()) _error = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

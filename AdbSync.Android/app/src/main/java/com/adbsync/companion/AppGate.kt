@@ -127,8 +127,9 @@ class AppGateService : AccessibilityService() {
                 watchedAt = SystemClock.elapsedRealtime()
                 if (foreground != pkg || overlay != null) return@post
 
-                val job = jobs.firstOrNull { it.appPackage == pkg && it.staleDevices.any { (d, _) -> d == device } } ?: return@post
-                val reason = job.staleDevices.first { (d, _) -> d == device }.second
+                val job = jobs.firstOrNull { it.appPackage == pkg && (it.staleDevices.any { (d, _) -> d == device } || it.isSyncingOn(device)) }
+                    ?: return@post
+                val reason = job.staleDevices.firstOrNull { (d, _) -> d == device }?.second
                 GateOverlay(pkg, job.name, reason, config, device).show()
             }
         }
@@ -146,7 +147,7 @@ class AppGateService : AccessibilityService() {
     private inner class GateOverlay(
         private val pkg: String,
         private val job: String,
-        private val reason: String,
+        private var reason: String?,
         private val config: PcConfig,
         private val device: String,
     ) {
@@ -173,7 +174,12 @@ class AppGateService : AccessibilityService() {
 
         fun show() {
             overlay = this
-            renderPrompt()
+            if (reason == null) {
+                renderSyncing()
+                pollUntilSyncEnds()
+            } else {
+                renderPrompt()
+            }
             // Covers the whole screen, system bars included: a gap anywhere would let touches reach the app.
             val params = WindowManager.LayoutParams(
                 MATCH_PARENT, MATCH_PARENT, WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
@@ -210,7 +216,7 @@ class AppGateService : AccessibilityService() {
             render(
                 sectionLabel("$label is out of sync"),
                 spacer(8),
-                body("${reason.replaceFirstChar { it.uppercase() }}. Opening it now and saving can overwrite changes from your other devices.", size = 14f),
+                body("${reason.orEmpty().replaceFirstChar { it.uppercase() }}. Opening it now and saving can overwrite changes from your other devices.", size = 14f),
                 spacer(16),
                 button("Sync first", ButtonKind.Primary, fill = true) { startSync() },
                 spacer(8),
@@ -218,6 +224,45 @@ class AppGateService : AccessibilityService() {
                 spacer(8),
                 button("Close App", ButtonKind.Neutral, fill = true) { leave() },
             )
+        }
+
+        private fun renderSyncing() {
+            dismissibleByNavigation = true
+            render(
+                sectionLabel("$job is syncing"),
+                spacer(8),
+                body("A sync is running. Opening $label now and saving can conflict with it. This clears when the sync finishes.", size = 14f),
+                spacer(12),
+                indeterminateBar(),
+                spacer(16),
+                button("Open anyway", ButtonKind.Neutral, fill = true) { openAnyway() },
+                spacer(8),
+                button("Close App", ButtonKind.Neutral, fill = true) { leave() },
+            )
+        }
+
+        private fun pollUntilSyncEnds() {
+            main.postDelayed({
+                if (closed) return@postDelayed
+                io.execute {
+                    val status = runCatching { PcClient(config).status().firstOrNull { it.name == job } }.getOrNull()
+                    main.post {
+                        if (closed) return@post
+                        when {
+                            status == null || status.isSyncingOn(device) -> pollUntilSyncEnds()
+                            else -> {
+                                val stale = status.staleDevices.firstOrNull { (d, _) -> d == device }?.second
+                                if (stale == null) {
+                                    dismiss()
+                                } else {
+                                    reason = stale
+                                    renderPrompt()
+                                }
+                            }
+                        }
+                    }
+                }
+            }, SYNC_POLL_MS)
         }
 
         private fun renderProblem(message: String) {
@@ -289,5 +334,6 @@ class AppGateService : AccessibilityService() {
     private companion object {
         const val TAG = "AdbSyncGate"
         const val WATCH_CACHE_MS = 60_000L
+        const val SYNC_POLL_MS = 3_000L
     }
 }

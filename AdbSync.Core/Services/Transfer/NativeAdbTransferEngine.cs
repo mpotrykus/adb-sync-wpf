@@ -13,7 +13,19 @@ public sealed class NativeAdbTransferEngine(IRemoteFileSystemFactory remoteFacto
     public async Task<TransferResult> PullMirrorAsync(string serial, string remotePath, string localPath, IExcludeMatcher exclude, TransferPolicy? policy = null, CancellationToken ct = default)
     {
         var remote = remoteFactory.Create(serial, policy);
+        await using var connection = remote as IAsyncDisposable;
         var remoteEntries = await RemoteFileTreeScanner.ScanAsync(remote, remotePath, exclude, ct);
+
+        List<FileEntry>? skipped = null;
+        if (policy?.SkipPull is { } canSkip)
+        {
+            skipped = remoteEntries.Where(e => !e.IsDirectory && canSkip(e)).ToList();
+            if (skipped.Count > 0)
+            {
+                var skippedPaths = new HashSet<string>(skipped.Select(e => e.RelativePath), StringComparer.Ordinal);
+                remoteEntries = remoteEntries.Where(e => !skippedPaths.Contains(e.RelativePath)).ToList();
+            }
+        }
 
         Directory.CreateDirectory(localPath);
         var localEntries = LocalFileTreeScanner.Scan(localPath, exclude);
@@ -27,16 +39,17 @@ public sealed class NativeAdbTransferEngine(IRemoteFileSystemFactory remoteFacto
         var copied = 0;
         var bytesCopied = 0L;
         var copiedPaths = new List<string>();
+        var failedPaths = new List<string>();
         foreach (var entry in plan.ToCopy.Where(e => !e.IsDirectory))
         {
+            var destPath = Path.Combine(localPath, entry.RelativePath);
+            var tempPath = $"{destPath}.tmp-{Guid.NewGuid():N}";
             try
             {
-                var destPath = Path.Combine(localPath, entry.RelativePath);
                 var destDir = Path.GetDirectoryName(destPath);
                 if (!string.IsNullOrEmpty(destDir))
                     Directory.CreateDirectory(destDir);
 
-                var tempPath = $"{destPath}.tmp-{Guid.NewGuid():N}";
                 await remote.PullFileAsync($"{remotePath}/{entry.RelativePath}", tempPath, ct);
                 File.SetLastWriteTimeUtc(tempPath, entry.ModifiedUtc.UtcDateTime);
                 File.Move(tempPath, destPath, overwrite: true);
@@ -47,6 +60,9 @@ public sealed class NativeAdbTransferEngine(IRemoteFileSystemFactory remoteFacto
             catch (Exception ex)
             {
                 errors.Add($"pull '{entry.RelativePath}' failed: {ex.Message}");
+                failedPaths.Add(entry.RelativePath);
+                // A half-written temp file left in staging would be merged as a brand-new device file.
+                try { File.Delete(tempPath); } catch (IOException) { } catch (UnauthorizedAccessException) { }
             }
         }
 
@@ -68,12 +84,13 @@ public sealed class NativeAdbTransferEngine(IRemoteFileSystemFactory remoteFacto
             deletedPaths.Add(entry.RelativePath);
         }
 
-        return new TransferResult(copied, deleted, bytesCopied, errors, copiedPaths, deletedPaths);
+        return new TransferResult(copied, deleted, bytesCopied, errors, copiedPaths, deletedPaths, failedPaths, skipped);
     }
 
     public async Task<TransferResult> PushMirrorAsync(string serial, string localPath, string remotePath, IExcludeMatcher exclude, TransferPolicy? policy = null, CancellationToken ct = default)
     {
         var remote = remoteFactory.Create(serial, policy);
+        await using var connection = remote as IAsyncDisposable;
         await remote.CreateDirectoryAsync(remotePath, ct);
 
         Directory.CreateDirectory(localPath);

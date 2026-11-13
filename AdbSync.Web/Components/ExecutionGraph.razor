@@ -1,0 +1,143 @@
+<div class="exec-graph">
+    @foreach (var device in Steps.Select(s => s.DeviceName).Distinct())
+    {
+        var deviceSteps = Steps.Where(s => s.DeviceName == device).OrderBy(s => Order(s.Phase)).ToList();
+        <MudPaper Outlined="true" Class="pa-3 mb-3">
+            <MudText Typo="Typo.subtitle2" Class="mb-2 text-center">@device</MudText>
+            <div class="exec-row">
+                @for (var i = 0; i < deviceSteps.Count; i++)
+                {
+                    var step = deviceSteps[i];
+                    if (i > 0)
+                    {
+                        <div class="exec-link @StateClass(deviceSteps[i - 1].Status)"></div>
+                    }
+                    <div class="exec-step @StateClass(step.Status)" title="@Detail(step)">
+                        <div class="exec-glyph"><MudIcon Icon="@Icon(step)" /></div>
+                        <div class="exec-title">@Title(step.Phase)</div>
+                        <div class="exec-detail">
+                            @foreach (var (icon, text, tip) in Items(step))
+                            {
+                                <span class="exec-item" title="@tip">
+                                    @if (icon is not null)
+                                    {
+                                        <MudIcon Icon="@icon" />
+                                    }
+                                    else
+                                    {
+                                        <span></span>
+                                    }
+                                    <span class="exec-value">@text</span>
+                                </span>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        </MudPaper>
+    }
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<RunStepDto> Steps { get; set; } = [];
+
+    private static int Order(string phase) => phase switch
+    {
+        "preConnect" => 0,
+        "waitingForDevice" => 0,
+        "waitingForAppClose" => 0,
+        "pull" => 1,
+        "snapshot" => 2,
+        "merge" => 3,
+        "push" => 4,
+        _ => 5,
+    };
+
+    private static string Title(string phase) => phase switch
+    {
+        "preConnect" => "Connect",
+        "waitingForDevice" => "Waiting for device",
+        "waitingForAppClose" => "Waiting for app",
+        "snapshot" => "Rollback point",
+        _ => Format.Words(phase),
+    };
+
+    private static string StateClass(string status) => status switch
+    {
+        "succeeded" => "done",
+        "running" => "active",
+        "failed" => "failed",
+        "waiting" or "cancelled" => "warn",
+        "skipped" => "skipped",
+        _ => "",
+    };
+
+    private static string Icon(RunStepDto step) => step.Status switch
+    {
+        "succeeded" => Icons.Material.Filled.Check,
+        "failed" => Icons.Material.Filled.Close,
+        "cancelled" => Icons.Material.Filled.Stop,
+        "skipped" => Icons.Material.Filled.Remove,
+        _ => step.Phase switch
+        {
+            "pull" => Icons.Material.Filled.Download,
+            "snapshot" => Icons.Material.Filled.Backup,
+            "merge" => Icons.Material.Filled.CallMerge,
+            "push" => Icons.Material.Filled.Upload,
+            _ => Icons.Material.Filled.Link,
+        },
+    };
+
+    private static List<(string? Icon, string Text, string Tip)> Items(RunStepDto step)
+    {
+        const string none = "-";
+        var started = step.StartedAt is not null;
+        var touched = step.FilesCopied + step.FilesDeleted;
+        var items = new List<(string?, string, string)>();
+        if (step.Phase is "pull" or "push" or "merge")
+            items.Add((Icons.Material.Filled.InsertDriveFile, started && touched > 0 ? touched.ToString() : none, step.Phase == "merge" ? "Files changed" : "Files copied or deleted"));
+        if (step.Phase is "pull" or "push")
+            items.Add((Icons.Material.Filled.Storage, step.BytesCopied > 0 ? Format.Bytes(step.BytesCopied) : none, "Bytes copied"));
+        if (step.Phase == "merge")
+            items.Add((Icons.Material.Filled.CompareArrows, step.Conflicts > 0 ? step.Conflicts.ToString() : none, "Conflicts"));
+        items.Add((Icons.Material.Filled.ErrorOutline, step.Errors > 0 ? step.Errors.ToString() : none, "Errors"));
+        items.Add((Icons.Material.Filled.Timer, started ? Format.Duration(step.StartedAt, step.EndedAt) : none, step.Status == "running" ? "Elapsed" : "Duration"));
+        return items;
+    }
+
+    private static string Detail(RunStepDto step)
+    {
+        var elapsed = step.StartedAt is null ? null : Format.Duration(step.StartedAt, step.EndedAt);
+        switch (step.Status)
+        {
+            case "pending": return "waiting";
+            case "skipped": return "skipped";
+            case "waiting": return "waiting for device";
+            case "running": return elapsed ?? "0 s";
+        }
+        var parts = new List<string>();
+        var touched = step.FilesCopied + step.FilesDeleted;
+        switch (step.Phase)
+        {
+            case "pull" or "push":
+                parts.Add($"{touched} file{(touched == 1 ? "" : "s")}");
+                if (step.BytesCopied > 0)
+                    parts.Add(Format.Bytes(step.BytesCopied));
+                break;
+            case "snapshot":
+                break;
+            case "merge":
+                parts.Add($"{touched} changed");
+                if (step.Conflicts > 0)
+                    parts.Add($"{step.Conflicts} conflict{(step.Conflicts == 1 ? "" : "s")}");
+                break;
+        }
+        if (step.Errors > 0)
+            parts.Add($"{step.Errors} error{(step.Errors == 1 ? "" : "s")}");
+        if (elapsed is not null)
+            parts.Add(elapsed);
+        else if (step.Status == "cancelled")
+            parts.Add("stopped");
+        return parts.Count == 0 ? step.Status : string.Join(" · ", parts);
+    }
+}

@@ -1,3 +1,4 @@
+using AdbSync.Core.Services.Common;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -36,7 +37,7 @@ public sealed class ExcludeMatcher : IExcludeMatcher
 
     public bool IsExcluded(string relativePath, bool isDirectory)
     {
-        var path = relativePath.Replace('\\', '/').Trim('/');
+        var path = RelativePathUtil.ToForwardSlashes(relativePath).Trim('/');
 
         if (_segmentPatterns.Count > 0 || _segmentGlobPatterns.Length > 0)
         {

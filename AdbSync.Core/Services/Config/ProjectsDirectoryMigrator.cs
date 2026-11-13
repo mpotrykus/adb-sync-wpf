@@ -35,18 +35,40 @@ public static class ProjectsDirectoryMigrator
     public static void Move(ProjectsMigrationPlan plan, string oldRoot, string newRoot)
     {
         Directory.CreateDirectory(newRoot);
+        // The moved jobs' manifests record the old root's id, so the id travels with the data instead of the new
+        // root getting a fresh one that would make those jobs refuse to run.
+        var oldMarker = Path.Combine(oldRoot, ProjectFolders.MarkerFileName);
+        var newMarker = Path.Combine(newRoot, ProjectFolders.MarkerFileName);
+        if (File.Exists(oldMarker) && !File.Exists(newMarker))
+            File.Copy(oldMarker, newMarker);
         foreach (var name in plan.JobFolders)
         {
             var source = Path.Combine(oldRoot, name);
             var target = Path.Combine(newRoot, name);
-            if (Path.GetPathRoot(Path.GetFullPath(source))!.Equals(
-                    Path.GetPathRoot(Path.GetFullPath(target)), StringComparison.OrdinalIgnoreCase))
+            try
             {
                 Directory.Move(source, target);
                 continue;
             }
+            catch (IOException) when (Directory.Exists(source) && !Directory.Exists(target))
+            {
+                // Across drives or mounts a move isn't possible (EXDEV on Linux, where every path shares the root "/").
+            }
 
-            CopyDirectory(source, target);
+            // Copied under a temporary name and renamed once complete, so an interrupted copy never leaves a
+            // half-filled folder under the job's name; the source is only deleted after that.
+            var partial = $"{target}.partial-{Guid.NewGuid():N}";
+            try
+            {
+                CopyDirectory(source, partial);
+                Directory.Move(partial, target);
+            }
+            catch
+            {
+                if (Directory.Exists(partial))
+                    DirectoryUtil.DeleteRecursive(partial);
+                throw;
+            }
             DirectoryUtil.DeleteRecursive(source);
         }
     }

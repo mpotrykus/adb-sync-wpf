@@ -1,0 +1,98 @@
+@inject ApiClient Api
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">Choose a folder on @DeviceName</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudTextField @bind-Value="_typed" Immediate="true" Label="Path" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mono-input mb-2"
+                      Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.ArrowForward" OnAdornmentClick="() => GoAsync(_typed)"
+                      OnKeyDown="OnKey" />
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-2">@_error</MudAlert>
+        }
+        @if (_loading)
+        {
+            <MudProgressLinear Indeterminate="true" />
+        }
+        <div style="height:340px;overflow:auto">
+            @if (_listing is { } listing)
+            {
+                <MudList T="string" Dense="true">
+                    @if (listing.Parent is { } parent)
+                    {
+                        <MudListItem Icon="@Icons.Material.Filled.ArrowUpward" OnClick="() => GoAsync(parent)">..</MudListItem>
+                    }
+                    @foreach (var entry in listing.Entries.Where(e => e.IsDirectory))
+                    {
+                        var child = Join(listing.Path, entry.Name);
+                        <MudListItem Icon="@Icons.Material.Filled.Folder" OnClick="() => GoAsync(child)">@entry.Name</MudListItem>
+                    }
+                </MudList>
+                var files = listing.Entries.Count(e => !e.IsDirectory);
+                @if (files > 0)
+                {
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary pa-2">@files file@(files == 1 ? "" : "s") in this folder</MudText>
+                }
+            }
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => MudDialog.Cancel()">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(_listing is null)"
+                   OnClick="() => MudDialog.Close(DialogResult.Ok(_listing!.Path))">Use this folder</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private const string DefaultRoot = "/storage/emulated/0";
+
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public Guid DeviceId { get; set; }
+    [Parameter] public string DeviceName { get; set; } = "";
+    [Parameter] public string? StartPath { get; set; }
+
+    private FolderListingDto? _listing;
+    private string _typed = "";
+    private string? _error;
+    private bool _loading;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var start = string.IsNullOrWhiteSpace(StartPath) || !StartPath.StartsWith('/') ? DefaultRoot : StartPath.Trim();
+        if (!await GoAsync(start) && start != DefaultRoot)
+            await GoAsync(DefaultRoot);
+    }
+
+    private static string Join(string folder, string name) => folder == "/" ? "/" + name : folder + "/" + name;
+
+    private async Task OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await GoAsync(_typed);
+    }
+
+    private async Task<bool> GoAsync(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return false;
+        _loading = true;
+        _error = null;
+        try
+        {
+            _listing = await Api.GetAsync<FolderListingDto>($"devices/{DeviceId}/browse?path={Uri.EscapeDataString(path.Trim())}");
+            _typed = _listing.Path;
+            return true;
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException)
+        {
+            if (!ex.IsSignedOut()) _error = ex.Message;
+            return false;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

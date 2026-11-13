@@ -1,0 +1,85 @@
+@inject ApiClient Api
+
+@if (string.IsNullOrEmpty(Package))
+{
+    <span class="app-icon generic"><MudIcon Icon="@Icons.Material.Filled.Sync" /></span>
+}
+else if (_src is not null)
+{
+    <img class="app-icon" src="@_src" alt="@Package" title="@Package" />
+}
+else
+{
+    <span class="app-icon" style="@TileStyle" title="@Package">@Initial</span>
+}
+
+@code {
+    private static readonly Dictionary<string, string?> Resolved = [];
+    private static readonly Dictionary<string, Task<string?>> Pending = [];
+    private static readonly HashSet<string> GenericSegments = ["app", "android", "mobile", "free", "pro", "lite", "client"];
+
+    [Parameter, EditorRequired] public Guid JobId { get; set; }
+    [Parameter] public string? Package { get; set; }
+
+    private string? _src;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _src = null;
+        if (string.IsNullOrEmpty(Package))
+            return;
+        Task<string?> load;
+        lock (Resolved)
+        {
+            if (Resolved.TryGetValue(Package, out var known))
+            {
+                _src = known;
+                return;
+            }
+            if (!Pending.TryGetValue(Package, out load!))
+                Pending[Package] = load = FetchAsync(Api, JobId, Package);
+        }
+        _src = await load;
+    }
+
+    private static async Task<string?> FetchAsync(ApiClient api, Guid jobId, string package)
+    {
+        string? source = null;
+        try
+        {
+            var bytes = await api.GetBytesAsync($"jobs/{jobId}/app-icon");
+            source = "data:image/png;base64," + Convert.ToBase64String(bytes);
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException)
+        {
+        }
+        lock (Resolved)
+        {
+            Resolved[package] = source;
+            Pending.Remove(package);
+        }
+        return source;
+    }
+
+    private string Initial
+    {
+        get
+        {
+            var segments = Package!.Split('.', StringSplitOptions.RemoveEmptyEntries);
+            var name = segments.LastOrDefault(s => !GenericSegments.Contains(s.ToLowerInvariant())) ?? segments.LastOrDefault() ?? "?";
+            return name.Length == 0 ? "?" : name[..1].ToUpperInvariant();
+        }
+    }
+
+    private string TileStyle
+    {
+        get
+        {
+            var hash = 17;
+            foreach (var c in Package!)
+                hash = unchecked(hash * 31 + c);
+            var hue = Math.Abs(hash) % 360;
+            return $"background:linear-gradient(135deg,hsl({hue} 68% 56%),hsl({(hue + 45) % 360} 70% 38%))";
+        }
+    }
+}

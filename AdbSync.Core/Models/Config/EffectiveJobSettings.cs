@@ -19,7 +19,9 @@ public sealed record EffectiveJobSettings(
     int PushSafetyMinimumPercent,
     ConflictPolicy ConflictPolicy = ConflictPolicy.NewestWins,
     int FileDetailRunsKept = 10,
-    int RollbackPointsToKeep = 3)
+    int RollbackPointsToKeep = 3,
+    bool IncrementalPull = false,
+    int FullPullIntervalDays = 7)
 {
     public TransferPolicy ToTransferPolicy() => new(RetryMaxAttempts, RetryBackoff, BandwidthThrottleKBps);
 }
@@ -43,5 +45,7 @@ public static class SyncJobConfigExtensions
         PushSafetyMinimumPercent: job.PushSafetyMinimumPercent ?? global.PushSafetyMinimumPercent,
         ConflictPolicy: job.ConflictPolicy ?? global.ConflictPolicy,
         FileDetailRunsKept: job.FileDetailRunsKept ?? global.FileDetailRunsKept,
-        RollbackPointsToKeep: job.RollbackPointsToKeep ?? global.RollbackPointsToKeep);
+        RollbackPointsToKeep: job.RollbackPointsToKeep ?? global.RollbackPointsToKeep,
+        IncrementalPull: job.IncrementalPull ?? global.IncrementalPull,
+        FullPullIntervalDays: job.FullPullIntervalDays ?? global.FullPullIntervalDays);
 }

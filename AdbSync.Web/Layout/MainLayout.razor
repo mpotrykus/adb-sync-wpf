@@ -1,0 +1,295 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject Session Session
+@inject StatusStore Status
+@inject ApiClient Api
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+@inject IDialogService Dialogs
+@inject IJSRuntime JS
+@inject ThemeState Theme
+
+<MudThemeProvider @ref="_themeProvider" Theme="_theme" IsDarkMode="Theme.Dark" />
+<MudPopoverProvider />
+<MudDialogProvider CloseOnEscapeKey="true" />
+<MudSnackbarProvider />
+
+@if (!Session.Loaded)
+{
+    <div class="boot"><SyncMark Size="64" /></div>
+}
+else if (!Session.SignedIn)
+{
+    @if (OnSignInPage)
+    {
+        <MudLayout>
+            <MudMainContent>@Body</MudMainContent>
+        </MudLayout>
+    }
+}
+else
+{
+    <MudLayout>
+        <MudAppBar Elevation="0">
+            @if (_mobile)
+            {
+                <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@(() => _drawerOpen = !_drawerOpen)" />
+            }
+            <span class="brand @(_mobile ? "ml-1" : "")"><span class="brand-slot @(_brandSync && !_brandOut ? "syncing" : "")"><span class="brand-mark"></span>@if (_brandSync) { <span class="brand-sync @(_brandOut ? "out" : "")" @ref="_brandEl"><SyncMark Size="40" /></span> }</span><MudText Typo="Typo.h6" Class="brand-text">AdbSync</MudText></span>
+            @if (Status.Snapshot?.Server.Name is { } name)
+            {
+                <MudText Typo="Typo.caption" Class="ml-3 mt-1 d-none d-sm-flex" Style="opacity:.8">@name</MudText>
+            }
+            <MudSpacer />
+            <MudMenu Icon="@Icons.Material.Filled.AccountCircle" Color="Color.Inherit" AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
+                <MudMenuItem Icon="@Icons.Material.Filled.QrCode2" OnClick="PairClientAsync">Pair another client</MudMenuItem>
+                <MudMenuItem Icon="@Icons.Material.Filled.Logout" OnClick="SignOutAsync">Sign out</MudMenuItem>
+            </MudMenu>
+        </MudAppBar>
+        <MudDrawer @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="0" Variant="@(_mobile ? DrawerVariant.Temporary : DrawerVariant.Mini)" OpenMiniOnHover="true">
+            <MudNavMenu Class="mt-2">
+                <MudNavLink Href="" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Sync">Jobs</MudNavLink>
+                <MudNavLink Href="runs" Icon="@Icons.Material.Filled.History">Run history</MudNavLink>
+                <MudNavLink Href="conflicts" Icon="@Icons.Material.Filled.CallSplit">Conflicts</MudNavLink>
+                <MudNavLink Href="devices" Icon="@Icons.Material.Filled.PhoneAndroid">Devices</MudNavLink>
+            </MudNavMenu>
+            <MudNavMenu Class="@(_mobile ? "drawer-bottom drawer-bottom-mobile" : "drawer-bottom")">
+                <MudNavLink Href="settings" Icon="@Icons.Material.Filled.Settings">Settings</MudNavLink>
+            </MudNavMenu>
+            @if (!_mobile)
+            {
+                <div class="drawer-toggle">
+                    <MudIconButton Icon="@(_drawerOpen ? Icons.Material.Filled.ChevronLeft : Icons.Material.Filled.ChevronRight)"
+                                   Size="Size.Small" OnClick="@(() => _drawerOpen = !_drawerOpen)" />
+                </div>
+            }
+        </MudDrawer>
+        <MudMainContent>
+            @if (Status.Error is { } error)
+            {
+                <MudAlert Severity="Severity.Warning" Square="true" Dense="true">Can't reach the server: @error</MudAlert>
+            }
+            <MudContainer MaxWidth="MaxWidth.Large" Class="py-6 page-container">
+                @Body
+            </MudContainer>
+        </MudMainContent>
+    </MudLayout>
+}
+
+@code {
+    private MudThemeProvider? _themeProvider;
+    private bool _drawerOpen;
+    private bool _mobile;
+    private bool _watching;
+    private bool _brandSync;
+    private bool _brandOut;
+    private bool _brandSettling;
+    private int _brandGen;
+    private ElementReference _brandEl;
+
+    private readonly MudTheme _theme = new()
+    {
+        PaletteLight = new PaletteLight
+        {
+            Primary = "#6c63ff",
+            Secondary = "#e76f51",
+            AppbarBackground = "#4c3fd1",
+            Background = "#eef0fb",
+            DrawerBackground = "#ffffff",
+        },
+        PaletteDark = new PaletteDark
+        {
+            Primary = "#6c63ff",
+            Secondary = "#9c97b3",
+            Tertiary = "#7c5cff",
+            Success = "#5bd98a",
+            Warning = "#ffb454",
+            Error = "#ff6b6b",
+            Info = "#4c6fff",
+            TextPrimary = "#f5f3fa",
+            TextSecondary = "#9c97b3",
+            TextDisabled = "#5c5870",
+            ActionDefault = "#9c97b3",
+            AppbarBackground = "#00000000",
+            AppbarText = "#f5f3fa",
+            Background = "#0d0a18",
+            BackgroundGray = "#0d0a18",
+            Surface = "#271f38",
+            DrawerBackground = "#00000000",
+            DrawerText = "#f5f3fa",
+            DrawerIcon = "#9c97b3",
+            LinesDefault = "rgba(255,255,255,0.09)",
+            LinesInputs = "rgba(255,255,255,0.15)",
+            Divider = "rgba(255,255,255,0.09)",
+            DividerLight = "rgba(255,255,255,0.06)",
+            TableLines = "rgba(255,255,255,0.09)",
+            OverlayDark = "rgba(0,0,0,0.55)",
+        },
+        Typography = new Typography
+        {
+            Default = new DefaultTypography { FontFamily = ["IBM Plex Sans", "Segoe UI", "system-ui", "sans-serif"] },
+        },
+        LayoutProperties = new LayoutProperties { DefaultBorderRadius = "10px" },
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        Session.Changed += OnSessionChanged;
+        Status.Changed += OnStatusChanged;
+        Theme.Changed += OnStatusChanged;
+        Navigation.LocationChanged += OnLocationChanged;
+        await Session.LoadAsync();
+        EnsureRoute();
+        UpdateWatch();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _themeProvider is null)
+            return;
+        await Theme.LoadAsync();
+        try
+        {
+            _mobile = await JS.InvokeAsync<int>("eval", "window.innerWidth") < 960;
+        }
+        catch (JSException)
+        {
+        }
+        StateHasChanged();
+    }
+
+    private bool OnSignInPage => Navigation.ToBaseRelativePath(Navigation.Uri).StartsWith("signin", StringComparison.OrdinalIgnoreCase);
+
+    private void EnsureRoute()
+    {
+        if (!Session.SignedIn && !OnSignInPage)
+            Navigation.NavigateTo("signin");
+    }
+
+    private void UpdateWatch()
+    {
+        if (Session.SignedIn && !_watching)
+        {
+            Status.Watch();
+            _watching = true;
+        }
+        else if (!Session.SignedIn && _watching)
+        {
+            Status.Unwatch();
+            _watching = false;
+        }
+    }
+
+    private void OnSessionChanged()
+    {
+        UpdateWatch();
+        EnsureRoute();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnStatusChanged() => InvokeAsync(() =>
+    {
+        UpdateBrand();
+        StateHasChanged();
+    });
+
+    private bool AnyRunning => Status.Snapshot?.Jobs.Any(j => j.State != "idle") == true;
+
+    private void UpdateBrand()
+    {
+        if (AnyRunning)
+        {
+            if (_brandSettling)
+            {
+                _brandGen++;
+                _brandSettling = false;
+                _ = ResumeBrandAsync();
+            }
+            _brandSync = true;
+            _brandOut = false;
+        }
+        else if (_brandSync && !_brandSettling)
+        {
+            _ = SettleBrandAsync();
+        }
+    }
+
+    private async Task ResumeBrandAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("adbsyncResumeMark", _brandEl);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException or InvalidOperationException)
+        {
+        }
+    }
+
+    private async Task SettleBrandAsync()
+    {
+        _brandSettling = true;
+        var gen = ++_brandGen;
+        try
+        {
+            await JS.InvokeVoidAsync("adbsyncSettleMark", _brandEl);
+            if (gen != _brandGen)
+                return;
+            _brandOut = true;
+            await InvokeAsync(StateHasChanged);
+            await Task.Delay(500);
+            if (gen != _brandGen)
+                return;
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException or InvalidOperationException)
+        {
+        }
+        _brandSync = false;
+        _brandOut = false;
+        _brandSettling = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        if (!_drawerOpen)
+            return;
+        try
+        {
+            _mobile = await JS.InvokeAsync<int>("eval", "window.innerWidth") < 960;
+            if (_mobile)
+                _drawerOpen = false;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or ObjectDisposedException)
+        {
+        }
+    }
+
+
+    private async Task PairClientAsync() =>
+        await Dialogs.ShowAsync<PairingCodeDialog>("Pair another client", new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true });
+
+    private async Task SignOutAsync()
+    {
+        try
+        {
+            var clients = await Api.GetAsync<List<ClientResponse>>("auth/clients");
+            if (clients.FirstOrDefault(c => c.Current) is { } me)
+                await Api.DeleteAsync($"auth/clients/{me.Id}");
+        }
+        catch (Exception ex) when (ex is ApiException or HttpRequestException)
+        {
+        }
+        await Session.SignOutAsync();
+    }
+
+    public void Dispose()
+    {
+        Session.Changed -= OnSessionChanged;
+        Status.Changed -= OnStatusChanged;
+        Theme.Changed -= OnStatusChanged;
+        Navigation.LocationChanged -= OnLocationChanged;
+        if (_watching)
+            Status.Unwatch();
+    }
+}
