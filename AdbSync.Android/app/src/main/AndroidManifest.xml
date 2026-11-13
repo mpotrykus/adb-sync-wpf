@@ -54,7 +54,8 @@
         </activity>
 
         <activity
-            android:name=".ConflictsActivity"
+            android:name=".JobEditActivity"
+            android:windowSoftInputMode="adjustResize"
             android:exported="false" />
 
         <!-- DUMP is held by the adb shell uid but not grantable to third-party apps,

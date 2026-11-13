@@ -34,6 +34,11 @@ data class RemoteJob(
     val appPackage: String?,
     val staleDevices: List<Pair<String, String>>,
     val pendingConflicts: Int = 0,
+    val lastRunId: String? = null,
+    val lastStatus: String? = null,
+    val lastMessage: String? = null,
+    val folderProblem: String? = null,
+    val canForcePush: Boolean = false,
 ) {
     val isPushing get() = phase == "Push" || devices.any { it.second == "Push" }
 
@@ -76,6 +81,12 @@ data class RemoteJob(
                 appPackage = o.optStringOrNull("appPackage"),
                 staleDevices = stale,
                 pendingConflicts = o.optInt("pendingConflicts"),
+                lastRunId = lastRun?.optStringOrNull("runId"),
+                lastStatus = status,
+                lastMessage = lastRun?.optStringOrNull("message"),
+                folderProblem = o.optJSONObject("availability")?.takeIf { it.optString("projectFolder", "ok") != "ok" }
+                    ?.let { it.optStringOrNull("detail") ?: "Folder unavailable" },
+                canForcePush = o.optBoolean("canForcePush"),
             )
         }
     }
@@ -194,14 +205,14 @@ enum class ConflictChoice(val wire: String) { PC("master"), DEVICE("device"), BO
 
 data class CloseAndSyncResult(val result: String, val failed: Boolean, val stillOutOfSync: Boolean, val reason: String?)
 
-private fun JSONObject.optStringOrNull(key: String): String? = if (!has(key) || isNull(key)) null else optString(key)
+internal fun JSONObject.optStringOrNull(key: String): String? = if (!has(key) || isNull(key)) null else optString(key)
 
-private fun String.capitalized() = replaceFirstChar { it.uppercaseChar() }
+internal fun String.capitalized() = replaceFirstChar { it.uppercaseChar() }
 
 class HttpStatusException(val code: Int) : Exception("HTTP $code")
 
 /** Job and device ids by name and back. The app works with names; the v1 API works with ids. */
-private class Directory(val jobIds: Map<String, String>, val deviceIds: Map<String, String>, val fetchedAt: Long) {
+internal class Directory(val jobIds: Map<String, String>, val deviceIds: Map<String, String>, val fetchedAt: Long) {
     val jobNames = jobIds.entries.associate { (name, id) -> id to name }
     val deviceNames = deviceIds.entries.associate { (name, id) -> id to name }
 }
@@ -212,6 +223,8 @@ class PcClient(private val config: PcConfig) {
     fun run(job: String): Int = postJson("/api/v1/jobs/${jobId(job)}/runs", JSONObject().put("mode", "normal")).first
 
     fun stop(job: String): Int = postJson("/api/v1/jobs/${jobId(job)}/stop", null).first
+
+    fun forcePush(job: String): Int = postJson("/api/v1/jobs/${jobId(job)}/runs", JSONObject().put("mode", "forcePush")).first
 
     fun dryRun(job: String): Int = postJson("/api/v1/jobs/${jobId(job)}/runs", JSONObject().put("mode", "dryRun")).first
 
@@ -320,10 +333,10 @@ class PcClient(private val config: PcConfig) {
         }
     }
 
-    private fun postJson(path: String, body: JSONObject?, readTimeoutMs: Int = 10_000): Pair<Int, String> =
+    internal fun postJson(path: String, body: JSONObject?, readTimeoutMs: Int = 10_000): Pair<Int, String> =
         send("POST", path, body, readTimeoutMs = readTimeoutMs)
 
-    private fun send(
+    internal fun send(
         method: String, path: String, body: JSONObject?, contentType: String = "application/json", readTimeoutMs: Int = 10_000,
     ): Pair<Int, String> {
         val bytes = body?.toString()?.toByteArray(Charsets.UTF_8)
@@ -352,7 +365,12 @@ class PcClient(private val config: PcConfig) {
     /** The title and detail of a problem+json body, or the text as it came. */
     private fun problemText(text: String): String = try {
         val o = JSONObject(text)
-        listOfNotNull(o.optStringOrNull("title"), o.optStringOrNull("detail")).distinct().joinToString(" ").ifBlank { text }
+        val fields = o.optJSONObject("errors")?.let { errors ->
+            errors.keys().asSequence().mapNotNull { key ->
+                errors.optJSONArray(key)?.optString(0)?.takeIf { it.isNotEmpty() }
+            }.toList()
+        }.orEmpty()
+        listOfNotNull(o.optStringOrNull("title"), o.optStringOrNull("detail")).plus(fields).distinct().joinToString(" ").ifBlank { text }
     } catch (_: Exception) {
         text
     }
@@ -394,7 +412,7 @@ class PcClient(private val config: PcConfig) {
         return status.optStringOrNull("activeRunId") ?: status.optJSONObject("lastRun")?.optStringOrNull("runId")
     }
 
-    private fun getText(path: String, connectTimeoutMs: Int = 5_000, readTimeoutMs: Int = 10_000): String {
+    internal fun getText(path: String, connectTimeoutMs: Int = 5_000, readTimeoutMs: Int = 10_000): String {
         val conn = open(path, readTimeoutMs, connectTimeoutMs)
         try {
             check(conn)
@@ -404,11 +422,11 @@ class PcClient(private val config: PcConfig) {
         }
     }
 
-    private fun jobId(name: String) = encode(directory().jobIds[name] ?: directory(refresh = true).jobIds[name] ?: throw HttpStatusException(404))
+    internal fun jobId(name: String) = encode(directory().jobIds[name] ?: directory(refresh = true).jobIds[name] ?: throw HttpStatusException(404))
 
-    private fun deviceId(name: String) = encode(directory().deviceIds[name] ?: directory(refresh = true).deviceIds[name] ?: throw HttpStatusException(404))
+    internal fun deviceId(name: String) = encode(directory().deviceIds[name] ?: directory(refresh = true).deviceIds[name] ?: throw HttpStatusException(404))
 
-    private fun directory(refresh: Boolean = false): Directory {
+    internal fun directory(refresh: Boolean = false): Directory {
         val cached = directories[config.url]
         if (!refresh && cached != null && System.currentTimeMillis() - cached.fetchedAt < DIRECTORY_TTL_MS) return cached
         val jobs = JSONArray(getText("/api/v1/jobs"))
@@ -489,7 +507,7 @@ class PcClient(private val config: PcConfig) {
         private val directories = mutableMapOf<String, Directory>()
         private val factories = mutableMapOf<String, SSLSocketFactory>()
 
-        private fun encode(s: String) = URLEncoder.encode(s, "UTF-8").replace("+", "%20")
+        internal fun encode(s: String) = URLEncoder.encode(s, "UTF-8").replace("+", "%20")
 
         /** A connection to [path] under [url] that only trusts the certificate with [certSha256]. */
         fun openPinned(url: String, path: String, certSha256: String, readTimeoutMs: Int, connectTimeoutMs: Int = 5_000): HttpsURLConnection =

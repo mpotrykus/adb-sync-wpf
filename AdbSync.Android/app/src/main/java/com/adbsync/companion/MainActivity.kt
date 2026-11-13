@@ -41,12 +41,18 @@ import com.adbsync.companion.Ui.statTile
 import com.adbsync.companion.Ui.syncChip
 import com.adbsync.companion.Ui.statStrip
 import com.adbsync.companion.Ui.phaseGraph
-import com.adbsync.companion.Ui.infoRow
+import com.adbsync.companion.Ui.infoCell
+import com.adbsync.companion.Ui.infoPanel
+import com.adbsync.companion.Ui.iconButton
+import com.adbsync.companion.Ui.pageHead
 import com.adbsync.companion.Ui.appIcon
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import com.adbsync.companion.Ui.header
 import com.adbsync.companion.Ui.toggle
+import com.adbsync.companion.Ui.page
+import com.adbsync.companion.Ui.spacer
+import java.util.concurrent.ExecutorService
 import android.text.TextUtils
 import android.text.format.DateUtils
 import android.text.format.Formatter
@@ -72,8 +78,22 @@ class MainActivity : Activity() {
     private lateinit var setupCard: LinearLayout
     private lateinit var statsContainer: LinearLayout
     private lateinit var jobsPage: View
-    private lateinit var devicePage: View
+    private lateinit var settingsPage: View
+    private lateinit var jobsToolbar: LinearLayout
+    private lateinit var history: HistoryScreen
+    private lateinit var conflictsScreen: ConflictsScreen
+    private lateinit var devicesScreen: DevicesScreen
+    private lateinit var serverSettings: SettingsScreen
+    private lateinit var screens: List<Screen?>
+    private lateinit var allPages: List<View>
     private lateinit var tabBar: Ui.TabBar
+    private lateinit var brandMark: Ui.BrandMark
+    private var schedulerPaused: Boolean? = null
+    private var jobMeta: Map<String, JobMeta> = emptyMap()
+    private var deviceStates: Map<String, String> = emptyMap()
+    private var knownRunning = emptySet<String>()
+    private var knownConflicts = -1
+    internal val pool: ExecutorService = Executors.newCachedThreadPool()
     private var currentTab = 0
     private lateinit var wifiDebugStatus: LinearLayout
     private lateinit var autoEnableSwitch: Switch
@@ -98,15 +118,6 @@ class MainActivity : Activity() {
             0, WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS,
         )
 
-        fun page(vararg views: View) = ScrollView(this).apply {
-            isVerticalScrollBarEnabled = false
-            addView(LinearLayout(context).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(dp(16), dp(if (resources.configuration.screenWidthDp > resources.configuration.screenHeightDp) 10 else 16), dp(16), dp(24))
-                views.forEach { addView(it) }
-            })
-        }
-
         pcStatus = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(2), 0, dp(6))
@@ -117,11 +128,17 @@ class MainActivity : Activity() {
         }
         statsContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(14), 0, 0)
+            setPadding(0, dp(12), 0, 0)
         }
         jobsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val landscape = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-        jobsPage = page(*listOfNotNull(if (landscape) null else title("Jobs"), if (landscape) null else pcStatus).toTypedArray(), conflictsBanner, statsContainer, jobsContainer)
+        jobsToolbar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(12))
+        }
+        jobsPage = page(jobsToolbar, *listOfNotNull(if (landscape) null else pcStatus).toTypedArray(), conflictsBanner, statsContainer, jobsContainer)
+        renderToolbar()
 
         wifiDebugStatus = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         autoEnableSwitch = toggle("Turn back on when Wi-Fi connects").apply {
@@ -133,9 +150,14 @@ class MainActivity : Activity() {
         serviceStatus = caption()
         setupCard = card()
         browserCard = card()
-        devicePage = page(
-            *listOfNotNull(if (landscape) null else title("Device")).toTypedArray(),
-            subSectionLabel("Wireless debugging"),
+        history = HistoryScreen(this)
+        conflictsScreen = ConflictsScreen(this)
+        devicesScreen = DevicesScreen(this)
+        serverSettings = SettingsScreen(this)
+        settingsPage = page(
+            pageHead("Settings", iconButton(R.drawable.ic_save, "Save server settings", filled = true) { serverSettings.saveNow() }),
+            subSectionLabel("This phone"),
+            sectionLabel("Wireless debugging").apply { setPadding(dp(4), 0, 0, dp(8)) },
             card().apply {
                 addView(wifiDebugStatus)
                 addView(divider())
@@ -153,16 +175,23 @@ class MainActivity : Activity() {
                 addView(View(this@MainActivity).apply { minimumHeight = dp(10) })
                 addView(button("Simulate a 10s sync", fill = true) { simulateSync() })
             },
+            subSectionLabel("Server"),
+            serverSettings.view,
         )
+        screens = listOf(null, history, conflictsScreen, devicesScreen, serverSettings)
 
-        val appBar = header(button("Web UI", fill = false) { openWebUi() }.apply {
-            (layoutParams as LinearLayout.LayoutParams).marginEnd = 0
-        })
-        val pages = FrameLayout(this).apply {
-            addView(jobsPage)
-            addView(devicePage)
-        }
-        tabBar = Ui.TabBar(this, listOf(R.drawable.ic_sync to "Jobs", R.drawable.ic_phone to "Device"), rail = landscape) { showTab(it) }
+        brandMark = Ui.BrandMark(this)
+        val appBar = header(iconButton(R.drawable.ic_public, "Open web UI") { openWebUi() }, brandMark)
+        allPages = listOf(jobsPage, history.view, conflictsScreen.view, devicesScreen.view, settingsPage)
+        val pages = FrameLayout(this).apply { allPages.forEach { addView(it) } }
+        tabBar = Ui.TabBar(
+            this,
+            listOf(
+                R.drawable.ic_sync to "Jobs", R.drawable.ic_history to "History", R.drawable.ic_conflict to "Conflicts",
+                R.drawable.ic_phone to "Devices", R.drawable.ic_settings to "Settings",
+            ),
+            rail = landscape,
+        ) { showTab(it) }
         if (landscape) {
             pcStatus.setPadding(dp(12), 0, dp(12), 0)
             appBar.addView(pcStatus, 2)
@@ -211,11 +240,34 @@ class MainActivity : Activity() {
         outState.putInt(STATE_TAB, currentTab)
     }
 
-    private fun showTab(index: Int) {
+    internal fun showTab(index: Int) {
+        if (::screens.isInitialized) screens.getOrNull(currentTab)?.hide()
         currentTab = index
-        jobsPage.visibility = if (index == 0) View.VISIBLE else View.GONE
-        devicePage.visibility = if (index == 1) View.VISIBLE else View.GONE
+        allPages.forEachIndexed { i, page -> page.visibility = if (i == index) View.VISIBLE else View.GONE }
         tabBar.select(index)
+        screens.getOrNull(index)?.show()
+    }
+
+    internal fun <T> async(work: (PcClient) -> T, done: (Result<T>) -> Unit) {
+        val config = PcConfig.load(this)
+        if (config == null) {
+            done(Result.failure(NotConnectedException()))
+            return
+        }
+        pool.execute {
+            val result = runCatching { work(PcClient(config)) }
+            ui { done(result) }
+        }
+    }
+
+    internal fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+
+    internal fun ui(block: () -> Unit) {
+        handler.post { if (!isDestroyed) block() }
+    }
+
+    internal fun setConflictCount(count: Int) {
+        tabBar.setBadge(2, count > 0)
     }
 
     override fun onResume() {
@@ -224,12 +276,16 @@ class MainActivity : Activity() {
         PcConfig.prefs(this).registerOnSharedPreferenceChangeListener(prefsListener)
         refreshSetup()
         startFeed()
+        loadScheduler()
+        loadMeta()
+        screens.getOrNull(currentTab)?.show()
         CompanionJobService.armWatch(this)
         CompanionJobService.scheduleEnable(this)
     }
 
     override fun onPause() {
         resumed = false
+        screens.getOrNull(currentTab)?.hide()
         PcConfig.prefs(this).unregisterOnSharedPreferenceChangeListener(prefsListener)
         stopFeed()
         super.onPause()
@@ -237,6 +293,8 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         io.shutdownNow()
+        pool.shutdownNow()
+        conflictsScreen.shutdown()
         super.onDestroy()
     }
 
@@ -351,6 +409,7 @@ class MainActivity : Activity() {
                 jobs.forEach { this@MainActivity.jobs[it.name] = it }
                 setPcStatus("Connected to $pc", Ui.SUCCESS)
                 renderJobs()
+                loadMeta()
             }
             override fun onJob(job: RemoteJob) = ui {
                 if (!active.get()) return@ui
@@ -417,12 +476,31 @@ class MainActivity : Activity() {
                 setPadding(0, dp(4), 0, dp(10))
             })
             addView(button("Resolve", ButtonKind.Primary, fill = true) {
-                startActivity(Intent(this@MainActivity, ConflictsActivity::class.java))
+                showTab(2)
             })
         })
     }
 
+    private fun syncSideScreens() {
+        val running = jobs.values.filter { it.running }.map { it.name }.toSet()
+        brandMark.setSyncing(running.isNotEmpty())
+        if (running != knownRunning) {
+            val firstTime = knownRunning.isEmpty() && knownConflicts < 0
+            knownRunning = running
+            if (!firstTime) history.jobsChanged()
+        }
+        val conflicts = jobs.values.sumOf { it.pendingConflicts }
+        setConflictCount(conflicts)
+        if (conflicts != knownConflicts) {
+            val firstTime = knownConflicts < 0
+            knownConflicts = conflicts
+            if (!firstTime) conflictsScreen.conflictsChanged()
+        }
+    }
+
     private fun renderJobs() {
+        syncSideScreens()
+        renderToolbar()
         renderConflictsBanner()
         renderStats()
         jobsContainer.removeAllViews()
@@ -471,7 +549,7 @@ class MainActivity : Activity() {
             statTile("$running", "Running", Ui.ACCENT_FROM),
             statTile("${all.count { it.enabled }}/${all.size}", "Enabled", Ui.SUCCESS),
             statTile("$conflicts", "Conflicts", Ui.WARNING) {
-                if (conflicts > 0) startActivity(Intent(this, ConflictsActivity::class.java))
+                if (conflicts > 0) showTab(2)
             },
             statTile("$failed", "Failed", Ui.DANGER),
             statTile(nextText, "Next run", 0xFF38BDF8.toInt()),
@@ -530,34 +608,35 @@ class MainActivity : Activity() {
             if (job.pendingConflicts > 0) {
                 chips.addView(chip(
                     "${job.pendingConflicts} conflict${if (job.pendingConflicts == 1) "" else "s"}", Ui.WARNING,
-                ) { startActivity(Intent(this@MainActivity, ConflictsActivity::class.java)) })
+                ) { showTab(2) })
             }
+            if (job.folderProblem != null) chips.addView(chip("Folder unavailable", Ui.DANGER))
             if (job.hasCheckpoint) chips.addView(chip("Resumable", CHECKPOINT_BLUE))
             addView(chips)
 
-            if (job.running) {
-                addView(phaseGraph(phaseSteps(job)))
-                if (job.devices.isNotEmpty()) {
-                    addView(infoRow("Devices", LinearLayout(this@MainActivity).apply {
-                        orientation = LinearLayout.VERTICAL
-                        job.devices.forEach { (device, phase) ->
-                            addView(body("$device · ${Protocol.phaseLabel(phase)}", Ui.TEXT_PRIMARY, 13f))
-                        }
-                    }))
-                }
-            }
+            addView(phaseGraph(phaseSteps(job)).apply { if (!job.running) visibility = View.INVISIBLE })
 
             addView(View(this@MainActivity).apply { minimumHeight = dp(8) })
             val last = job.lastResultAt?.let {
                 DateUtils.getRelativeTimeSpanString(it.toInstant().toEpochMilli(), System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS).toString()
             }
-            addView(infoRow("Last run", body(
+            val lastCell = infoCell("Last run", body(
                 if (job.lastResult == null) "Never" else job.lastResult + (last?.let { " · $it" } ?: ""),
-                if (job.lastResult == null) Ui.TEXT_PRIMARY else Ui.resultColor(job.lastResult, job.lastFailed), 13f,
+                if (job.lastResult == null) Ui.TEXT_PRIMARY else Ui.resultColor(job.lastResult, job.lastFailed), 14f,
+            )).apply {
+                val runId = job.lastRunId
+                if (runId != null) {
+                    isClickable = true
+                    setOnClickListener { openRunDetail(job.name, "${job.name} \u00b7 last run", runId) }
+                }
+            }
+            addView(infoPanel(listOf(
+                lastCell,
+                infoCell("Devices", deviceRows(job)),
+                infoCell("Trigger", body(triggerText(job), Ui.TEXT_PRIMARY, 14f)),
             )))
-            addView(infoRow("Next run", body(nextRunText(job), Ui.TEXT_PRIMARY, 13f)))
-            job.staleDevices.forEach { (device, reason) ->
-                addView(body("$device is out of sync: $reason", Ui.WARNING, 12f).apply { setPadding(0, dp(6), 0, 0) })
+            if (job.lastMessage != null && (job.lastFailed || job.lastStatus == "skipped" || job.lastStatus == "cancelled")) {
+                addView(body(job.lastMessage, Ui.WARNING, 12f).apply { setPadding(0, dp(6), 0, 0) })
             }
             if (job.hasCheckpoint && !job.running) {
                 job.checkpointSummary?.let { summary ->
@@ -567,20 +646,21 @@ class MainActivity : Activity() {
 
             val buttons = LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
                 setPadding(0, dp(12), 0, 0)
             }
             if (job.running) {
-                buttons.addView(button("Stop", ButtonKind.Danger) { confirmStop(job) })
+                buttons.addView(button("Stop", ButtonKind.Danger, icon = R.drawable.ic_stop) { confirmStop(job) })
+                buttons.addView(button("Watch") { openRunDetail(job.name, "${job.name} \u00b7 running", null) })
             } else {
-                buttons.addView(button("Run now", ButtonKind.Success) { act(job.name, "Run") { it.run(job.name) } })
+                buttons.addView(button("Run now", ButtonKind.Success, icon = R.drawable.ic_play) { act(job.name, "Run") { it.run(job.name) } })
             }
-            buttons.addView(button("Log") { showLog(job.name) })
-            buttons.addView(button("History") { showHistory(job.name, job.running) })
-            if (!job.running || job.hasCheckpoint) {
-                lateinit var more: View
-                more = button("⋯") { showMoreMenu(more, job) }
-                buttons.addView(more)
-            }
+            buttons.addView(View(this@MainActivity), LinearLayout.LayoutParams(0, 1, 1f))
+            if (!job.running) buttons.addView(iconButton(R.drawable.ic_edit, "Edit job") { openEditor(job.name) })
+            buttons.addView(iconButton(R.drawable.ic_history, "Run history") { history.focusJob(job.name) })
+            lateinit var more: View
+            more = iconButton(R.drawable.ic_more, "More actions") { showMoreMenu(more, job) }
+            buttons.addView(more)
             addView(buttons)
         }
     }
@@ -619,18 +699,151 @@ class MainActivity : Activity() {
         else -> job.nextRunAt.atZoneSameInstant(ZoneId.systemDefault()).format(NEXT_RUN_FORMAT)
     }
 
+    private fun deviceRows(job: RemoteJob): View = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        val bound = jobMeta[job.name]?.devices?.map { it.second } ?: job.devices.map { it.first }
+        if (bound.isEmpty()) addView(body("-", Ui.TEXT_PRIMARY, 13f))
+        bound.forEach { device ->
+            val phase = if (job.running) job.devices.firstOrNull { it.first == device }?.second else null
+            val state = deviceStates[device]
+            val color = when {
+                phase != null -> Ui.ACCENT_FROM
+                state == "connected" -> Ui.SUCCESS
+                state == "unreachable" || state == "unauthorized" -> Ui.DANGER
+                else -> 0xFF5C5870.toInt()
+            }
+            addView(statusLine(if (phase != null) "$device · ${Protocol.phaseLabel(phase)}" else device, color, Ui.TEXT_PRIMARY))
+        }
+    }
+
+    private fun triggerText(job: RemoteJob): String {
+        val schedule = jobMeta[job.name]?.schedule ?: "-"
+        val next = job.nextRunAt
+        if (!job.enabled || next == null) return schedule
+        val whenText = if (!next.isAfter(OffsetDateTime.now())) "due now" else DateUtils.getRelativeTimeSpanString(
+            next.toInstant().toEpochMilli(), System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS,
+        ).toString()
+        return "$schedule · next $whenText"
+    }
+
+    private fun loadMeta() {
+        async({ client -> client.jobMetas() to client.devices() }) { result ->
+            result.onSuccess { (metas, devices) ->
+                jobMeta = metas.associateBy { it.name }
+                deviceStates = devices.associate { it.name to it.state }
+                renderJobs()
+            }
+        }
+    }
+
     private fun showMoreMenu(anchor: View, job: RemoteJob) {
         val menu = PopupMenu(this, anchor)
-        if (!job.running) menu.menu.add(0, MENU_DRY_RUN, 0, "Dry run")
-        if (job.hasCheckpoint && !job.running) menu.menu.add(0, MENU_DISCARD, 1, "Discard checkpoint")
+        val meta = jobMeta[job.name]
+        var order = 0
+        fun add(id: Int, text: String) = menu.menu.add(0, id, order++, text)
+        if (!job.running) add(MENU_DRY_RUN, "Dry run")
+        add(MENU_LOG, "Latest log")
+        if (job.pendingConflicts > 0) add(MENU_CONFLICTS, "Resolve conflicts…")
+        if (job.appPackage != null && !job.running && meta != null) {
+            meta.devices.forEachIndexed { i, (_, name) ->
+                add(MENU_OPEN_APP + i, "Open app on $name")
+                add(MENU_CLOSE_APP + i, "Close app and sync $name")
+            }
+        }
+        if (!job.running) add(MENU_SNAPSHOT, "Take snapshot")
+        add(MENU_SNAPSHOTS, "Snapshots and rollback")
+        if (job.hasCheckpoint && !job.running) add(MENU_DISCARD, "Discard checkpoint")
+        if (job.canForcePush && !job.running) add(MENU_FORCE, "Force push (bypass safety check)")
+        if (!job.running) add(MENU_REMOVE, "Remove")
         menu.setOnMenuItemClickListener { item ->
-            when (item.itemId) {
-                MENU_DRY_RUN -> act(job.name, "Dry run") { it.dryRun(job.name) }
-                MENU_DISCARD -> confirmDiscardCheckpoint(job)
+            val id = item.itemId
+            when {
+                id == MENU_DRY_RUN -> act(job.name, "Dry run") { it.dryRun(job.name) }
+                id == MENU_LOG -> showLog(job.name)
+                id == MENU_CONFLICTS -> showTab(2)
+                id in MENU_OPEN_APP until MENU_OPEN_APP + 50 -> meta?.devices?.getOrNull(id - MENU_OPEN_APP)?.let { (deviceId, name) ->
+                    async({ c -> c.openApp(c.jobIdOf(job.name), deviceId) }) { r ->
+                        r.onSuccess { toast("Opened ${job.name} on $name") }.onFailure { toast(errorText(it)) }
+                    }
+                }
+                id in MENU_CLOSE_APP until MENU_CLOSE_APP + 50 -> meta?.devices?.getOrNull(id - MENU_CLOSE_APP)?.let { (deviceId, name) ->
+                    async({ c -> c.closeAppAndSync(c.jobIdOf(job.name), deviceId) }) { r ->
+                        r.onSuccess { toast("Closing the app on $name and syncing") }.onFailure { toast(errorText(it)) }
+                    }
+                }
+                id == MENU_SNAPSHOT -> async({ c -> c.createSnapshot(c.jobIdOf(job.name)) }) { r ->
+                    r.onSuccess { toast("Creating a snapshot of ${job.name}") }.onFailure { toast(errorText(it)) }
+                }
+                id == MENU_SNAPSHOTS -> SnapshotsDialog(this, job.name, job.running).show()
+                id == MENU_DISCARD -> confirmDiscardCheckpoint(job)
+                id == MENU_FORCE -> Dialogs.confirm(
+                    this, "Force push", "Push ${job.name} to the devices even though the safety check blocked it?", "Force push", danger = true,
+                ) { act(job.name, "Force push") { it.forcePush(job.name) } }
+                id == MENU_REMOVE -> Dialogs.confirm(
+                    this, "Remove job", "Remove ${job.name}? Its project folder is kept.", "Remove", danger = true,
+                ) {
+                    async({ c -> c.deleteJob(c.jobIdOf(job.name)) }) { r ->
+                        r.onSuccess { toast("${job.name} removed") }.onFailure { toast(errorText(it)) }
+                    }
+                }
             }
             true
         }
         menu.show()
+    }
+
+    private fun openRunDetail(jobName: String, title: String, runId: String?) {
+        val config = PcConfig.load(this) ?: return
+        RunDetailDialog(this, config, jobName, title, runId).show()
+    }
+
+    private fun openEditor(jobName: String?) {
+        if (jobName == null) {
+            startActivity(Intent(this, JobEditActivity::class.java))
+            return
+        }
+        async({ it.jobIdOf(jobName) }) { result ->
+            result.onSuccess { startActivity(Intent(this, JobEditActivity::class.java).putExtra(JobEditActivity.EXTRA_JOB_ID, it)) }
+                .onFailure { toast(errorText(it)) }
+        }
+    }
+
+    private fun renderToolbar() {
+        jobsToolbar.removeAllViews()
+        jobsToolbar.addView(title("Jobs"), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+        if (PcConfig.load(this) == null) return
+        schedulerPaused?.let { paused ->
+            jobsToolbar.addView(iconButton(
+                if (paused) R.drawable.ic_play_circle else R.drawable.ic_pause_circle,
+                if (paused) "Resume scheduler" else "Pause scheduler",
+                tint = if (paused) Ui.WARNING else Ui.TEXT_PRIMARY,
+            ) {
+                async({ it.setSchedulerPaused(!paused) }) { result ->
+                    result.onSuccess { loadScheduler() }.onFailure { toast(errorText(it)) }
+                }
+            })
+        }
+        jobsToolbar.addView(iconButton(R.drawable.ic_playlist_play, "Run all") {
+            Dialogs.confirm(this, "Run every job?", "Starts every enabled job now.", "Run all") {
+                async({ it.runAll() }) { result ->
+                    result.onSuccess { toast(if (it in 200..299) "Started" else "Run all failed (HTTP $it)") }
+                        .onFailure { toast(errorText(it)) }
+                }
+            }
+        })
+        jobsToolbar.addView(iconButton(R.drawable.ic_refresh, "Refresh") {
+            startFeed()
+            loadScheduler()
+            loadMeta()
+        })
+        jobsToolbar.addView(iconButton(R.drawable.ic_add, "New job", filled = true) { openEditor(null) })
+    }
+
+    private fun loadScheduler() {
+        async({ it.schedulerPaused() }) { result ->
+            schedulerPaused = result.getOrNull()
+            renderToolbar()
+        }
     }
 
     private fun confirmDiscardCheckpoint(job: RemoteJob) {
@@ -725,80 +938,6 @@ class MainActivity : Activity() {
                 scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
             }
         }
-    }
-
-    private fun showHistory(jobName: String, running: Boolean) {
-        val config = PcConfig.load(this) ?: return
-        io.execute {
-            val runs = try {
-                PcClient(config).history(jobName)
-            } catch (e: HttpStatusException) {
-                ui { Toast.makeText(this, "Couldn't load history (HTTP ${e.code})", Toast.LENGTH_SHORT).show() }
-                return@execute
-            } catch (e: Exception) {
-                ui { Toast.makeText(this, "Couldn't load history: ${e.javaClass.simpleName}", Toast.LENGTH_SHORT).show() }
-                return@execute
-            }
-            ui { renderHistoryDialog(jobName, runs, running) }
-        }
-    }
-
-    private fun openRunDetail(jobName: String, title: String, runId: String?) {
-        val config = PcConfig.load(this) ?: return
-        RunDetailDialog(this, config, jobName, title, runId).show()
-    }
-
-    private fun renderHistoryDialog(jobName: String, runs: List<RemoteRun>, running: Boolean) {
-        val list = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(4), dp(20), dp(8))
-        }
-        val scroll = ScrollView(this).apply { addView(list) }
-        val dialog = AlertDialog.Builder(this)
-            .setTitle("$jobName history")
-            .setView(scroll)
-            .setPositiveButton("Close", null)
-            .create()
-            .styled()
-
-        if (running) {
-            list.addView(LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                isClickable = true
-                setOnClickListener { openRunDetail(jobName, "$jobName · running", null) }
-                addView(statusLine("Running now", Ui.ACCENT, Ui.TEXT_PRIMARY))
-                addView(caption("Tap to watch it live").apply { setPadding(dp(15), dp(2), 0, 0) })
-            })
-        }
-        if (runs.isEmpty() && !running) list.addView(caption("No runs recorded yet."))
-        val format = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM, FormatStyle.SHORT)
-        runs.forEachIndexed { i, run ->
-            if (i > 0 || running) list.addView(divider())
-            val color = when {
-                run.failed -> Ui.DANGER
-                run.skipped -> Ui.WARNING
-                else -> Ui.SUCCESS
-            }
-            val started = run.startedAt.atZoneSameInstant(ZoneId.systemDefault()).format(format)
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                isClickable = true
-                setOnClickListener { openRunDetail(jobName, "$jobName · $started", run.runId) }
-            }
-            row.addView(statusLine("${run.outcomeText()} · $started", color, Ui.TEXT_PRIMARY))
-            val seconds = Duration.between(run.startedAt, run.completedAt).seconds
-            val details = buildList {
-                if (run.filesCopied > 0) add("${run.filesCopied} copied")
-                if (run.filesDeleted > 0) add("${run.filesDeleted} deleted")
-                if (run.bytesCopied > 0) add(Formatter.formatShortFileSize(this@MainActivity, run.bytesCopied))
-                if (run.errorCount > 0) add("${run.errorCount} errors")
-                add("${seconds}s")
-            }
-            row.addView(caption(details.joinToString(" · ")).apply { setPadding(dp(15), dp(2), 0, 0) })
-            run.errorMessage?.let { row.addView(body(it, Ui.DANGER, 12f).apply { setPadding(dp(15), dp(2), 0, 0) }) }
-            list.addView(row)
-        }
-        dialog.show()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -946,7 +1085,7 @@ class MainActivity : Activity() {
             "Open developer options",
         ) { startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)) }
 
-        tabBar.setBadge(1, problems > 0)
+        tabBar.setBadge(4, problems > 0)
 
         wifiDebugStatus.removeAllViews()
         val canWrite = WirelessDebugging.canWrite(this)
@@ -1032,10 +1171,6 @@ class MainActivity : Activity() {
         handler.postDelayed(::refreshSetup, 21_000)
     }
 
-    private fun ui(block: () -> Unit) {
-        handler.post { if (!isDestroyed) block() }
-    }
-
     private companion object {
         const val MIN_CARD_WIDTH_DP = 340
         const val STATE_TAB = "tab"
@@ -1043,6 +1178,15 @@ class MainActivity : Activity() {
         const val REQUEST_NOTIFICATIONS = 1
         const val MENU_DRY_RUN = 1
         const val MENU_DISCARD = 2
+        const val MENU_EDIT = 3
+        const val MENU_SNAPSHOTS = 4
+        const val MENU_LOG = 5
+        const val MENU_CONFLICTS = 6
+        const val MENU_SNAPSHOT = 7
+        const val MENU_FORCE = 8
+        const val MENU_REMOVE = 9
+        const val MENU_OPEN_APP = 100
+        const val MENU_CLOSE_APP = 200
         const val CHECKPOINT_BLUE = 0xFF4FC3F7.toInt()
         val NEXT_RUN_FORMAT: DateTimeFormatter = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM, FormatStyle.SHORT)
     }

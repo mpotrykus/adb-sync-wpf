@@ -1,25 +1,17 @@
 package com.adbsync.companion
 
-import android.app.Activity
 import android.app.AlertDialog
 import android.graphics.BitmapFactory
-import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
-import android.text.format.DateUtils
-import android.text.format.Formatter
 import android.view.Gravity
 import android.view.View
-import android.view.WindowInsets
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
-import android.view.WindowInsetsController
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
-import android.widget.Toast
+import android.text.format.DateUtils
+import android.text.format.Formatter
 import com.adbsync.companion.Ui.ButtonKind
 import com.adbsync.companion.Ui.body
 import com.adbsync.companion.Ui.button
@@ -27,6 +19,7 @@ import com.adbsync.companion.Ui.caption
 import com.adbsync.companion.Ui.card
 import com.adbsync.companion.Ui.dp
 import com.adbsync.companion.Ui.indeterminateBar
+import com.adbsync.companion.Ui.page
 import com.adbsync.companion.Ui.sectionLabel
 import com.adbsync.companion.Ui.styled
 import com.adbsync.companion.Ui.subSectionLabel
@@ -36,67 +29,41 @@ import java.time.OffsetDateTime
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
-/** Lists files that changed on a device and on the PC at once, so they can be settled from the phone. */
-class ConflictsActivity : Activity() {
-    private val handler = Handler(Looper.getMainLooper())
-    private val io = Executors.newSingleThreadExecutor()
+/** Files that changed on a device and on the server at once, so they can be settled from the phone. */
+class ConflictsScreen(host: MainActivity) : Screen(host) {
     private val thumbs: ExecutorService = Executors.newFixedThreadPool(2)
+    private val content = LinearLayout(host).apply { orientation = LinearLayout.VERTICAL }
+    override val view = host.page(content)
 
-    private lateinit var content: LinearLayout
     private var conflicts: List<RemoteConflict> = emptyList()
     private var loaded = false
     private var busy = false
+    private var stale = true
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        actionBar?.hide()
-        window.setBackgroundDrawable(Ui.windowBackground(this))
-        window.isNavigationBarContrastEnforced = false
-        window.insetsController?.setSystemBarsAppearance(
-            0, WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS,
-        )
-
-        content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(20), dp(16), dp(24))
-        }
-        setContentView(ScrollView(this).apply {
-            addView(content)
-            isVerticalScrollBarEnabled = false
-            setOnApplyWindowInsetsListener { view, insets ->
-                val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
-                view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
-                insets
-            }
-        })
+    init {
         render()
     }
 
-    override fun onResume() {
-        super.onResume()
+    override fun onShow() {
         load()
     }
 
-    override fun onDestroy() {
-        io.shutdownNow()
-        thumbs.shutdownNow()
-        super.onDestroy()
+    fun conflictsChanged() {
+        stale = true
+        if (visible) load()
     }
 
+    fun shutdown() = thumbs.shutdownNow()
+
     private fun load() {
-        val config = PcConfig.load(this) ?: return
-        io.execute {
-            val result = try {
-                PcClient(config).conflicts()
-            } catch (e: Exception) {
-                ui { Toast.makeText(this, "Couldn't reach the PC", Toast.LENGTH_SHORT).show() }
-                return@execute
-            }
-            ui {
-                conflicts = result
+        stale = false
+        async({ it.conflicts() }) { result ->
+            result.onSuccess {
+                conflicts = it
                 loaded = true
                 render()
-            }
+                host.setConflictCount(it.size)
+            }.onFailure { toast(errorText(it)) }
         }
     }
 
@@ -118,35 +85,50 @@ class ConflictsActivity : Activity() {
         else -> "Failed (HTTP $code)"
     }
 
-    /** Runs a PC call off the main thread, then reloads the list. The call returns an error message, or null on success. */
+    /** Runs a server call, then reloads the list. The call returns an error message, or null on success. */
     private fun perform(call: (PcClient) -> String?) {
-        val config = PcConfig.load(this) ?: return
         if (busy) return
         busy = true
         render()
-        io.execute {
+        async({ client ->
             val error = try {
-                call(PcClient(config))
+                call(client)
             } catch (e: Exception) {
-                "Couldn't reach the PC: ${e.javaClass.simpleName}"
+                errorText(e)
             }
-            val refreshed = try {
-                PcClient(config).conflicts()
-            } catch (e: Exception) {
-                null
+            error to runCatching { client.conflicts() }.getOrNull()
+        }) { result ->
+            busy = false
+            result.onSuccess { (error, refreshed) ->
+                if (refreshed != null) {
+                    conflicts = refreshed
+                    host.setConflictCount(refreshed.size)
+                }
+                error?.let { host.toast(it) }
             }
-            ui {
-                busy = false
-                if (refreshed != null) conflicts = refreshed
-                error?.let { Toast.makeText(this, it, Toast.LENGTH_LONG).show() }
-                render()
-            }
+            render()
         }
     }
 
     private fun render() {
         content.removeAllViews()
-        content.addView(title("Resolve conflicts"))
+        content.addView(pageHead(
+            "Conflicts",
+            iconButton(R.drawable.ic_done_all, "Resolve all", filled = true) { anchor ->
+                if (conflicts.isNotEmpty() && !busy) {
+                    val menu = android.widget.PopupMenu(host, anchor)
+                    menu.menu.add(0, 1, 0, "Keep newest of every file")
+                    menu.menu.add(0, 2, 1, "Keep the PC's version of every file")
+                    menu.setOnMenuItemClickListener {
+                        if (it.itemId == 1) confirmAll(ConflictChoice.NEWEST, "Keep the newest version of every file?")
+                        else confirmAll(ConflictChoice.PC, "Keep the PC's version of every file?")
+                        true
+                    }
+                    menu.show()
+                }
+            }.apply { alpha = if (conflicts.isEmpty() || busy) 0.4f else 1f },
+            iconButton(R.drawable.ic_refresh, "Refresh") { load() },
+        ))
         content.addView(caption(
             "These files were changed in two places since they last synced, so AdbSync left them alone. " +
                 "Pick which version to keep; the PC applies it and syncs. The version you don't keep is backed up on the PC.",
@@ -161,15 +143,7 @@ class ConflictsActivity : Activity() {
             return
         }
 
-        content.addView(card().apply {
-            addView(sectionLabel("All ${conflicts.size} files"))
-            addView(View(this@ConflictsActivity).apply { minimumHeight = dp(10) })
-            val row = LinearLayout(this@ConflictsActivity).apply { orientation = LinearLayout.HORIZONTAL }
-            row.addView(button("Keep newest", ButtonKind.Primary) { confirmAll(ConflictChoice.NEWEST, "Keep the newest version of every file?") })
-            row.addView(button("Keep PC's") { confirmAll(ConflictChoice.PC, "Keep the PC's version of every file?") })
-            addView(row)
-            if (busy) addView(indeterminateBar())
-        })
+        if (busy) content.addView(indeterminateBar())
 
         for ((job, items) in conflicts.groupBy { it.job }) {
             content.addView(subSectionLabel(job))
@@ -178,7 +152,7 @@ class ConflictsActivity : Activity() {
     }
 
     private fun confirmAll(choice: ConflictChoice, message: String) {
-        AlertDialog.Builder(this)
+        AlertDialog.Builder(host)
             .setMessage(message)
             .setPositiveButton("Yes") { _, _ -> resolveAll(choice) }
             .setNegativeButton("Cancel", null)
@@ -186,7 +160,7 @@ class ConflictsActivity : Activity() {
     }
 
     private fun conflictCard(c: RemoteConflict): View = card().apply {
-        val isThisPhone = c.device == PcConfig.load(this@ConflictsActivity)?.deviceName
+        val isThisPhone = c.device == PcConfig.load(host)?.deviceName
         val deviceLabel = if (isThisPhone) "This phone" else c.device
         val deviceNewer = c.deviceModifiedAt != null && (c.pcModifiedAt == null || c.deviceModifiedAt >= c.pcModifiedAt)
         val pc = Side("pc", "PC", "Keep PC's", c.pcDeleted, c.pcSize, c.pcModifiedAt, !deviceNewer, ConflictChoice.PC)
@@ -196,10 +170,10 @@ class ConflictsActivity : Activity() {
         )
 
         addView(sectionLabel(c.path).apply { textSize = 14f })
-        addView(View(this@ConflictsActivity).apply { minimumHeight = dp(12) })
+        addView(View(host).apply { minimumHeight = dp(12) })
 
         if (sideBySide()) {
-            val columns = LinearLayout(this@ConflictsActivity).apply { orientation = LinearLayout.HORIZONTAL }
+            val columns = LinearLayout(host).apply { orientation = LinearLayout.HORIZONTAL }
             listOf(pc, device).forEachIndexed { i, side ->
                 columns.addView(sideColumn(c, side), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply {
                     if (i == 0) marginEnd = dp(6) else marginStart = dp(6)
@@ -224,10 +198,10 @@ class ConflictsActivity : Activity() {
     )
 
     /** Two columns need roughly 150dp each after the screen and card padding; narrower windows stack instead. */
-    private fun sideBySide() = resources.configuration.screenWidthDp - 64 >= 2 * 150 + 12
+    private fun sideBySide() = host.resources.configuration.screenWidthDp - 64 >= 2 * 150 + 12
 
     /** Wide layout: thumbnail, details beneath it, then the keep button. */
-    private fun sideColumn(c: RemoteConflict, side: Side): View = LinearLayout(this).apply {
+    private fun sideColumn(c: RemoteConflict, side: Side): View = LinearLayout(host).apply {
         orientation = LinearLayout.VERTICAL
         addView(thumbnail(c, side, FrameLayout.LayoutParams(MATCH_PARENT, dp(120))), LinearLayout.LayoutParams(MATCH_PARENT, dp(120)))
         addView(sideLabel(side).apply { setPadding(0, dp(8), 0, 0) })
@@ -238,12 +212,12 @@ class ConflictsActivity : Activity() {
     }
 
     /** Narrow layout: the keep button sits to the right of the thumbnail, under the details. */
-    private fun sideRow(c: RemoteConflict, side: Side): View = LinearLayout(this).apply {
+    private fun sideRow(c: RemoteConflict, side: Side): View = LinearLayout(host).apply {
         orientation = LinearLayout.HORIZONTAL
         setPadding(0, 0, 0, dp(12))
         val box = dp(88)
         addView(thumbnail(c, side, FrameLayout.LayoutParams(box, box)), LinearLayout.LayoutParams(box, box).apply { marginEnd = dp(12) })
-        addView(LinearLayout(this@ConflictsActivity).apply {
+        addView(LinearLayout(host).apply {
             orientation = LinearLayout.VERTICAL
             addView(sideLabel(side))
             addView(sideDetails(side))
@@ -255,24 +229,24 @@ class ConflictsActivity : Activity() {
 
     /** A file icon until (and unless) the PC can render an image for this side. */
     private fun thumbnail(c: RemoteConflict, side: Side, size: FrameLayout.LayoutParams): View {
-        val icon = TextView(this).apply {
+        val icon = TextView(host).apply {
             text = if (side.deleted) "\uD83D\uDDD1" else "\uD83D\uDCC4"
             textSize = 30f
             gravity = Gravity.CENTER
             background = Ui.rounded(Ui.SURFACE, dp(6))
         }
-        val image = ImageView(this).apply {
+        val image = ImageView(host).apply {
             scaleType = ImageView.ScaleType.CENTER_CROP
             visibility = View.GONE
             clipToOutline = true
             background = Ui.rounded(Ui.SURFACE, dp(6))
         }
-        val frame = FrameLayout(this).apply {
+        val frame = FrameLayout(host).apply {
             addView(icon, FrameLayout.LayoutParams(size.width, size.height))
             addView(image, FrameLayout.LayoutParams(size.width, size.height))
         }
 
-        val config = PcConfig.load(this)
+        val config = PcConfig.load(host)
         if (!side.deleted && config != null) {
             thumbs.execute {
                 val bitmap = try {
@@ -280,7 +254,7 @@ class ConflictsActivity : Activity() {
                 } catch (e: Exception) {
                     null
                 }
-                if (bitmap != null) ui {
+                if (bitmap != null) host.ui {
                     image.setImageBitmap(bitmap)
                     image.visibility = View.VISIBLE
                     icon.visibility = View.GONE
@@ -294,16 +268,12 @@ class ConflictsActivity : Activity() {
 
     private fun sideDetails(side: Side): View {
         val detail = if (side.deleted) "Deleted" else buildString {
-            if (side.size != null) append(Formatter.formatShortFileSize(this@ConflictsActivity, side.size))
+            if (side.size != null) append(Formatter.formatShortFileSize(host, side.size))
             if (side.modified != null) {
                 if (isNotEmpty()) append("\n")
                 append(DateUtils.getRelativeTimeSpanString(side.modified.toInstant().toEpochMilli(), System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS))
             }
         }
         return caption(detail)
-    }
-
-    private fun ui(block: () -> Unit) {
-        handler.post { if (!isDestroyed) block() }
     }
 }

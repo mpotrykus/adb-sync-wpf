@@ -8,7 +8,10 @@ import android.graphics.Canvas
 import android.graphics.Outline
 import android.graphics.drawable.LayerDrawable
 import android.view.ViewOutlineProvider
+import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.ScrollView
+import android.text.InputType
 import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.graphics.ColorFilter
@@ -176,7 +179,7 @@ object Ui {
     }
 
     /** RowButton / RowSuccessButton / RowDangerButton / PrimaryButton from the PC theme. */
-    fun Context.button(text: String, kind: ButtonKind = ButtonKind.Neutral, fill: Boolean = false, onClick: () -> Unit) =
+    fun Context.button(text: String, kind: ButtonKind = ButtonKind.Neutral, fill: Boolean = false, icon: Int? = null, onClick: () -> Unit) =
         TextView(this).apply {
             this.text = text
             textSize = 13f
@@ -196,6 +199,11 @@ object Ui {
                 ).apply { cornerRadius = radius.toFloat() } to 0xFFFFFFFF.toInt()
             }
             setTextColor(textColor)
+            if (icon != null) {
+                compoundDrawablePadding = dp(6)
+                setCompoundDrawablesRelativeWithIntrinsicBounds(icon, 0, 0, 0)
+                compoundDrawableTintList = ColorStateList.valueOf(textColor)
+            }
             background = RippleDrawable(ColorStateList.valueOf(0x33FFFFFF), content, rounded(0xFFFFFFFF.toInt(), radius))
             layoutParams = LinearLayout.LayoutParams(if (fill) MATCH_PARENT else WRAP_CONTENT, WRAP_CONTENT).apply {
                 if (!fill) marginEnd = dp(8)
@@ -253,22 +261,72 @@ object Ui {
 
     private fun stroked(fill: Int, stroke: Int, radius: Int) = glass(fill, stroke, radius, 2)
 
-    /** The app bar: translucent black, brand mark and name on the left, [action] (e.g. the web UI link) on the right. */
-    fun Context.header(action: View?): LinearLayout = LinearLayout(this).apply {
+    /** The web's brand mark: a glowing gradient diamond, swapped for the orbiting sync mark while something syncs. */
+    class BrandMark(context: Context) : FrameLayout(context) {
+        private val diamond = object : View(context) {
+            private val glow = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = 0xFF7C5CFF.toInt()
+                alpha = 0xB0
+                maskFilter = android.graphics.BlurMaskFilter(context.dp(5).toFloat(), android.graphics.BlurMaskFilter.Blur.NORMAL)
+            }
+            private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
+
+            init {
+                setLayerType(LAYER_TYPE_SOFTWARE, null)
+            }
+
+            override fun onDraw(canvas: Canvas) {
+                val cx = width / 2f
+                val cy = height / 2f
+                val half = context.dp(8).toFloat()
+                val radius = context.dp(5).toFloat()
+                val rect = android.graphics.RectF(cx - half, cy - half, cx + half, cy + half)
+                canvas.save()
+                canvas.rotate(45f, cx, cy)
+                canvas.drawRoundRect(rect, radius, radius, glow)
+                fill.shader = android.graphics.LinearGradient(
+                    rect.left, rect.top, rect.right, rect.bottom, 0xFF7C5CFF.toInt(), 0xFF38BDF8.toInt(), Shader.TileMode.CLAMP,
+                )
+                canvas.drawRoundRect(rect, radius, radius, fill)
+                canvas.restore()
+            }
+        }
+        private val mark = SyncMarkDrawable()
+        private val sync = View(context).apply {
+            background = mark
+            alpha = 0f
+        }
+        private var syncing = false
+
+        init {
+            val size = context.dp(30)
+            addView(diamond, LayoutParams(size, size, Gravity.CENTER))
+            addView(sync, LayoutParams(size, size, Gravity.CENTER))
+            layoutParams = LinearLayout.LayoutParams(size, size).apply { marginEnd = context.dp(6) }
+        }
+
+        fun setSyncing(on: Boolean) {
+            if (on == syncing) return
+            syncing = on
+            if (on) mark.start() else mark.stop()
+            sync.animate().alpha(if (on) 1f else 0f).setDuration(400).start()
+            diamond.animate().alpha(if (on) 0f else 1f).setDuration(400).start()
+        }
+    }
+
+    /** The app bar: translucent, brand mark and name on the left, [action] (e.g. the web UI link) on the right. */
+    fun Context.header(action: View?, brand: View): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         background = frostedBar(context, edgeOnTop = false)
-        setPadding(dp(16), dp(10), dp(16), dp(10))
-        addView(View(context).apply {
-            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(ACCENT_FROM, ACCENT_TO))
-                .apply { cornerRadius = dp(5).toFloat() }
-            layoutParams = LinearLayout.LayoutParams(dp(14), dp(14)).apply { marginEnd = dp(10) }
-        })
+        setPadding(dp(16), dp(6), dp(16), dp(6))
+        addView(brand)
         addView(TextView(context).apply {
             text = "AdbSync"
             textSize = 18f
             typeface = plex(600)
             setTextColor(TEXT_PRIMARY)
+            paint.shader = android.graphics.LinearGradient(0f, 0f, paint.measureText("AdbSync"), 0f, 0xFFFFFFFF.toInt(), 0xFFB9B4FF.toInt(), Shader.TileMode.CLAMP)
         }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         if (action != null) addView(action)
     }
@@ -298,7 +356,6 @@ object Ui {
         orientation = LinearLayout.VERTICAL
         background = glass(0x0FFFFFFF, 0x1AFFFFFF, dp(10), dp(1))
         setPadding(dp(14), dp(10), dp(14), dp(10))
-        minimumWidth = dp(112)
         addView(TextView(context).apply {
             text = value
             textSize = 26f
@@ -318,17 +375,30 @@ object Ui {
                 setTextColor(TEXT_SECONDARY)
             })
         })
-        layoutParams = LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { marginEnd = dp(10) }
         if (onClick != null) setOnClickListener { onClick() }
     }
 
-    fun Context.statStrip(tiles: List<View>) = HorizontalScrollView(this).apply {
-        isHorizontalScrollBarEnabled = false
-        overScrollMode = View.OVER_SCROLL_NEVER
-        addView(LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            tiles.forEach { addView(it) }
-        })
+    /** The stat tiles as the web's grid: two columns on a phone (an odd last tile spans the row), else one row filling the width. */
+    fun Context.statStrip(tiles: List<View>) = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        val cfg = resources.configuration
+        val landscape = cfg.screenWidthDp > cfg.screenHeightDp
+        val usable = cfg.screenWidthDp - 32 - (if (landscape) 72 else 0)
+        val phone = usable < 600
+        val columns = if (phone) 2 else minOf(tiles.size, usable / 164).coerceAtLeast(1)
+        val gap = dp(if (phone) 8 else 14)
+        tiles.chunked(columns).forEachIndexed { rowIndex, row ->
+            addView(LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                isBaselineAligned = false
+                row.forEachIndexed { i, tile ->
+                    addView(tile, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { if (i < columns - 1) marginEnd = gap })
+                }
+                if (!phone) repeat(columns - row.size) {
+                    addView(View(context), LinearLayout.LayoutParams(0, 1, 1f).apply { if (row.size + it < columns - 1) marginEnd = gap })
+                }
+            }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { if (rowIndex > 0) topMargin = gap })
+        }
         layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(14) }
     }
 
@@ -500,6 +570,143 @@ object Ui {
         fun setBadge(index: Int, visible: Boolean) {
             badges[index].visibility = if (visible) VISIBLE else GONE
         }
+    }
+
+    /** A square button showing only [icon], like the web's icon buttons; [filled] gives it the accent fill of a primary action. */
+    fun Context.iconButton(icon: Int, description: String, filled: Boolean = false, tint: Int = TEXT_PRIMARY, onClick: (View) -> Unit) =
+        ImageView(this).apply {
+            setImageResource(icon)
+            imageTintList = ColorStateList.valueOf(if (filled) 0xFFFFFFFF.toInt() else tint)
+            contentDescription = description
+            scaleType = ImageView.ScaleType.CENTER
+            isClickable = true
+            isFocusable = true
+            val shape: Drawable? = if (filled) GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(ACCENT_FROM, ACCENT_TO))
+                .apply { cornerRadius = dp(8).toFloat() } else null
+            background = RippleDrawable(ColorStateList.valueOf(0x33FFFFFF), shape, rounded(0xFFFFFFFF.toInt(), dp(if (filled) 8 else 20)))
+            layoutParams = LinearLayout.LayoutParams(dp(40), dp(40)).apply { marginStart = dp(4) }
+            setOnClickListener { onClick(this) }
+        }
+
+    /** A page's header row, like the web's page-head: the title, then icon actions on the right. */
+    fun Context.pageHead(title: String, vararg actions: View) = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(0, 0, 0, dp(12))
+        addView(title(title), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+        actions.forEach { addView(it) }
+    }
+
+    /** A label over its value, as one row of [infoPanel]. */
+    fun Context.infoCell(label: String, value: View) = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(14), dp(10), dp(14), dp(10))
+        addView(TextView(context).apply {
+            text = label.uppercase()
+            textSize = 10f
+            typeface = plex(600)
+            letterSpacing = 0.1f
+            setTextColor(TEXT_SECONDARY)
+            setPadding(0, 0, 0, dp(3))
+        })
+        addView(value)
+    }
+
+    /** The web job card's details container: an inset rounded panel whose rows are split by hairlines. */
+    fun Context.infoPanel(cells: List<View>) = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        background = glass(0x0AFFFFFF, 0x14FFFFFF, dp(8), dp(1))
+        cells.forEachIndexed { i, cell ->
+            if (i > 0) addView(View(context).apply { setBackgroundColor(DIVIDER) }, LinearLayout.LayoutParams(MATCH_PARENT, 1))
+            addView(cell)
+        }
+        layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(4) }
+    }
+
+    /** A scrolling page of [views] with the app's standard padding. */
+    fun Context.page(vararg views: View): ScrollView = ScrollView(this).apply {
+        isVerticalScrollBarEnabled = false
+        addView(LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            val landscape = resources.configuration.screenWidthDp > resources.configuration.screenHeightDp
+            setPadding(dp(16), dp(if (landscape) 10 else 16), dp(16), dp(24))
+            views.forEach { addView(it) }
+        })
+    }
+
+    fun Context.spacer(heightDp: Int) = View(this).apply { minimumHeight = dp(heightDp) }
+
+    /** A text box on a glass field; [lines] above 1 makes it a multi-line area. */
+    fun Context.input(hint: String, value: String = "", mono: Boolean = false, numeric: Boolean = false, lines: Int = 1) =
+        EditText(this).apply {
+            setText(value)
+            this.hint = hint
+            textSize = 14f
+            typeface = if (mono) Typeface.MONOSPACE else plex(400)
+            setTextColor(TEXT_PRIMARY)
+            setHintTextColor(0xFF6F6A86.toInt())
+            background = glass(0x0FFFFFFF, 0x26FFFFFF, dp(8), dp(1))
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            when {
+                numeric -> {
+                    inputType = InputType.TYPE_CLASS_NUMBER
+                    setSingleLine(true)
+                }
+                lines > 1 -> {
+                    inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+                    minLines = lines
+                    gravity = Gravity.TOP
+                }
+                else -> {
+                    inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+                    setSingleLine(true)
+                }
+            }
+            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
+        }
+
+    /** A caption above [view], with optional helper text below it. */
+    fun Context.field(label: String, view: View, help: String? = null) = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(0, dp(6), 0, dp(6))
+        addView(caption(label).apply { setPadding(dp(2), 0, 0, dp(4)) })
+        addView(view)
+        if (help != null) addView(caption(help).apply { setPadding(dp(2), dp(4), 0, 0); textSize = 11f })
+    }
+
+    /** A field-looking row that opens a list of [options] (value to label) and reports the chosen value. */
+    fun Context.picker(options: List<Pair<String, String>>, selected: String, onChange: (String) -> Unit): TextView {
+        var current = selected
+        return body("", TEXT_PRIMARY, 14f).apply {
+            background = glass(0x0FFFFFFF, 0x26FFFFFF, dp(8), dp(1))
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            fun show() {
+                val label = options.firstOrNull { it.first == current }?.second ?: current
+                text = "$label  ▾"
+            }
+            show()
+            isClickable = true
+            setOnClickListener {
+                AlertDialog.Builder(context)
+                    .setItems(options.map { it.second }.toTypedArray()) { _, which ->
+                        current = options[which].first
+                        show()
+                        onChange(current)
+                    }
+                    .create().styled().show()
+            }
+        }
+    }
+
+    fun Context.hairline() = View(this).apply {
+        setBackgroundColor(DIVIDER)
+        layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, 1)
+    }
+
+    /** Buttons laid out in a wrapping-free row. */
+    fun Context.buttonRow(vararg buttons: View) = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        buttons.forEach { addView(it) }
     }
 
     /** Colors a last-result string the way the dashboard's LAST RESULT column does. */

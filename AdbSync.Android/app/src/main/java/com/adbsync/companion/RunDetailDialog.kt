@@ -17,6 +17,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import com.adbsync.companion.Ui.body
 import com.adbsync.companion.Ui.caption
+import com.adbsync.companion.Ui.button
 import com.adbsync.companion.Ui.dp
 import com.adbsync.companion.Ui.styled
 import java.time.Duration
@@ -89,6 +90,11 @@ class RunDetailDialog(
     private lateinit var graph: LinearLayout
     private lateinit var hint: TextView
     private lateinit var logView: TextView
+    private lateinit var filesView: LinearLayout
+    private var files: RunFiles? = null
+    private var filesState = FilesState.Idle
+
+    private enum class FilesState { Idle, Loading, Loaded, Failed }
 
     fun show() {
         val root = LinearLayout(activity).apply {
@@ -104,8 +110,10 @@ class RunDetailDialog(
             setTextIsSelectable(true)
             setPadding(0, activity.dp(12), 0, 0)
         }
+        filesView = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
         root.addView(hint)
         root.addView(graph)
+        if (!live) root.addView(filesView)
         root.addView(logView)
 
         AlertDialog.Builder(activity)
@@ -180,6 +188,68 @@ class RunDetailDialog(
             graph.addView(deviceCard(device, steps.filter { it.device == device }.sortedBy { phaseOrder(it.phase) }, index))
         }
         logView.text = buildLog()
+        if (!live) renderFiles()
+    }
+
+    private fun loadFiles() {
+        if (filesState == FilesState.Loading || runId == null || stopped) return
+        filesState = FilesState.Loading
+        renderFiles()
+        io.execute {
+            val result = try {
+                PcClient(config).runFiles(runId)
+            } catch (e: Exception) {
+                null
+            }
+            handler.post {
+                if (stopped) return@post
+                files = result
+                filesState = if (result == null) FilesState.Failed else FilesState.Loaded
+                renderFiles()
+            }
+        }
+    }
+
+    private fun renderFiles() {
+        filesView.removeAllViews()
+        filesView.setPadding(0, activity.dp(14), 0, 0)
+        when (filesState) {
+            FilesState.Idle -> filesView.addView(activity.button("Show changed files") { loadFiles() })
+            FilesState.Loading -> filesView.addView(activity.caption("Loading files..."))
+            FilesState.Failed -> filesView.addView(activity.button("Couldn't load files - retry") { loadFiles() })
+            FilesState.Loaded -> {
+                val loaded = files ?: return
+                if (!loaded.retained) {
+                    filesView.addView(activity.caption("File detail wasn't kept for this run (the server only keeps it for the most recent runs)."))
+                    return
+                }
+                val shown = loaded.items.filter { selectedDevice == null || it.device == selectedDevice }
+                filesView.addView(activity.body(
+                    "${shown.size} file${if (shown.size == 1) "" else "s"}" + (selectedDevice?.let { " on $it" } ?: ""),
+                    Ui.TEXT_PRIMARY, 13f,
+                ).apply { typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL) })
+                shown.take(MAX_FILES).forEach { file ->
+                    val color = when (file.action) {
+                        "deleted" -> Ui.WARNING
+                        "failed", "error" -> Ui.DANGER
+                        else -> Ui.SUCCESS
+                    }
+                    filesView.addView(LinearLayout(activity).apply {
+                        orientation = LinearLayout.VERTICAL
+                        setPadding(0, activity.dp(6), 0, 0)
+                        addView(activity.body(file.path, Ui.TEXT_PRIMARY, 12f).apply { typeface = Typeface.MONOSPACE })
+                        addView(activity.body(
+                            listOfNotNull(
+                                file.action.replaceFirstChar { it.uppercaseChar() }, file.phase,
+                                file.size?.let { Formatter.formatShortFileSize(activity, it) }, file.device, file.detail,
+                            ).joinToString(" · "),
+                            color, 11f,
+                        ))
+                    })
+                }
+                if (shown.size > MAX_FILES) filesView.addView(activity.caption("... and ${shown.size - MAX_FILES} more"))
+            }
+        }
     }
 
     private fun selectionLabel() = selectedDevice + (selectedPhase?.let { " · ${phaseTitle(it)}" } ?: "")
@@ -335,5 +405,9 @@ class RunDetailDialog(
         "Succeeded" -> Ui.SUCCESS
         "Failed" -> Ui.DANGER
         else -> Ui.TEXT_SECONDARY
+    }
+
+    private companion object {
+        const val MAX_FILES = 300
     }
 }
